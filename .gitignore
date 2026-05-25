@@ -16,6 +16,9 @@ dist-ssr
 .nitro
 *.local
 
+# Carpetas internas de herramientas (tienen su propio .git — no son submódulos)
+.workspace/
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

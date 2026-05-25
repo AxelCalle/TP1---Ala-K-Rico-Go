@@ -10,22 +10,22 @@ export const Route = createFileRoute("/driver")({
   head: () => ({
     meta: [{ title: "Portal del repartidor — Ala K' Rico GO" }],
   }),
-  component: DriverPage,
+  component: PaginaRepartidor,
 });
 
 const RESTAURANTE_DIRECCION = "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú";
 const RESTAURANTE_COORDS: [number, number] = [-12.0278455, -77.0895871];
 
 const STATUS_ES: Record<string, string> = {
-  unassigned: "Sin asignar",
-  assigned: "Asignado",
-  in_transit: "En camino",
-  delivered: "Entregado",
+  sin_asignar: "Sin asignar",
+  asignado: "Asignado",
+  en_camino: "En camino",
+  entregado: "Entregado",
 };
 
 // ─── Página principal ──────────────────────────────────────────────────────────
 
-function DriverPage() {
+function PaginaRepartidor() {
   const navigate = useNavigate();
   const session = useStore((s) => s.session);
   const drivers = useStore((s) => s.drivers);
@@ -37,7 +37,7 @@ function DriverPage() {
   const activeDriver = drivers.find((d) => d.id === activeDriverId);
   const myOrders = orders.filter((o) => o.driverId === activeDriverId);
 
-  function logout() {
+  function cerrarSesion() {
     store.logout();
     navigate({ to: "/" });
   }
@@ -66,7 +66,7 @@ function DriverPage() {
               <ShieldCheck className="h-4 w-4" /> Admin
             </Link>
             <button
-              onClick={logout}
+              onClick={cerrarSesion}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
             >
               <LogOut className="h-4 w-4" /> Salir
@@ -94,10 +94,10 @@ function DriverPage() {
             <table className="w-full text-sm">
               <thead className="bg-secondary text-secondary-foreground">
                 <tr className="text-left">
-                  <Th>Pedido</Th>
-                  <Th>Cliente</Th>
-                  <Th>Estado</Th>
-                  <Th>Acción</Th>
+                  <Encabezado>Pedido</Encabezado>
+                  <Encabezado>Cliente</Encabezado>
+                  <Encabezado>Estado</Encabezado>
+                  <Encabezado>Acción</Encabezado>
                 </tr>
               </thead>
               <tbody>
@@ -108,20 +108,20 @@ function DriverPage() {
                       pedidoActivo?.id === o.id ? "bg-accent/8" : "hover:bg-muted/40"
                     }`}
                   >
-                    <Td>
+                    <Celda>
                       <div className="font-mono text-xs text-muted-foreground">{o.id}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">{o.address}</div>
-                    </Td>
-                    <Td>
+                    </Celda>
+                    <Celda>
                       <div className="font-medium">{o.customer}</div>
                       <div className="text-xs text-muted-foreground">{o.phone}</div>
-                    </Td>
-                    <Td>
+                    </Celda>
+                    <Celda>
                       <span className="inline-block rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                         {STATUS_ES[o.status] ?? o.status}
                       </span>
-                    </Td>
-                    <Td>
+                    </Celda>
+                    <Celda>
                       <button
                         onClick={() => setPedidoActivo(o)}
                         className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
@@ -133,7 +133,7 @@ function DriverPage() {
                         <MapPin className="h-3.5 w-3.5" />
                         {pedidoActivo?.id === o.id ? "Activo" : "Generar ruta"}
                       </button>
-                    </Td>
+                    </Celda>
                   </tr>
                 ))}
                 {myOrders.length === 0 && (
@@ -378,9 +378,9 @@ function dibujarGrafo(
 
 // ─── Componentes de tabla ─────────────────────────────────────────────────────
 
-function Th({ children }: { children: React.ReactNode }) {
+function Encabezado({ children }: { children: React.ReactNode }) {
   return <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">{children}</th>;
 }
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Celda({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>;
 }

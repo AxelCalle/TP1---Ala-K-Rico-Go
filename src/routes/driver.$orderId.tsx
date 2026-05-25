@@ -2,14 +2,14 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon } from "lucide-react";
 import { store, useStore } from "@/lib/store";
-import { buildGraph, runACO, type AcoGraph, type AcoResult } from "@/lib/aco";
+import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
 
 export const Route = createFileRoute("/driver/$orderId")({
   head: ({ params }) => ({
     meta: [{ title: `Ruta ${params.orderId} — Ala K' Rico GO` }],
   }),
-  component: RoutePage,
+  component: PaginaRuta,
   notFoundComponent: () => (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
@@ -29,7 +29,7 @@ const PICKUP = {
 };
 
 
-function drawGraph(
+function dibujarGrafo(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
@@ -120,31 +120,31 @@ function drawGraph(
   }
 }
 
-function RoutePage() {
+function PaginaRuta() {
   const { orderId } = Route.useParams();
   const order = useStore((s) => s.orders.find((o) => o.id === orderId));
 
-  const [acoResult, setAcoResult] = useState<AcoResult | null>(null);
-  const [acoRunning, setAcoRunning] = useState(false);
-  const [acoGraph] = useState<AcoGraph>(() => buildGraph(orderId));
+  const [resultadoACO, setResultadoACO] = useState<AcoResult | null>(null);
+  const [calculandoACO, setCalculandoACO] = useState(false);
+  const [grafoACO] = useState<AcoGraph>(() => construirGrafo(orderId));
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   if (!order) throw notFound();
 
-  const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+  const urlNavegacion = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
     PICKUP.address,
   )}&destination=${encodeURIComponent(order.address)}&travelmode=driving`;
 
-  const distanceKm = acoResult
-    ? acoResult.distanceKm.toFixed(1)
+  const distanceKm = resultadoACO
+    ? resultadoACO.distanceKm.toFixed(1)
     : (2 + (order.id.charCodeAt(order.id.length - 1) % 5)).toFixed(1);
 
-  const etaMin = acoResult
-    ? acoResult.etaMin
+  const etaMin = resultadoACO
+    ? resultadoACO.etaMin
     : 5 + (order.id.charCodeAt(order.id.length - 1) % 8);
 
-  const redraw = useCallback(() => {
+  const redibujar = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio ?? 1;
@@ -155,25 +155,25 @@ function RoutePage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    drawGraph(ctx, cssW, cssH, acoGraph, acoResult);
-  }, [acoGraph, acoResult]);
+    dibujarGrafo(ctx, cssW, cssH, grafoACO, resultadoACO);
+  }, [grafoACO, resultadoACO]);
 
   useEffect(() => {
-    redraw();
-  }, [redraw]);
+    redibujar();
+  }, [redibujar]);
 
-  const handleRunACO = useCallback(() => {
-    setAcoRunning(true);
+  const ejecutarOptimizacion = useCallback(() => {
+    setCalculandoACO(true);
     setTimeout(() => {
       try {
-        setAcoResult(runACO(acoGraph));
+        setResultadoACO(ejecutarACO(grafoACO));
       } catch {
-        setAcoResult(null);
+        setResultadoACO(null);
       } finally {
-        setAcoRunning(false);
+        setCalculandoACO(false);
       }
     }, 60);
-  }, [acoGraph]);
+  }, [grafoACO]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -201,7 +201,7 @@ function RoutePage() {
                 Mejor ruta al destino
               </div>
               <a
-                href={directionsUrl}
+                href={urlNavegacion}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
@@ -225,9 +225,9 @@ function RoutePage() {
                 <RouteIcon className="h-4 w-4 text-accent" />
                 Optimización de ruta (ACO)
               </div>
-              {acoResult && (
+              {resultadoACO && (
                 <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-                  {acoResult.path.length - 1} segmentos · {acoResult.distanceKm.toFixed(1)} km
+                  {resultadoACO.path.length - 1} segmentos · {resultadoACO.distanceKm.toFixed(1)} km
                 </span>
               )}
             </div>
@@ -241,16 +241,16 @@ function RoutePage() {
 
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  {acoResult
-                    ? `Ruta óptima encontrada en ${acoResult.iterations} iteraciones con ${acoResult.path.length} nodos.`
+                  {resultadoACO
+                    ? `Ruta óptima encontrada en ${resultadoACO.iterations} iteraciones con ${resultadoACO.path.length} nodos.`
                     : "Presiona el botón para calcular la ruta óptima con colonias de hormigas."}
                 </p>
                 <button
-                  onClick={handleRunACO}
-                  disabled={acoRunning}
+                  onClick={ejecutarOptimizacion}
+                  disabled={calculandoACO}
                   className="inline-flex flex-none items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60"
                 >
-                  {acoRunning ? (
+                  {calculandoACO ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       Calculando…
@@ -258,7 +258,7 @@ function RoutePage() {
                   ) : (
                     <>
                       <RouteIcon className="h-3.5 w-3.5" />
-                      {acoResult ? "Recalcular" : "Generar ruta"}
+                      {resultadoACO ? "Recalcular" : "Generar ruta"}
                     </>
                   )}
                 </button>
@@ -294,36 +294,36 @@ function RoutePage() {
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <Stat label="Alitas" value={order.wings} />
-            <Stat
+            <Estadistica label="Alitas" value={order.wings} />
+            <Estadistica
               label="Distancia"
               value={`${distanceKm} km`}
-              highlight={!!acoResult}
+              highlight={!!resultadoACO}
             />
-            <Stat
+            <Estadistica
               label="ETA"
               value={`${etaMin} min`}
-              highlight={!!acoResult}
+              highlight={!!resultadoACO}
             />
           </div>
 
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold">Paradas de la ruta</h3>
             <ol className="mt-3 space-y-3 text-sm">
-              <Stop index="A" title="Recogida" sub={PICKUP.label} addr={PICKUP.address} />
-              <Stop index="B" title="Entrega" sub={order.customer} addr={order.address} accent />
+              <ParadaRuta index="A" title="Recogida" sub={PICKUP.label} addr={PICKUP.address} />
+              <ParadaRuta index="B" title="Entrega" sub={order.customer} addr={order.address} accent />
             </ol>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => store.setStatus(order.id, "in_transit")}
+              onClick={() => store.setStatus(order.id, "en_camino")}
               className="rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary"
             >
               Iniciar entrega
             </button>
             <button
-              onClick={() => store.setStatus(order.id, "delivered")}
+              onClick={() => store.setStatus(order.id, "entregado")}
               className="rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
             >
               Marcar entregado
@@ -335,7 +335,7 @@ function RoutePage() {
   );
 }
 
-function Stat({
+function Estadistica({
   label,
   value,
   highlight,
@@ -354,7 +354,7 @@ function Stat({
   );
 }
 
-function Stop({
+function ParadaRuta({
   index,
   title,
   sub,

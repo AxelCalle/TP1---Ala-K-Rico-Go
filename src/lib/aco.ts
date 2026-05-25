@@ -354,5 +354,3 @@ export function ejecutarACO(
   };
 }
 
-// Aliases en inglés para compatibilidad con imports anteriores
-export { construirGrafo as buildGraph, ejecutarACO as runACO };

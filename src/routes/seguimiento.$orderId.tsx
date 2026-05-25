@@ -6,7 +6,7 @@ export const Route = createFileRoute("/seguimiento/$orderId")({
   head: ({ params }) => ({
     meta: [{ title: `Seguimiento ${params.orderId} — Ala K' Rico GO` }],
   }),
-  component: TrackingPage,
+  component: PaginaSeguimiento,
   notFoundComponent: () => (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
@@ -23,13 +23,13 @@ export const Route = createFileRoute("/seguimiento/$orderId")({
 });
 
 const STEPS = [
-  { key: "unassigned", label: "Pedido recibido", icon: ClipboardList },
-  { key: "assigned", label: "En preparación", icon: ChefHat },
-  { key: "in_transit", label: "En camino", icon: Truck },
-  { key: "delivered", label: "Entregado", icon: PackageCheck },
+  { key: "sin_asignar", label: "Pedido recibido", icon: ClipboardList },
+  { key: "asignado", label: "En preparación", icon: ChefHat },
+  { key: "en_camino", label: "En camino", icon: Truck },
+  { key: "entregado", label: "Entregado", icon: PackageCheck },
 ] as const;
 
-function TrackingPage() {
+function PaginaSeguimiento() {
   const { orderId } = Route.useParams();
   const order = useStore((s) => s.orders.find((o) => o.id === orderId));
   const drivers = useStore((s) => s.drivers);
@@ -38,7 +38,7 @@ function TrackingPage() {
 
   const driver = drivers.find((d) => d.id === order.driverId);
   const currentIndex = STEPS.findIndex((s) => s.key === order.status);
-  const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(order.address)}&output=embed`;
+  const urlMapa = `https://www.google.com/maps?q=${encodeURIComponent(order.address)}&output=embed`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,10 +101,10 @@ function TrackingPage() {
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold">Tu pedido</h3>
             <dl className="mt-3 space-y-2 text-sm">
-              <Row label="Alitas" value={`${order.wings} pzas`} />
-              <Row label="Salsa" value={order.sauce} />
-              <Row label="Dirección" value={order.address} />
-              {order.notes && <Row label="Notas" value={order.notes} />}
+              <FilaDato label="Alitas" value={`${order.wings} pzas`} />
+              <FilaDato label="Salsa" value={order.sauce} />
+              <FilaDato label="Dirección" value={order.address} />
+              {order.notes && <FilaDato label="Notas" value={order.notes} />}
             </dl>
           </div>
           <div className="rounded-xl border border-border bg-card p-5">
@@ -136,7 +136,7 @@ function TrackingPage() {
           <div className="relative h-[360px] w-full bg-muted">
             <iframe
               title={`Mapa a ${order.address}`}
-              src={mapSrc}
+              src={urlMapa}
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
               className="absolute inset-0 h-full w-full border-0"
@@ -153,7 +153,7 @@ function TrackingPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function FilaDato({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
       <dt className="text-muted-foreground">{label}</dt>

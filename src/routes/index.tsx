@@ -19,16 +19,16 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  component: Landing,
+  component: PaginaInicio,
 });
 
-function Landing() {
+function PaginaInicio() {
   const navigate = useNavigate();
-  const [code, setCode] = useState("");
+  const [codigo, setCodigo] = useState("");
 
-  function track(e: FormEvent) {
+  function rastrear(e: FormEvent) {
     e.preventDefault();
-    const id = code.trim().toUpperCase();
+    const id = codigo.trim().toUpperCase();
     if (!id) return;
     navigate({ to: "/seguimiento/$orderId", params: { orderId: id } });
   }
@@ -71,14 +71,14 @@ function Landing() {
             </p>
 
             <form
-              onSubmit={track}
+              onSubmit={rastrear}
               className="mt-8 flex flex-wrap items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] p-2 backdrop-blur"
             >
               <div className="flex flex-1 items-center gap-2 px-3">
                 <PackageSearch className="h-4 w-4 text-accent" />
                 <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value)}
                   placeholder="Ej: WO-1042"
                   maxLength={20}
                   className="w-full bg-transparent py-2 text-sm text-white placeholder:text-white/40 outline-none"
