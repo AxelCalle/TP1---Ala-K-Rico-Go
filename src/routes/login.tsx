@@ -36,18 +36,18 @@ function LoginPage() {
           <h2 className="text-3xl font-semibold leading-tight">
             {modo === "login"
               ? <> Despacha alitas <span className="text-accent">por la ruta más rápida.</span></>
-              : <> Únete a <span className="text-accent">Ala K' Rico GO</span> hoy.</>}
+              : <> Regístrate como <span className="text-accent">cliente</span> hoy.</>}
           </h2>
           <p className="max-w-sm text-sm text-white/70">
             {modo === "login"
               ? "Inicia sesión para registrar pedidos, entregar o consultar tus pedidos."
-              : "Crea tu cuenta como cliente o repartidor y empieza hoy mismo."}
+              : "Crea tu cuenta para hacer pedidos y rastrear tus alitas en tiempo real."}
           </p>
         </div>
         {/* Roles disponibles */}
         <div className="space-y-2 text-sm text-white/60">
           <div className="flex items-center gap-2"><User className="h-4 w-4" /> Cliente — historial y seguimiento</div>
-          <div className="flex items-center gap-2"><Truck className="h-4 w-4" /> Repartidor — portal de rutas</div>
+          <div className="flex items-center gap-2"><Truck className="h-4 w-4" /> Repartidor — acceso asignado por el administrador</div>
           <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Administrador — tablero de pedidos</div>
         </div>
       </div>
@@ -252,13 +252,10 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
   );
 }
 
-// ─── Formulario Crear Cuenta ──────────────────────────────────────────────────
-
-type Rol = "customer" | "driver";
+// ─── Formulario Crear Cuenta (solo clientes) ─────────────────────────────────
 
 function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
   const navigate = useNavigate();
-  const [rol, setRol]             = useState<Rol>("customer");
   const [nombre, setNombre]       = useState("");
   const [email, setEmail]         = useState("");
   const [phone, setPhone]         = useState("");
@@ -285,37 +282,29 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         email:    email.trim(),
         password,
         telefono: phone.trim() || undefined,
-        idRole:   rol === "driver" ? 2 : 3,
+        idRole:   3, // siempre cliente
       });
 
       // Registro ok → auto-login en la API
       const respuesta = await api.login(email.trim(), password);
       api.guardarToken(respuesta.token);
       store.setApiSession(respuesta.usuario);
-      navigate({ to: rol === "driver" ? "/driver" : "/cliente" });
+      navigate({ to: "/cliente" });
 
     } catch (err) {
       if (err instanceof ErrorApi && err.status === 409) {
         setError("Ya existe una cuenta con ese correo.");
       } else if (err instanceof ErrorRed) {
         // ── Sin conexión: modo local (mock store) ─────────────────────
-        let resultado: "ok" | "email_taken";
-        if (rol === "driver") {
-          resultado = store.registerDriver(nombre, email.trim(), password);
-        } else {
-          resultado = store.registerCustomer(nombre, email.trim(), password, phone);
-        }
-
+        const resultado = store.registerCustomer(nombre.trim(), email.trim(), password, phone);
         if (resultado === "email_taken") {
           setError("Ya existe una cuenta con ese correo.");
           return;
         }
-
         // Auto-login local
         api.limpiarToken();
         const loginResult = store.login(email.trim(), password);
-        const destino = rol === "driver" ? "/driver" : "/cliente";
-        if (loginResult.status === "ok") navigate({ to: destino });
+        if (loginResult.status === "ok") navigate({ to: "/cliente" });
       } else {
         setError("Error del servidor. Intenta de nuevo en un momento.");
       }
@@ -331,23 +320,9 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
     >
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Crear cuenta</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Completa tus datos para registrarte.</p>
-      </div>
-
-      {/* Selector de rol */}
-      <div className="grid grid-cols-2 gap-2">
-        <RolBtn
-          activo={rol === "customer"}
-          onClick={() => setRol("customer")}
-          icon={<User className="h-4 w-4" />}
-          label="Cliente"
-        />
-        <RolBtn
-          activo={rol === "driver"}
-          onClick={() => setRol("driver")}
-          icon={<Truck className="h-4 w-4" />}
-          label="Repartidor"
-        />
+        <p className="mt-1 text-sm text-muted-foreground">
+          Regístrate para hacer pedidos y rastrear tus alitas.
+        </p>
       </div>
 
       {/* Nombre */}
@@ -374,19 +349,17 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         />
       </div>
 
-      {/* Teléfono (solo clientes) */}
-      {rol === "customer" && (
-        <div className="space-y-1.5">
-          <label htmlFor="reg-phone" className="text-sm font-medium">
-            Teléfono <span className="text-xs text-muted-foreground">(opcional)</span>
-          </label>
-          <input
-            id="reg-phone" type="tel" autoComplete="tel" maxLength={20}
-            value={phone} onChange={(e) => setPhone(e.target.value)}
-            className={inputCls} placeholder="+51 999 999 999"
-          />
-        </div>
-      )}
+      {/* Teléfono */}
+      <div className="space-y-1.5">
+        <label htmlFor="reg-phone" className="text-sm font-medium">
+          Teléfono <span className="text-xs text-muted-foreground">(opcional)</span>
+        </label>
+        <input
+          id="reg-phone" type="tel" autoComplete="tel" maxLength={20}
+          value={phone} onChange={(e) => setPhone(e.target.value)}
+          className={inputCls} placeholder="+51 999 999 999"
+        />
+      </div>
 
       {/* Contraseña */}
       <div className="space-y-1.5">
@@ -402,7 +375,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         </div>
       </div>
 
-      {/* Confirmar */}
+      {/* Confirmar contraseña */}
       <div className="space-y-1.5">
         <label htmlFor="reg-confirmar" className="text-sm font-medium">Confirmar contraseña <Req /></label>
         <input
@@ -425,7 +398,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         className={`${btnAccent} inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {cargando && <Loader2 className="h-4 w-4 animate-spin" />}
-        {cargando ? "Registrando…" : rol === "driver" ? "Registrarme como repartidor" : "Crear cuenta"}
+        {cargando ? "Creando cuenta…" : "Crear cuenta"}
       </button>
 
       <Divider label="¿Ya tienes cuenta?" />
@@ -483,20 +456,3 @@ function TogglePass({ ver, toggle }: { ver: boolean; toggle: () => void }) {
   );
 }
 
-function RolBtn({
-  activo, onClick, icon, label,
-}: { activo: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-semibold transition ${
-        activo
-          ? "border-accent bg-accent/10 text-accent-foreground"
-          : "border-border bg-background text-muted-foreground hover:bg-secondary"
-      }`}
-    >
-      {icon} {label}
-    </button>
-  );
-}

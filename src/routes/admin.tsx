@@ -2,9 +2,9 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import {
   Check, ClipboardList, Copy, Drumstick, Edit2, KeyRound,
-  LogOut, Plus, ShieldOff, Truck, UserCheck, UserX,
+  Loader2, LogOut, Plus, ShieldOff, Truck, UserCheck, UserX,
 } from "lucide-react";
-import { store, useStore, SAUCES, type Sauce, type Driver } from "@/lib/store";
+import { store, useStore, SAUCES, type Sauce, type Driver, type OrderStatus } from "@/lib/store";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -164,7 +164,10 @@ function SeccionPedidos() {
                   </span>
                 </Celda>
                 <Celda>
-                  <PastillaEstado estado={o.status} />
+                  <SelectEstado
+                    estado={o.status}
+                    onChange={(s) => store.setStatus(o.id, s)}
+                  />
                 </Celda>
                 <Celda>
                   <select
@@ -580,17 +583,64 @@ function DialogEditarRepartidor({ driver, onClose }: { driver: Driver; onClose: 
 // MODAL: NUEVO PEDIDO (sin cambios funcionales)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
-  const [cliente,   setCliente]   = useState("");
-  const [telefono,  setTelefono]  = useState("");
-  const [direccion, setDireccion] = useState("");
-  const [alitas,    setAlitas]    = useState(12);
-  const [salsa,     setSalsa]     = useState<Sauce>("Buffalo");
-  const [notas,     setNotas]     = useState("");
+/** Geocodifica una dirección contra Nominatim (Lima, Perú). */
+async function geocodificarDireccion(dir: string): Promise<[number, number] | undefined> {
+  const intentos = [
+    dir.toLowerCase().includes("peru") || dir.toLowerCase().includes("perú")
+      ? dir
+      : `${dir}, Lima, Peru`,
+    // Sin números de puerta ni código postal
+    dir.normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/\b\d{4,5}\b/g, "").replace(/,\s*,/g, ",").trim() + ", Lima, Peru",
+  ];
 
-  function handleSubmit(e: FormEvent) {
+  for (const q of intentos) {
+    try {
+      const params = new URLSearchParams({ q, format: "json", limit: "1", countrycodes: "pe" });
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: { "Accept-Language": "es" },
+      });
+      if (!res.ok) continue;
+      const data: { lat: string; lon: string }[] = await res.json();
+      if (data.length) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+    } catch { /* siguiente intento */ }
+  }
+
+  // Fallback: Photon (Komoot) con bbox Lima
+  try {
+    const sinNum = dir.normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/\b\d{4,5}\b/g, "").trim();
+    const params = new URLSearchParams({ q: `${sinNum}, Lima, Peru`, limit: "1", lang: "es" });
+    const res = await fetch(`https://photon.komoot.io/api?${params}&bbox=-77.5,-12.3,-76.7,-11.6`);
+    if (res.ok) {
+      const data: { features: { geometry: { coordinates: [number, number] } }[] } = await res.json();
+      if (data.features?.length) {
+        const [lng, lat] = data.features[0].geometry.coordinates;
+        return [lat, lng];
+      }
+    }
+  } catch { /* sin coords */ }
+
+  return undefined;
+}
+
+function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
+  const [cliente,        setCliente]        = useState("");
+  const [telefono,       setTelefono]       = useState("");
+  const [direccion,      setDireccion]      = useState("");
+  const [alitas,         setAlitas]         = useState(12);
+  const [salsa,          setSalsa]          = useState<Sauce>("Buffalo");
+  const [notas,          setNotas]          = useState("");
+  const [geocodificando, setGeocodificando] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!cliente.trim() || !direccion.trim() || alitas < 1) return;
+
+    setGeocodificando(true);
+    const coords = await geocodificarDireccion(direccion.trim());
+    setGeocodificando(false);
+
     store.addOrder({
       customer: cliente.trim().slice(0, 100),
       phone:    telefono.trim().slice(0, 40),
@@ -598,6 +648,7 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
       wings:    Math.min(200, Math.max(1, alitas)),
       sauce:    salsa,
       notes:    notas.trim().slice(0, 200) || undefined,
+      coords,   // guardadas al crear — el mapa del repartidor las usa directamente
     });
     onClose();
   }
@@ -621,7 +672,8 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
           </Campo>
           <Campo label="Dirección de entrega" completo>
             <input required maxLength={200} value={direccion}
-              onChange={(e) => setDireccion(e.target.value)} className={clsInput} placeholder="Av. Ejemplo 123, Distrito, Lima" />
+              onChange={(e) => setDireccion(e.target.value)} className={clsInput}
+              placeholder="Jr. Ejemplo 123, San Martín de Porres, Lima" />
           </Campo>
           <Campo label="Cantidad de alitas">
             <input required type="number" min={1} max={200} value={alitas}
@@ -639,8 +691,18 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex justify-end gap-3">
-          <button type="button" onClick={onClose} className={clsBtnSecundario}>Cancelar</button>
-          <button type="submit" className={clsBtnAccent}>Registrar pedido</button>
+          <button type="button" onClick={onClose} disabled={geocodificando} className={clsBtnSecundario}>
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={geocodificando}
+            className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}
+          >
+            {geocodificando
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Verificando dirección…</>
+              : "Registrar pedido"}
+          </button>
         </div>
       </form>
     </Overlay>
@@ -698,6 +760,43 @@ function PastillaActivo({ activo }: { activo: boolean }) {
       <span className={`h-1.5 w-1.5 rounded-full ${activo ? "bg-emerald-500" : "bg-muted-foreground"}`} />
       {activo ? "Activo" : "Inactivo"}
     </span>
+  );
+}
+
+/** Select inline para cambiar el estado de un pedido */
+const ESTADOS_PEDIDO: { value: OrderStatus; label: string }[] = [
+  { value: "sin_asignar", label: "Sin asignar" },
+  { value: "asignado",    label: "Asignado"    },
+  { value: "en_camino",   label: "En camino"   },
+  { value: "entregado",   label: "Entregado"   },
+];
+
+const ESTADO_COLOR: Record<string, string> = {
+  sin_asignar: "bg-muted text-muted-foreground border-border",
+  asignado:    "bg-accent/15 text-accent-foreground border-accent/30",
+  en_camino:   "bg-primary/15 text-primary border-primary/30",
+  entregado:   "bg-emerald-500/15 text-emerald-700 border-emerald-400/30 dark:text-emerald-300",
+};
+
+function SelectEstado({
+  estado,
+  onChange,
+}: {
+  estado: string;
+  onChange: (s: OrderStatus) => void;
+}) {
+  return (
+    <select
+      value={estado}
+      onChange={(e) => onChange(e.target.value as OrderStatus)}
+      className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+        ESTADO_COLOR[estado] ?? "bg-muted text-muted-foreground border-border"
+      }`}
+    >
+      {ESTADOS_PEDIDO.map((s) => (
+        <option key={s.value} value={s.value}>{s.label}</option>
+      ))}
+    </select>
   );
 }
 

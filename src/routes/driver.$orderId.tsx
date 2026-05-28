@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon, Truck } from "lucide-react";
 import { store, useStore } from "@/lib/store";
 import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
@@ -130,7 +130,11 @@ function PaginaRuta() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  if (!order) throw notFound();
+  // En SSR localStorage no existe → order es undefined; solo tirar notFound en el cliente
+  if (!order) {
+    if (typeof window !== "undefined") throw notFound();
+    return null;
+  }
 
   const urlNavegacion = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
     PICKUP.address,
@@ -315,20 +319,50 @@ function PaginaRuta() {
             </ol>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => store.setStatus(order.id, "en_camino")}
-              className="rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary"
-            >
-              Iniciar entrega
-            </button>
-            <button
-              onClick={() => store.setStatus(order.id, "entregado")}
-              className="rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
-            >
-              Marcar entregado
-            </button>
-          </div>
+          {/* ── Acciones de estado ─────────────────────────────────────── */}
+          {order.status === "entregado" ? (
+            /* Pedido ya entregado */
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-5 w-5" />
+              Pedido entregado
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Estado actual */}
+              <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5 text-xs">
+                <span className="text-muted-foreground">Estado actual</span>
+                <span className={`font-semibold ${
+                  order.status === "en_camino"
+                    ? "text-primary"
+                    : order.status === "asignado"
+                    ? "text-accent-foreground"
+                    : "text-muted-foreground"
+                }`}>
+                  {order.status === "sin_asignar" && "⏳ Sin asignar"}
+                  {order.status === "asignado"    && "🍗 En preparación"}
+                  {order.status === "en_camino"   && "🛵 En camino"}
+                </span>
+              </div>
+
+              {/* Botones de avance */}
+              <div className={`grid gap-2 ${order.status === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}>
+                {order.status !== "en_camino" && (
+                  <button
+                    onClick={() => store.setStatus(order.id, "en_camino")}
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary"
+                  >
+                    <Truck className="h-4 w-4" /> Iniciar entrega
+                  </button>
+                )}
+                <button
+                  onClick={() => store.setStatus(order.id, "entregado")}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+                >
+                  <CheckCircle2 className="h-4 w-4" /> Marcar entregado
+                </button>
+              </div>
+            </div>
+          )}
         </aside>
       </main>
     </div>

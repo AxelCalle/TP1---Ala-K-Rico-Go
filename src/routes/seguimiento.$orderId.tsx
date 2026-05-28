@@ -34,7 +34,10 @@ function PaginaSeguimiento() {
   const order = useStore((s) => s.orders.find((o) => o.id === orderId));
   const drivers = useStore((s) => s.drivers);
 
-  if (!order) throw notFound();
+  if (!order) {
+    if (typeof window !== "undefined") throw notFound();
+    return null;
+  }
 
   const driver = drivers.find((d) => d.id === order.driverId);
   const currentIndex = STEPS.findIndex((s) => s.key === order.status);

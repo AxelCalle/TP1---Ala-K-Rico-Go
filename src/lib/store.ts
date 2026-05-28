@@ -93,17 +93,42 @@ type State = {
 
 // ─── Persistencia ─────────────────────────────────────────────────────────────
 
-// v3: IDs desde WO-0001, bloqueo por intentos fallidos
-const CLAVE = "wings-ops-state-v3";
+// v5: WO-0001 figura como entregado
+const CLAVE = "wings-ops-state-v5";
 
 const valoresIniciales = (): State => ({
-  customers: [],
+  customers: [
+    {
+      id: "C-test-mario",
+      name: "Mario",
+      apellidos: "Bros",
+      email: "mariob@gmail.com",
+      password: "1234",
+      phone: "999888777",
+      createdAt: 1700000000000,
+    },
+  ],
   drivers: [
     { id: "d1", name: "Junior Bellido",  email: "repartidor1@alakricogo.com", password: "repartidor1" },
     { id: "d2", name: "Jean Paul Rojas", email: "repartidor2@alakricogo.com", password: "repartidor2" },
     { id: "d3", name: "Santiago Garcia", email: "repartidor3@alakricogo.com", password: "repartidor3" },
   ],
-  orders: [],          // sin pedidos iniciales — el primer pedido creado será WO-0001
+  orders: [
+    {
+      id: "WO-0001",
+      customer: "Mario Bros",
+      customerId: "C-test-mario",
+      phone: "999888777",
+      address: "Jr. Bello Horizonte 2888, San Martín de Porres, Lima",
+      coords: [-12.0326395, -77.0763205],
+      wings: 12,
+      sauce: "Buffalo",
+      notes: "",
+      createdAt: 1700000001000,
+      status: "entregado",
+      driverId: "d1",
+    },
+  ],
   loginAttempts: {},
   session: null,
 });
