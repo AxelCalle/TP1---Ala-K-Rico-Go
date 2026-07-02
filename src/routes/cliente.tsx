@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  ChefHat, ClipboardList, Drumstick, LogOut, Map, MapPin,
-  PackageCheck, Phone, Plus, Search, ShoppingBag,
-  Truck, User, UtensilsCrossed, X,
+  Bell, BellRing, ChefHat, ClipboardList, Drumstick, LogOut, Map, MapPin,
+  PackageCheck, Phone, Plus, Search, ShoppingBag, Timer,
+  Truck, User, UtensilsCrossed, X, XCircle,
 } from "lucide-react";
 import { store, useStore, SAUCES, TIPOS_DOCUMENTO, type Sauce, type TipoDocumento } from "@/lib/store";
 import { MapaRuta } from "@/components/MapaRuta";
@@ -25,6 +25,7 @@ const STATUS_ES: Record<string, string> = {
   asignado:    "En preparación",
   en_camino:   "En camino",
   entregado:   "Entregado",
+  cancelado:   "Cancelado",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -32,6 +33,7 @@ const STATUS_COLOR: Record<string, string> = {
   asignado:    "bg-accent/20 text-accent-foreground",
   en_camino:   "bg-primary text-primary-foreground",
   entregado:   "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  cancelado:   "bg-destructive/15 text-destructive",
 };
 
 const STEPS = [
@@ -86,9 +88,11 @@ function ClientePage() {
   const navigate = useNavigate();
   const session  = useStore((s) => s.session);
   const customer = useStore((s) => s.customers.find((c) => c.id === s.session?.customerId));
+  const allNotificaciones = useStore((s) => s.notificaciones);
   const [tab, setTab]                 = useState<Tab>("pedidos");
   const [modalPedido, setModalPedido] = useState(false);
   const [montado, setMontado]         = useState(false);
+  const [mostrarNotifs, setMostrarNotifs] = useState(false);
 
   // Marcar como montado (solo en el cliente, nunca en SSR)
   useEffect(() => { setMontado(true); }, []);
@@ -104,6 +108,9 @@ function ClientePage() {
   if (!montado || !session || session.role !== "customer") return null;
 
   const nombre = customer ? `${customer.name}${customer.apellidos ? " " + customer.apellidos : ""}` : session.email;
+
+  const misNotifs = allNotificaciones.filter((n) => n.customerId === session.customerId);
+  const noLeidas  = misNotifs.filter((n) => !n.leida).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -127,6 +134,65 @@ function ClientePage() {
             <span className="hidden text-sm text-muted-foreground sm:inline">
               Hola, <span className="font-medium text-foreground">{nombre.split(" ")[0]}</span>
             </span>
+            {/* Campana de notificaciones */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setMostrarNotifs((v) => !v);
+                  if (!mostrarNotifs && noLeidas > 0) {
+                    store.marcarTodasLeidas(session.customerId!);
+                  }
+                }}
+                className="relative inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                title="Notificaciones"
+              >
+                {noLeidas > 0 ? <BellRing className="h-5 w-5 text-accent-foreground" /> : <Bell className="h-5 w-5" />}
+                {noLeidas > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-accent-foreground">
+                    {noLeidas > 9 ? "9+" : noLeidas}
+                  </span>
+                )}
+              </button>
+              {mostrarNotifs && (
+                <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <span className="text-sm font-semibold">Notificaciones</span>
+                    <button onClick={() => setMostrarNotifs(false)} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {misNotifs.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin notificaciones</p>
+                    ) : (
+                      misNotifs.slice(0, 15).map((n) => (
+                        <div
+                          key={n.id}
+                          className={`flex items-start gap-3 px-4 py-3 text-sm transition ${n.leida ? "opacity-60" : "bg-accent/5"}`}
+                        >
+                          <span className="mt-0.5 text-base leading-none">
+                            {n.tipo === "entregado" ? "🎉"
+                              : n.tipo === "pedido_en_camino" ? "🛵"
+                              : n.tipo === "cancelado" ? "❌"
+                              : n.tipo === "asignado" ? "🍗"
+                              : "ℹ️"}
+                          </span>
+                          <div className="flex-1">
+                            <p>{n.mensaje}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {new Date(n.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                          {!n.leida && (
+                            <span className="mt-1.5 h-2 w-2 flex-none rounded-full bg-accent" />
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => { store.logout(); navigate({ to: "/" }); }}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
@@ -419,6 +485,7 @@ function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevo
       .sort((a, b) => b.createdAt - a.createdAt),
     [allOrders, customerId],
   );
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState<string | null>(null);
 
   if (orders.length === 0) {
     return (
@@ -498,6 +565,37 @@ function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevo
                     day: "2-digit", month: "short", year: "numeric",
                   })}
                 </span>
+                {/* Cancelar pedido — solo si aún no fue asignado */}
+                {o.status === "sin_asignar" && (
+                  confirmandoCancelar === o.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">¿Cancelar?</span>
+                      <button
+                        onClick={() => { store.cancelOrder(o.id); setConfirmandoCancelar(null); }}
+                        className="rounded-md bg-destructive px-2.5 py-1 text-xs font-semibold text-destructive-foreground transition hover:opacity-90"
+                      >
+                        Sí
+                      </button>
+                      <button
+                        onClick={() => setConfirmandoCancelar(null)}
+                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-secondary"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmandoCancelar(o.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+                    >
+                      <XCircle className="h-3 w-3" /> Cancelar
+                    </button>
+                  )
+                )}
+                {/* Indicador de no cancelable cuando está en tránsito */}
+                {o.status === "en_camino" && (
+                  <span className="text-[10px] text-muted-foreground">No cancelable en tránsito</span>
+                )}
               </div>
             </div>
           ))}
@@ -748,6 +846,23 @@ function TarjetaSeguimiento({
           {order.notes && (
             <p className="rounded-md bg-muted px-3 py-1.5 text-xs">{order.notes}</p>
           )}
+          {/* ETA */}
+          <div className="flex items-center gap-1.5 border-t border-border pt-1.5">
+            <Timer className="h-3.5 w-3.5 flex-none text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">
+              {order.status === "sin_asignar" || order.status === "asignado"
+                ? "Calculando tiempo estimado…"
+                : order.status === "en_camino"
+                ? (() => {
+                    const elapsed = order.assignedAt ? Math.round((Date.now() - order.assignedAt) / 60000) : 0;
+                    const eta = Math.max(1, 20 - elapsed);
+                    return `ETA: ~${eta} min`;
+                  })()
+                : order.status === "entregado" && order.deliveredAt && order.assignedAt
+                ? `Entregado en ${Math.round((order.deliveredAt - order.assignedAt) / 60000)} min`
+                : "—"}
+            </span>
+          </div>
         </div>
 
         {/* Repartidor */}

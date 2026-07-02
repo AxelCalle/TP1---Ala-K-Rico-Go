@@ -16,8 +16,15 @@ dist-ssr
 .nitro
 *.local
 
+# Variables de entorno con credenciales — NO subir al repositorio
+server/.env
+.env
+
 # Carpetas internas de herramientas (tienen su propio .git — no son submódulos)
 .workspace/
+
+# Sesiones de Claude Code
+.claude/
 
 # Wrangler / Cloudflare
 .wrangler/

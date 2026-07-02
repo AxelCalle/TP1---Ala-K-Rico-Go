@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon, Truck, X } from "lucide-react";
 import { store, useStore } from "@/lib/store";
 import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
@@ -127,6 +127,10 @@ function PaginaRuta() {
   const [resultadoACO, setResultadoACO] = useState<AcoResult | null>(null);
   const [calculandoACO, setCalculandoACO] = useState(false);
   const [grafoACO] = useState<AcoGraph>(() => construirGrafo(orderId));
+  const [mostrarIncidencia, setMostrarIncidencia] = useState(false);
+  const [incidenciaTipo, setIncidenciaTipo] = useState("Dirección no encontrada");
+  const [incidenciaDetalle, setIncidenciaDetalle] = useState("");
+  const [incidenciaEnviada, setIncidenciaEnviada] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -361,6 +365,56 @@ function PaginaRuta() {
                   <CheckCircle2 className="h-4 w-4" /> Marcar entregado
                 </button>
               </div>
+
+              {/* Reportar incidencia (HU009 escenario 2) */}
+              {!incidenciaEnviada ? (
+                !mostrarIncidencia ? (
+                  <button
+                    onClick={() => setMostrarIncidencia(true)}
+                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" /> Reportar incidencia
+                  </button>
+                ) : (
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-destructive">Reportar incidencia</p>
+                      <button onClick={() => setMostrarIncidencia(false)} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <select
+                      value={incidenciaTipo}
+                      onChange={(e) => setIncidenciaTipo(e.target.value)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option>Dirección no encontrada</option>
+                      <option>Cliente no disponible</option>
+                      <option>Accidente o emergencia</option>
+                      <option>Pedido dañado</option>
+                      <option>Otro</option>
+                    </select>
+                    <textarea
+                      value={incidenciaDetalle}
+                      onChange={(e) => setIncidenciaDetalle(e.target.value)}
+                      rows={2}
+                      placeholder="Describe el problema…"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+                    />
+                    <button
+                      onClick={() => { setIncidenciaEnviada(true); setMostrarIncidencia(false); }}
+                      className="w-full rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90"
+                    >
+                      Enviar reporte al administrador
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="rounded-xl border border-yellow-400/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-400">
+                  <AlertTriangle className="inline h-4 w-4 mr-1" />
+                  Incidencia reportada. El administrador fue notificado.
+                </div>
+              )}
             </div>
           )}
         </aside>

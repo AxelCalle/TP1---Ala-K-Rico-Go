@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
+import { registrarAuditoria } from '../middleware/auditoria.js';
 
 const router = Router();
 
@@ -42,17 +43,20 @@ router.post('/login', async (req, res) => {
 
     // Usuario no encontrado
     if (!usuario) {
+      await registrarAuditoria(pool, null, email, 'login_fallido', 'Usuario no encontrado', req);
       return res.status(401).json({ error: 'invalid' });
     }
 
     // Usuario inactivo
     if (!usuario.Activo_Usuario) {
+      await registrarAuditoria(pool, usuario.Id_Usuario, email, 'login_fallido', 'Cuenta inactiva', req);
       return res.status(401).json({ error: 'invalid' });
     }
 
     // Verificar contraseña
     const passwordValida = await bcrypt.compare(password, usuario.Contraseña_Usuario);
     if (!passwordValida) {
+      await registrarAuditoria(pool, usuario.Id_Usuario, email, 'login_fallido', 'Contraseña incorrecta', req);
       return res.status(401).json({ error: 'invalid' });
     }
 
@@ -78,6 +82,9 @@ router.post('/login', async (req, res) => {
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
+
+    await registrarAuditoria(pool, usuario.Id_Usuario, email, 'login_exitoso',
+      `Rol: ${role}`, req);
 
     return res.status(200).json({
       token,

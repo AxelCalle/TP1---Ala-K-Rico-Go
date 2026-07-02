@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
-  Check, ClipboardList, Copy, Drumstick, Edit2, KeyRound,
-  Loader2, LogOut, Plus, ShieldOff, Truck, UserCheck, UserX,
+  AlertTriangle, BarChart2, Check, ClipboardList, Copy, Drumstick, Edit2,
+  KeyRound, LayoutDashboard, Loader2, LogOut, Plus, Settings, ShieldOff,
+  Truck, UserCheck, UserX,
 } from "lucide-react";
-import { store, useStore, SAUCES, type Sauce, type Driver, type OrderStatus } from "@/lib/store";
+import { store, useStore, SAUCES, type Sauce, type Driver, type OrderStatus, type AcoConfig } from "@/lib/store";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -15,7 +17,7 @@ export const Route = createFileRoute("/admin")({
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type SeccionAdmin = "pedidos" | "repartidores";
+type SeccionAdmin = "dashboard" | "pedidos" | "repartidores" | "reportes" | "configuracion";
 
 // ─── Traducciones ─────────────────────────────────────────────────────────────
 
@@ -31,7 +33,18 @@ const ESTADO_PEDIDO: Record<string, string> = {
 function PaginaAdmin() {
   const navigate = useNavigate();
   const session  = useStore((s) => s.session);
-  const [seccion, setSeccion] = useState<SeccionAdmin>("pedidos");
+  const [seccion, setSeccion] = useState<SeccionAdmin>("dashboard");
+  const [montado, setMontado] = useState(false);
+
+  useEffect(() => { setMontado(true); }, []);
+
+  useEffect(() => {
+    if (montado && (!session || session.role !== "admin")) {
+      navigate({ to: "/login" });
+    }
+  }, [session, navigate, montado]);
+
+  if (!montado || !session || session.role !== "admin") return null;
 
   function cerrarSesion() {
     store.logout();
@@ -74,26 +87,458 @@ function PaginaAdmin() {
 
       {/* Navegación de secciones */}
       <div className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl gap-0 px-6">
-          <NavBtn
-            activo={seccion === "pedidos"}
-            onClick={() => setSeccion("pedidos")}
-            icon={<ClipboardList className="h-4 w-4" />}
-            label="Pedidos"
-          />
-          <NavBtn
-            activo={seccion === "repartidores"}
-            onClick={() => setSeccion("repartidores")}
-            icon={<Truck className="h-4 w-4" />}
-            label="Repartidores"
-          />
+        <div className="mx-auto flex max-w-6xl gap-0 overflow-x-auto px-6">
+          <NavBtn activo={seccion === "dashboard"}    onClick={() => setSeccion("dashboard")}    icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
+          <NavBtn activo={seccion === "pedidos"}      onClick={() => setSeccion("pedidos")}      icon={<ClipboardList className="h-4 w-4" />}  label="Pedidos" />
+          <NavBtn activo={seccion === "repartidores"} onClick={() => setSeccion("repartidores")} icon={<Truck className="h-4 w-4" />}          label="Repartidores" />
+          <NavBtn activo={seccion === "reportes"}     onClick={() => setSeccion("reportes")}     icon={<BarChart2 className="h-4 w-4" />}      label="Reportes" />
+          <NavBtn activo={seccion === "configuracion"} onClick={() => setSeccion("configuracion")} icon={<Settings className="h-4 w-4" />}    label="Configuración" />
         </div>
       </div>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
+        {seccion === "dashboard"    && <SeccionDashboard />}
         {seccion === "pedidos"      && <SeccionPedidos />}
         {seccion === "repartidores" && <SeccionRepartidores />}
+        {seccion === "reportes"     && <SeccionReportes />}
+        {seccion === "configuracion" && <SeccionConfiguracion />}
       </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECCIÓN: DASHBOARD (HU030)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SeccionDashboard() {
+  const orders  = useStore((s) => s.orders);
+  const drivers = useStore((s) => s.drivers);
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const hoyMs = hoy.getTime();
+
+  const pedidosHoy    = orders.filter((o) => o.createdAt >= hoyMs);
+  const entregadosHoy = pedidosHoy.filter((o) => o.status === "entregado");
+  const activosHoy    = pedidosHoy.filter((o) => ["asignado", "en_camino"].includes(o.status));
+  const repartidoresActivos = drivers.filter((d) => d.activo !== false).length;
+
+  const tasaCumplimiento = pedidosHoy.length > 0
+    ? Math.round((entregadosHoy.length / pedidosHoy.length) * 100)
+    : 0;
+
+  const tiempoPromedio = (() => {
+    const conTiempos = orders.filter((o) => o.deliveredAt && o.assignedAt);
+    if (!conTiempos.length) return null;
+    const suma = conTiempos.reduce((acc, o) => acc + (o.deliveredAt! - o.assignedAt!), 0);
+    return Math.round(suma / conTiempos.length / 60000);
+  })();
+
+  const pedidosPorEstado = [
+    { label: "Sin asignar", count: orders.filter((o) => o.status === "sin_asignar").length, color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
+    { label: "Asignados",   count: orders.filter((o) => o.status === "asignado").length,    color: "bg-accent/20 text-accent-foreground" },
+    { label: "En camino",   count: orders.filter((o) => o.status === "en_camino").length,   color: "bg-primary/15 text-primary" },
+    { label: "Entregados",  count: orders.filter((o) => o.status === "entregado").length,   color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+    { label: "Cancelados",  count: orders.filter((o) => o.status === "cancelado").length,   color: "bg-destructive/15 text-destructive" },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Resumen operativo en tiempo real.</p>
+      </div>
+
+      {/* KPIs principales */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard titulo="Pedidos hoy"        valor={pedidosHoy.length}                                sufijo=""         highlight />
+        <KpiCard titulo="Activos ahora"      valor={activosHoy.length}                                sufijo=""         />
+        <KpiCard titulo="Repartidores activos" valor={repartidoresActivos}                            sufijo=""         />
+        <KpiCard titulo="Tasa de cumplimiento" valor={`${tasaCumplimiento}%`}                         sufijo=""         highlight />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <KpiCard titulo="Tiempo promedio de entrega" valor={tiempoPromedio !== null ? `${tiempoPromedio} min` : "Sin datos"} sufijo="" />
+        <KpiCard titulo="Total pedidos sistema"      valor={orders.length}                            sufijo=""         />
+      </div>
+
+      {/* Distribución por estado */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="mb-4 text-base font-semibold">Distribución por estado</h2>
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {pedidosPorEstado.map((e) => (
+            <div key={e.label} className={`rounded-xl px-4 py-3 text-center ${e.color}`}>
+              <div className="text-2xl font-bold">{e.count}</div>
+              <div className="mt-0.5 text-xs font-medium">{e.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Últimos pedidos del día */}
+      {pedidosHoy.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="mb-4 text-base font-semibold">Pedidos de hoy</h2>
+          <div className="space-y-2">
+            {pedidosHoy.slice(0, 10).map((o) => (
+              <div key={o.id} className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-4 py-2.5 text-sm">
+                <span className="font-mono text-xs text-muted-foreground">{o.id}</span>
+                <span className="font-medium">{o.customer}</span>
+                <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[o.status] ?? ""}`}>
+                  {ESTADO_PEDIDO[o.status] ?? o.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiCard({ titulo, valor, sufijo, highlight }: { titulo: string; valor: string | number; sufijo?: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-xl border p-5 ${highlight ? "border-accent/40 bg-accent/5" : "border-border bg-card"}`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo}</p>
+      <p className={`mt-2 text-3xl font-bold ${highlight ? "text-accent-foreground" : ""}`}>
+        {valor}{sufijo}
+      </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECCIÓN: REPORTES (HU026 / HU027)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SeccionReportes() {
+  const orders  = useStore((s) => s.orders);
+  const drivers = useStore((s) => s.drivers);
+
+  const entregados = orders.filter((o) => o.status === "entregado");
+
+  // Métricas de tiempos
+  const tiempos = entregados
+    .filter((o) => o.deliveredAt && o.assignedAt)
+    .map((o) => Math.round((o.deliveredAt! - o.assignedAt!) / 60000));
+
+  const promedio  = tiempos.length ? Math.round(tiempos.reduce((a, b) => a + b, 0) / tiempos.length) : null;
+  const minimo    = tiempos.length ? Math.min(...tiempos) : null;
+  const maximo    = tiempos.length ? Math.max(...tiempos) : null;
+  const desviacion = tiempos.length > 1
+    ? Math.round(Math.sqrt(tiempos.reduce((a, b) => a + Math.pow(b - (promedio ?? 0), 2), 0) / tiempos.length))
+    : null;
+
+  // Ranking de repartidores
+  const rankingDrivers = drivers.map((d) => {
+    const entregasConductor = entregados.filter((o) => o.driverId === d.id);
+    const tiemposConductor  = entregasConductor
+      .filter((o) => o.deliveredAt && o.assignedAt)
+      .map((o) => Math.round((o.deliveredAt! - o.assignedAt!) / 60000));
+    const promedioPropio = tiemposConductor.length
+      ? Math.round(tiemposConductor.reduce((a, b) => a + b, 0) / tiemposConductor.length)
+      : null;
+    return { driver: d, entregas: entregasConductor.length, promedioMin: promedioPropio };
+  }).sort((a, b) => b.entregas - a.entregas);
+
+  const promGlobal = promedio ?? 0;
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Reportes</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Análisis de tiempos de entrega y desempeño de repartidores.
+        </p>
+      </div>
+
+      {/* Resumen estadístico HU026 */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="mb-4 text-base font-semibold">Tiempos de entrega</h2>
+        {tiempos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aún no hay entregas completadas con datos de tiempo.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-4">
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Promedio</p>
+              <p className="mt-1 text-2xl font-bold text-accent-foreground">{promedio} min</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Mínimo</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-600">{minimo} min</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Máximo</p>
+              <p className="mt-1 text-2xl font-bold text-primary">{maximo} min</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Desv. estándar</p>
+              <p className="mt-1 text-2xl font-bold">{desviacion} min</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Ranking de repartidores HU027 */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="mb-4 text-base font-semibold">Desempeño de repartidores</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr className="text-left">
+                <Encabezado>#</Encabezado>
+                <Encabezado>Repartidor</Encabezado>
+                <Encabezado>Entregas</Encabezado>
+                <Encabezado>Tiempo promedio</Encabezado>
+                <Encabezado>Estado</Encabezado>
+              </tr>
+            </thead>
+            <tbody>
+              {rankingDrivers.map((r, i) => {
+                const bajDesempeno = promGlobal > 0 && r.promedioMin !== null && r.promedioMin > promGlobal * 1.3;
+                return (
+                  <tr key={r.driver.id} className="border-t border-border">
+                    <Celda className="text-muted-foreground font-mono text-xs">#{i + 1}</Celda>
+                    <Celda>
+                      <div className="font-medium">{r.driver.name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{r.driver.id}</div>
+                    </Celda>
+                    <Celda>
+                      <span className="font-semibold">{r.entregas}</span>
+                    </Celda>
+                    <Celda>
+                      {r.promedioMin !== null
+                        ? <span className={bajDesempeno ? "text-destructive font-semibold" : ""}>{r.promedioMin} min</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </Celda>
+                    <Celda>
+                      {bajDesempeno ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="h-3 w-3" /> Atención
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                          OK
+                        </span>
+                      )}
+                    </Celda>
+                  </tr>
+                );
+              })}
+              {rankingDrivers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No hay repartidores registrados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Historial de pedidos */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="mb-4 text-base font-semibold">Historial de pedidos</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr className="text-left">
+                <Encabezado>ID</Encabezado>
+                <Encabezado>Cliente</Encabezado>
+                <Encabezado>Repartidor</Encabezado>
+                <Encabezado>Estado</Encabezado>
+                <Encabezado>T. entrega</Encabezado>
+                <Encabezado>Fecha</Encabezado>
+              </tr>
+            </thead>
+            <tbody>
+              {[...orders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 20).map((o) => {
+                const driver = drivers.find((d) => d.id === o.driverId);
+                const tEntrega = o.deliveredAt && o.assignedAt
+                  ? Math.round((o.deliveredAt - o.assignedAt) / 60000)
+                  : null;
+                return (
+                  <tr key={o.id} className="border-t border-border">
+                    <Celda className="font-mono text-xs">{o.id}</Celda>
+                    <Celda>{o.customer}</Celda>
+                    <Celda>{driver?.name ?? <span className="text-muted-foreground">—</span>}</Celda>
+                    <Celda>
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[o.status] ?? ""}`}>
+                        {ESTADO_PEDIDO[o.status] ?? o.status}
+                      </span>
+                    </Celda>
+                    <Celda>{tEntrega !== null ? `${tEntrega} min` : <span className="text-muted-foreground">—</span>}</Celda>
+                    <Celda className="text-xs text-muted-foreground">
+                      {new Date(o.createdAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                    </Celda>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECCIÓN: CONFIGURACIÓN ACO (HU025)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ACO_RANGOS: Record<keyof AcoConfig, { min: number; max: number; step: number; label: string }> = {
+  alfa:       { min: 0.5, max: 5,    step: 0.1,  label: "Alfa (α) — Peso de feromonas" },
+  beta:       { min: 0.5, max: 5,    step: 0.1,  label: "Beta (β) — Peso heurístico" },
+  rho:        { min: 0.01, max: 0.9, step: 0.01, label: "Rho (ρ) — Tasa de evaporación" },
+  Q:          { min: 0.1, max: 10,   step: 0.1,  label: "Q — Constante de feromona" },
+  numAnts:    { min: 5,   max: 100,  step: 1,    label: "Número de hormigas" },
+  iterations: { min: 10,  max: 200,  step: 5,    label: "Iteraciones" },
+  elite:      { min: 0,   max: 10,   step: 1,    label: "Refuerzo élite" },
+  tauMin:     { min: 0.001, max: 0.5, step: 0.001, label: "Tau mínimo (piso de feromona)" },
+};
+
+function SeccionConfiguracion() {
+  const acoConfig = useStore((s) => s.acoConfig);
+  const [local, setLocal]     = useState<AcoConfig>({ ...acoConfig });
+  const [errores, setErrores] = useState<Partial<Record<keyof AcoConfig, string>>>({});
+  const [guardado, setGuardado]   = useState(false);
+  const [cargando, setCargando]   = useState(true);
+  const [errorApi, setErrorApi]   = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  // Cargar config desde la BD al montar
+  useEffect(() => {
+    api.obtenerAcoConfig()
+      .then((cfg) => {
+        setLocal(cfg);
+        store.updateAcoConfig(cfg);
+      })
+      .catch(() => {
+        // Sin backend: usar valores del store local
+      })
+      .finally(() => setCargando(false));
+  }, []);
+
+  function handleChange(campo: keyof AcoConfig, val: string) {
+    const num = parseFloat(val);
+    setLocal((prev) => ({ ...prev, [campo]: isNaN(num) ? prev[campo] : num }));
+    setErrores((prev) => { const copia = { ...prev }; delete copia[campo]; return copia; });
+    setGuardado(false);
+    setErrorApi(null);
+  }
+
+  function validar(): boolean {
+    const nuevosErrores: Partial<Record<keyof AcoConfig, string>> = {};
+    (Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).forEach((k) => {
+      const rango = ACO_RANGOS[k];
+      if (local[k] < rango.min || local[k] > rango.max) {
+        nuevosErrores[k] = `Debe estar entre ${rango.min} y ${rango.max}.`;
+      }
+    });
+    setErrores(nuevosErrores);
+    return Object.keys(nuevosErrores).length === 0;
+  }
+
+  async function handleGuardar(e: FormEvent) {
+    e.preventDefault();
+    if (!validar()) return;
+    setGuardando(true);
+    setErrorApi(null);
+    try {
+      await api.guardarAcoConfig(local);
+    } catch {
+      setErrorApi("No se pudo guardar en el servidor. Los cambios se aplicaron localmente.");
+    }
+    store.updateAcoConfig(local);
+    setGuardando(false);
+    setGuardado(true);
+    setTimeout(() => setGuardado(false), 3000);
+  }
+
+  function handleReset() {
+    setLocal({ ...acoConfig });
+    setErrores({});
+    setGuardado(false);
+    setErrorApi(null);
+  }
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Configuración ACO</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ajusta los parámetros del algoritmo de optimización de rutas (Ant Colony Optimization).
+        </p>
+      </div>
+
+      {cargando ? (
+        <div className="rounded-xl border border-border bg-card p-10 flex items-center justify-center gap-3 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Cargando configuración desde el servidor…</span>
+        </div>
+      ) : (
+      <form onSubmit={handleGuardar} className="rounded-xl border border-border bg-card p-6 space-y-6">
+        <div className="grid gap-5 sm:grid-cols-2">
+          {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((campo) => {
+            const rango = ACO_RANGOS[campo];
+            return (
+              <label key={campo} className="space-y-1.5">
+                <span className="text-sm font-medium">{rango.label}</span>
+                <input
+                  type="number"
+                  step={rango.step}
+                  min={rango.min}
+                  max={rango.max}
+                  value={local[campo]}
+                  onChange={(e) => handleChange(campo, e.target.value)}
+                  className={`${clsInput} ${errores[campo] ? "border-destructive" : ""}`}
+                />
+                {errores[campo] && (
+                  <p className="text-xs text-destructive">{errores[campo]}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Rango: [{rango.min} – {rango.max}] · En BD: {local[campo]}
+                </p>
+              </label>
+            );
+          })}
+        </div>
+
+        {errorApi && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{errorApi}</p>
+        )}
+
+        <div className="flex items-center justify-between gap-4 pt-2">
+          {guardado && (
+            <span className="text-sm font-medium text-emerald-600">
+              ✓ Configuración guardada en SQL Server. Se aplica en el próximo cálculo ACO.
+            </span>
+          )}
+          <div className="ml-auto flex gap-3">
+            <button type="button" onClick={handleReset} className={clsBtnSecundario}>
+              Restaurar
+            </button>
+            <button type="submit" disabled={guardando} className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}>
+              {guardando ? <><Loader2 className="h-4 w-4 animate-spin" /> Guardando…</> : "Guardar configuración"}
+            </button>
+          </div>
+        </div>
+      </form>
+      )}
+
+      {/* Valores actuales en sistema */}
+      <div className="rounded-xl border border-border bg-muted/30 p-5 text-sm">
+        <p className="mb-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">Valores en uso</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((k) => (
+            <div key={k} className="rounded-lg border border-border bg-card px-3 py-2 text-center">
+              <p className="text-xs text-muted-foreground">{k}</p>
+              <p className="font-semibold">{acoConfig[k]}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

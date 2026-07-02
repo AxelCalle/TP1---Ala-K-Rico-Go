@@ -9,7 +9,7 @@ export type Sauce =
   | "Korean"
   | "Mango Habanero";
 
-export type OrderStatus = "sin_asignar" | "asignado" | "en_camino" | "entregado";
+export type OrderStatus = "sin_asignar" | "asignado" | "en_camino" | "entregado" | "cancelado";
 
 // ─── Tipos de usuario ─────────────────────────────────────────────────────────
 
@@ -53,8 +53,53 @@ export type Order = {
   sauce: Sauce;
   notes?: string;
   createdAt: number;
+  assignedAt?: number;
+  deliveredAt?: number;
   status: OrderStatus;
   driverId?: string;
+};
+
+// ─── Notificaciones ───────────────────────────────────────────────────────────
+
+export type NotificacionTipo =
+  | "pedido_en_camino"
+  | "entregado"
+  | "cancelado"
+  | "asignado"
+  | "sistema";
+
+export type Notificacion = {
+  id: string;
+  customerId?: string;
+  tipo: NotificacionTipo;
+  mensaje: string;
+  orderId?: string;
+  leida: boolean;
+  createdAt: number;
+};
+
+// ─── Configuración ACO ────────────────────────────────────────────────────────
+
+export type AcoConfig = {
+  alfa: number;
+  beta: number;
+  rho: number;
+  Q: number;
+  numAnts: number;
+  iterations: number;
+  elite: number;
+  tauMin: number;
+};
+
+const DEFAULT_ACO_CONFIG: AcoConfig = {
+  alfa: 1.0,
+  beta: 3.0,
+  rho: 0.3,
+  Q: 1.0,
+  numAnts: 20,
+  iterations: 60,
+  elite: 4,
+  tauMin: 0.02,
 };
 
 // ─── Sesión y bloqueo ────────────────────────────────────────────────────────
@@ -89,12 +134,14 @@ type State = {
   customers: Customer[];
   loginAttempts: LoginAttempts;
   session: Session;
+  notificaciones: Notificacion[];
+  acoConfig: AcoConfig;
 };
 
 // ─── Persistencia ─────────────────────────────────────────────────────────────
 
-// v5: WO-0001 figura como entregado
-const CLAVE = "wings-ops-state-v5";
+// v6: cancelado status, notifications, ACO config, order timestamps
+const CLAVE = "wings-ops-state-v6";
 
 const valoresIniciales = (): State => ({
   customers: [
@@ -131,6 +178,8 @@ const valoresIniciales = (): State => ({
   ],
   loginAttempts: {},
   session: null,
+  notificaciones: [],
+  acoConfig: DEFAULT_ACO_CONFIG,
 });
 
 let state: State = (() => {
@@ -139,8 +188,10 @@ let state: State = (() => {
     const raw = localStorage.getItem(CLAVE);
     if (!raw) return valoresIniciales();
     const parsed = JSON.parse(raw) as State;
-    if (!parsed.customers)     parsed.customers     = [];
-    if (!parsed.loginAttempts) parsed.loginAttempts = {};
+    if (!parsed.customers)      parsed.customers      = [];
+    if (!parsed.loginAttempts)  parsed.loginAttempts  = {};
+    if (!parsed.notificaciones) parsed.notificaciones = [];
+    if (!parsed.acoConfig)      parsed.acoConfig      = DEFAULT_ACO_CONFIG;
     return parsed;
   } catch {
     return valoresIniciales();
@@ -472,17 +523,118 @@ export const store = {
     state = {
       ...state,
       orders: state.orders.map((o) =>
-        o.id === orderId ? { ...o, driverId, status: "asignado" } : o,
+        o.id === orderId
+          ? { ...o, driverId, status: "asignado", assignedAt: o.assignedAt ?? Date.now() }
+          : o,
       ),
     };
     persistir();
   },
 
   setStatus(orderId: string, status: OrderStatus) {
+    const order = state.orders.find((o) => o.id === orderId);
+    const now = Date.now();
+    const updates: Partial<Order> = { status };
+    if ((status === "asignado" || status === "en_camino") && !order?.assignedAt) {
+      updates.assignedAt = now;
+    }
+    if (status === "entregado") {
+      updates.deliveredAt = now;
+    }
+
+    let notificaciones = state.notificaciones;
+    if (order?.customerId) {
+      let notif: Notificacion | null = null;
+      if (status === "en_camino") {
+        notif = {
+          id: `N-${now}-${Math.random().toString(36).slice(2, 5)}`,
+          customerId: order.customerId,
+          tipo: "pedido_en_camino",
+          mensaje: `Tu pedido ${orderId} está en camino 🛵`,
+          orderId,
+          leida: false,
+          createdAt: now,
+        };
+      } else if (status === "entregado") {
+        notif = {
+          id: `N-${now}-${Math.random().toString(36).slice(2, 5)}`,
+          customerId: order.customerId,
+          tipo: "entregado",
+          mensaje: `¡Tu pedido ${orderId} fue entregado! 🎉`,
+          orderId,
+          leida: false,
+          createdAt: now,
+        };
+      } else if (status === "asignado") {
+        notif = {
+          id: `N-${now}-${Math.random().toString(36).slice(2, 5)}`,
+          customerId: order.customerId,
+          tipo: "asignado",
+          mensaje: `Tu pedido ${orderId} está siendo preparado 🍗`,
+          orderId,
+          leida: false,
+          createdAt: now,
+        };
+      }
+      if (notif) notificaciones = [notif, ...notificaciones].slice(0, 50);
+    }
+
     state = {
       ...state,
-      orders: state.orders.map((o) => (o.id === orderId ? { ...o, status } : o)),
+      orders: state.orders.map((o) => (o.id === orderId ? { ...o, ...updates } : o)),
+      notificaciones,
     };
+    persistir();
+  },
+
+  cancelOrder(orderId: string): "ok" | "no_cancelable" {
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== "sin_asignar") return "no_cancelable";
+    const now = Date.now();
+    let notificaciones = state.notificaciones;
+    if (order.customerId) {
+      const notifCancelar: Notificacion = {
+        id: `N-${now}-${Math.random().toString(36).slice(2, 5)}`,
+        customerId: order.customerId,
+        tipo: "cancelado",
+        mensaje: `Tu pedido ${orderId} fue cancelado.`,
+        orderId,
+        leida: false,
+        createdAt: now,
+      };
+      notificaciones = [notifCancelar, ...notificaciones].slice(0, 50);
+    }
+    state = {
+      ...state,
+      orders: state.orders.map((o) => (o.id === orderId ? { ...o, status: "cancelado" } : o)),
+      notificaciones,
+    };
+    persistir();
+    return "ok";
+  },
+
+  marcarNotificacionLeida(id: string) {
+    state = {
+      ...state,
+      notificaciones: state.notificaciones.map((n) =>
+        n.id === id ? { ...n, leida: true } : n,
+      ),
+    };
+    persistir();
+  },
+
+  marcarTodasLeidas(customerId: string) {
+    state = {
+      ...state,
+      notificaciones: state.notificaciones.map((n) =>
+        n.customerId === customerId ? { ...n, leida: true } : n,
+      ),
+    };
+    persistir();
+  },
+
+  updateAcoConfig(config: Partial<AcoConfig>) {
+    state = { ...state, acoConfig: { ...state.acoConfig, ...config } };
     persistir();
   },
 };

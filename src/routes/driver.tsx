@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { Drumstick, ExternalLink, Loader2, LogOut, MapPin, Navigation, Route as RouteIcon, ShieldCheck } from "lucide-react";
 import { store, useStore } from "@/lib/store";
 import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
@@ -30,8 +30,18 @@ function PaginaRepartidor() {
   const session = useStore((s) => s.session);
   const drivers = useStore((s) => s.drivers);
   const orders = useStore((s) => s.orders);
+  const [montado, setMontado] = useState(false);
+
+  useEffect(() => { setMontado(true); }, []);
+  useEffect(() => {
+    if (montado && (!session || (session.role !== "driver" && session.role !== "admin"))) {
+      navigate({ to: "/login" });
+    }
+  }, [session, navigate, montado]);
 
   const [pedidoActivo, setPedidoActivo] = useState<Order | null>(null);
+
+  if (!montado || !session) return null;
 
   const activeDriverId = session?.driverId ?? drivers[0]?.id ?? "";
   const activeDriver = drivers.find((d) => d.id === activeDriverId);
