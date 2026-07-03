@@ -16,8 +16,9 @@ const DB_CONFIG = {
   options:  { encrypt: false, trustServerCertificate: true },
 };
 
-const LAT_REST = -12.1100;
-const LNG_REST = -77.0290;
+// Restaurante Ala K' Rico — Jr. Áncash 3855, San Martín de Porres 15101
+const LAT_REST = -12.0278455;
+const LNG_REST = -77.0895871;
 
 const ADMIN = {
   nombre: 'Administrador', apellido: 'AKR',
@@ -32,16 +33,16 @@ const REPARTIDOR = {
 };
 
 const CLIENTES = [
-  { nombre:'Carlos',    apellido:'Mendoza Rojas',   email:'cmendoza@piloto.test',  password:'Cliente2026', dni:'45821309', telf:'987654321', lat:-12.1089, lng:-77.0350, dir:'Av. Benavides 3456, Miraflores, Lima' },
-  { nombre:'Lucía',     apellido:'Paredes Lima',    email:'lparedes@piloto.test',  password:'Cliente2026', dni:'52134678', telf:'956789012', lat:-12.1023, lng:-77.0412, dir:'Calle Tarapacá 234, Miraflores, Lima' },
-  { nombre:'Miguel',    apellido:'Torres Vidal',    email:'mtorres@piloto.test',   password:'Cliente2026', dni:'38907156', telf:'945678901', lat:-12.1150, lng:-77.0200, dir:'Av. Angamos Este 890, Surquillo, Lima' },
-  { nombre:'Sofía',     apellido:'Ríos Castillo',   email:'srios@piloto.test',     password:'Cliente2026', dni:'61234589', telf:'934567890', lat:-12.1201, lng:-77.0450, dir:'Jr. Shell 567, Miraflores, Lima' },
-  { nombre:'Diego',     apellido:'Chávez Palma',    email:'dchavez@piloto.test',   password:'Cliente2026', dni:'49876543', telf:'923456789', lat:-12.0978, lng:-77.0280, dir:'Av. Arequipa 4200, Miraflores, Lima' },
-  { nombre:'Ana',       apellido:'Flores Díaz',     email:'aflores@piloto.test',   password:'Cliente2026', dni:'71234908', telf:'912345678', lat:-12.1312, lng:-77.0320, dir:'Calle Schell 450, Miraflores, Lima' },
-  { nombre:'Roberto',   apellido:'Vega Soto',       email:'rvega@piloto.test',     password:'Cliente2026', dni:'54321098', telf:'901234567', lat:-12.1056, lng:-77.0490, dir:'Av. Larco 890, Miraflores, Lima' },
-  { nombre:'Patricia',  apellido:'Salas Ríos',      email:'psalas@piloto.test',    password:'Cliente2026', dni:'43210987', telf:'998765432', lat:-12.1178, lng:-77.0150, dir:'Av. Javier Prado Oeste 1234, San Isidro, Lima' },
-  { nombre:'Jorge',     apellido:'Cárdenas Torres', email:'jcardenas@piloto.test', password:'Cliente2026', dni:'36789012', telf:'976543210', lat:-12.1089, lng:-77.0560, dir:'Calle Los Pinos 123, San Isidro, Lima' },
-  { nombre:'Valentina', apellido:'Cruz Medina',     email:'vcruz@piloto.test',     password:'Cliente2026', dni:'58901234', telf:'965432109', lat:-12.1234, lng:-77.0380, dir:'Av. Santa Cruz 890, Miraflores, Lima' },
+  { nombre:'Carlos',    apellido:'Mendoza Rojas',   email:'cmendoza@piloto.test',  password:'Cliente2026', dni:'45821309', telf:'987654321', lat:-12.0031, lng:-77.0850, dir:'Av. Perú 1456, San Martín de Porres, Lima' },
+  { nombre:'Lucía',     apellido:'Paredes Lima',    email:'lparedes@piloto.test',  password:'Cliente2026', dni:'52134678', telf:'956789012', lat:-11.9980, lng:-77.0790, dir:'Av. Universitaria 2340, San Martín de Porres, Lima' },
+  { nombre:'Miguel',    apellido:'Torres Vidal',    email:'mtorres@piloto.test',   password:'Cliente2026', dni:'38907156', telf:'945678901', lat:-11.9855, lng:-77.0672, dir:'Av. Carlos Izaguirre 890, Los Olivos, Lima' },
+  { nombre:'Sofía',     apellido:'Ríos Castillo',   email:'srios@piloto.test',     password:'Cliente2026', dni:'61234589', telf:'934567890', lat:-11.9902, lng:-77.0715, dir:'Av. Angélica Gamarra 456, Los Olivos, Lima' },
+  { nombre:'Diego',     apellido:'Chávez Palma',    email:'dchavez@piloto.test',   password:'Cliente2026', dni:'49876543', telf:'923456789', lat:-12.0098, lng:-77.0903, dir:'Av. Zarumilla 567, San Martín de Porres, Lima' },
+  { nombre:'Ana',       apellido:'Flores Díaz',     email:'aflores@piloto.test',   password:'Cliente2026', dni:'71234908', telf:'912345678', lat:-11.9712, lng:-77.0648, dir:'Av. Universitaria 3890, Comas, Lima' },
+  { nombre:'Roberto',   apellido:'Vega Soto',       email:'rvega@piloto.test',     password:'Cliente2026', dni:'54321098', telf:'901234567', lat:-12.0142, lng:-77.1098, dir:'Av. Morales Duárez 234, Callao' },
+  { nombre:'Patricia',  apellido:'Salas Ríos',      email:'psalas@piloto.test',    password:'Cliente2026', dni:'43210987', telf:'998765432', lat:-11.9823, lng:-77.0635, dir:'Av. Alfredo Mendiola 1890, Los Olivos, Lima' },
+  { nombre:'Jorge',     apellido:'Cárdenas Torres', email:'jcardenas@piloto.test', password:'Cliente2026', dni:'36789012', telf:'976543210', lat:-12.0015, lng:-77.0812, dir:'Av. Los Alisos 123, San Martín de Porres, Lima' },
+  { nombre:'Valentina', apellido:'Cruz Medina',     email:'vcruz@piloto.test',     password:'Cliente2026', dni:'58901234', telf:'965432109', lat:-11.9748, lng:-77.0695, dir:'Av. Belaúnde 890, Comas, Lima' },
 ];
 
 const COMBOS = [
@@ -53,24 +54,24 @@ const COMBOS = [
   { nombre:'Combo 18 alitas Mix',    precio:56.00 },
 ];
 
-// Tabla A.1 del paper — tpes[] = minutos individuales por pedido (Creación→Entrega)
-// Medias verificadas ±0.1 min vs. paper. Fechas respetan día de semana de la tabla.
-// Las jornadas están ordenadas cronológicamente por fecha; el id refleja el nº de tabla.
+// 90 pedidos en 12 jornadas — 45 FIFO + 45 ACO. Días: Vie/Sáb/Dom.
+// FIFO: Jun 5-19 (semanas 1-2) | ACO: Jun 26-Jul 10 (semanas 3-4)
+// TPE por jornada calibrado con Tabla A.1 del paper. J04 lleva 7 ped (+1 extra).
 const JORNADAS = [
-  // ── Fase FIFO (semanas 1-2) ───────────────────────────────────────────────
-  { id:'J01', fecha:'2026-02-27', dia:'Viernes', fase:'FIFO', tpes:[32,36,39,42,44,45,57,59] },
-  { id:'J02', fecha:'2026-02-28', dia:'Sábado',  fase:'FIFO', tpes:[33,37,40,43,45,45,54,63,70] },
-  { id:'J04', fecha:'2026-03-01', dia:'Domingo', fase:'FIFO', tpes:[24,28,33,38,44,50] },
-  { id:'J03', fecha:'2026-03-06', dia:'Viernes', fase:'FIFO', tpes:[26,30,35,38,42,45,52] },
-  { id:'J05', fecha:'2026-03-07', dia:'Sábado',  fase:'FIFO', tpes:[28,34,38,42,44,45,54,56] },
-  { id:'J06', fecha:'2026-03-13', dia:'Viernes', fase:'FIFO', tpes:[30,35,39,43,45,58] },
-  // ── Fase ACO (semanas 3-4) ────────────────────────────────────────────────
-  { id:'J07', fecha:'2026-03-20', dia:'Viernes', fase:'ACO',  tpes:[22,24,26,28,29,31,32] },
-  { id:'J08', fecha:'2026-03-21', dia:'Sábado',  fase:'ACO',  tpes:[22,25,27,29,30,31,33,35,34,46] },
-  { id:'J10', fecha:'2026-03-22', dia:'Domingo', fase:'ACO',  tpes:[19,22,23,26,30] },
-  { id:'J09', fecha:'2026-03-27', dia:'Viernes', fase:'ACO',  tpes:[20,22,24,26,28,29,31,34] },
-  { id:'J11', fecha:'2026-03-28', dia:'Sábado',  fase:'ACO',  tpes:[20,24,27,29,30,31,33,35,47] },
-  { id:'J12', fecha:'2026-04-03', dia:'Viernes', fase:'ACO',  tpes:[20,22,25,27,28,35] },
+  // ── Fase FIFO (45 ped) ───────────────────────────────────────────────────
+  { id:'J01', fecha:'2026-06-05', dia:'Viernes', fase:'FIFO', tpes:[32,36,39,42,44,45,57,59] },       // 8 ped  media=44.3
+  { id:'J02', fecha:'2026-06-06', dia:'Sábado',  fase:'FIFO', tpes:[33,37,40,43,45,45,54,63,70] },    // 9 ped  media=47.8
+  { id:'J04', fecha:'2026-06-07', dia:'Domingo', fase:'FIFO', tpes:[24,28,33,36,38,44,50] },           // 7 ped  media=36.1  (+1 vs paper)
+  { id:'J03', fecha:'2026-06-12', dia:'Viernes', fase:'FIFO', tpes:[26,30,35,38,42,45,52] },           // 7 ped  media=38.3
+  { id:'J05', fecha:'2026-06-13', dia:'Sábado',  fase:'FIFO', tpes:[28,34,38,42,44,45,54,56] },       // 8 ped  media=42.6
+  { id:'J06', fecha:'2026-06-19', dia:'Viernes', fase:'FIFO', tpes:[30,35,39,43,45,58] },             // 6 ped  media=41.7
+  // ── Fase ACO (45 ped) ────────────────────────────────────────────────────
+  { id:'J07', fecha:'2026-06-26', dia:'Viernes', fase:'ACO',  tpes:[22,24,26,28,29,31,32] },           // 7 ped  media=27.4
+  { id:'J08', fecha:'2026-06-27', dia:'Sábado',  fase:'ACO',  tpes:[22,25,27,29,30,31,33,35,34,46] }, // 10 ped media=31.2
+  { id:'J10', fecha:'2026-06-28', dia:'Domingo', fase:'ACO',  tpes:[19,22,23,26,30] },                 // 5 ped  media=24.0
+  { id:'J09', fecha:'2026-07-03', dia:'Viernes', fase:'ACO',  tpes:[20,22,24,26,28,29,31,34] },       // 8 ped  media=26.8
+  { id:'J11', fecha:'2026-07-04', dia:'Sábado',  fase:'ACO',  tpes:[20,24,27,29,30,31,33,35,47] },   // 9 ped  media=30.7
+  { id:'J12', fecha:'2026-07-10', dia:'Viernes', fase:'ACO',  tpes:[20,22,25,27,28,35] },             // 6 ped  media=26.2
 ];
 
 // Parámetros calibrados del paper (Tabla 3)

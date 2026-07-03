@@ -112,36 +112,51 @@ function PaginaAdmin() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SeccionDashboard() {
-  const orders  = useStore((s) => s.orders);
-  const drivers = useStore((s) => s.drivers);
+  const [pedidos, setPedidos]   = useState<import("@/lib/api").PedidoApi[]>([]);
+  const [cargando, setCargando] = useState(true);
 
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const hoyMs = hoy.getTime();
+  useEffect(() => {
+    api.listarPedidos()
+      .then(setPedidos)
+      .catch(() => {})
+      .finally(() => setCargando(false));
+  }, []);
 
-  const pedidosHoy    = orders.filter((o) => o.createdAt >= hoyMs);
-  const entregadosHoy = pedidosHoy.filter((o) => o.status === "entregado");
-  const activosHoy    = pedidosHoy.filter((o) => ["asignado", "en_camino"].includes(o.status));
-  const repartidoresActivos = drivers.filter((d) => d.activo !== false).length;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+
+  const pedidosHoy     = pedidos.filter((p) => new Date(p.Creacion_Pedido) >= hoy);
+  const activosHoy     = pedidosHoy.filter((p) => ["asignado", "en_camino"].includes(p.Estado));
+  const entregadosHoy  = pedidosHoy.filter((p) => p.Estado === "entregado");
+
+  const repsActivos = new Set(
+    pedidos.filter((p) => ["asignado", "en_camino"].includes(p.Estado) && p.Id_Repartidor)
+           .map((p) => p.Id_Repartidor)
+  ).size;
 
   const tasaCumplimiento = pedidosHoy.length > 0
     ? Math.round((entregadosHoy.length / pedidosHoy.length) * 100)
     : 0;
 
   const tiempoPromedio = (() => {
-    const conTiempos = orders.filter((o) => o.deliveredAt && o.assignedAt);
+    const conTiempos = pedidos.filter((p) => p.Entrega_Pedido && p.Creacion_Pedido);
     if (!conTiempos.length) return null;
-    const suma = conTiempos.reduce((acc, o) => acc + (o.deliveredAt! - o.assignedAt!), 0);
+    const suma = conTiempos.reduce(
+      (acc, p) => acc + (new Date(p.Entrega_Pedido!).getTime() - new Date(p.Creacion_Pedido).getTime()), 0
+    );
     return Math.round(suma / conTiempos.length / 60000);
   })();
 
   const pedidosPorEstado = [
-    { label: "Sin asignar", count: orders.filter((o) => o.status === "sin_asignar").length, color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
-    { label: "Asignados",   count: orders.filter((o) => o.status === "asignado").length,    color: "bg-accent/20 text-accent-foreground" },
-    { label: "En camino",   count: orders.filter((o) => o.status === "en_camino").length,   color: "bg-primary/15 text-primary" },
-    { label: "Entregados",  count: orders.filter((o) => o.status === "entregado").length,   color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-    { label: "Cancelados",  count: orders.filter((o) => o.status === "cancelado").length,   color: "bg-destructive/15 text-destructive" },
+    { label: "Sin asignar", count: pedidos.filter((p) => p.Estado === "sin_asignar").length, color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
+    { label: "Asignados",   count: pedidos.filter((p) => p.Estado === "asignado").length,    color: "bg-accent/20 text-accent-foreground" },
+    { label: "En camino",   count: pedidos.filter((p) => p.Estado === "en_camino").length,   color: "bg-primary/15 text-primary" },
+    { label: "Entregados",  count: pedidos.filter((p) => p.Estado === "entregado").length,   color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+    { label: "Cancelados",  count: pedidos.filter((p) => p.Estado === "cancelado").length,   color: "bg-destructive/15 text-destructive" },
   ];
+
+  const recientes = [...pedidos]
+    .sort((a, b) => new Date(b.Creacion_Pedido).getTime() - new Date(a.Creacion_Pedido).getTime())
+    .slice(0, 10);
 
   return (
     <div className="space-y-8">
@@ -150,47 +165,58 @@ function SeccionDashboard() {
         <p className="mt-1 text-sm text-muted-foreground">Resumen operativo en tiempo real.</p>
       </div>
 
-      {/* KPIs principales */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard titulo="Pedidos hoy"        valor={pedidosHoy.length}                                sufijo=""         highlight />
-        <KpiCard titulo="Activos ahora"      valor={activosHoy.length}                                sufijo=""         />
-        <KpiCard titulo="Repartidores activos" valor={repartidoresActivos}                            sufijo=""         />
-        <KpiCard titulo="Tasa de cumplimiento" valor={`${tasaCumplimiento}%`}                         sufijo=""         highlight />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <KpiCard titulo="Tiempo promedio de entrega" valor={tiempoPromedio !== null ? `${tiempoPromedio} min` : "Sin datos"} sufijo="" />
-        <KpiCard titulo="Total pedidos sistema"      valor={orders.length}                            sufijo=""         />
-      </div>
-
-      {/* Distribución por estado */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h2 className="mb-4 text-base font-semibold">Distribución por estado</h2>
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {pedidosPorEstado.map((e) => (
-            <div key={e.label} className={`rounded-xl px-4 py-3 text-center ${e.color}`}>
-              <div className="text-2xl font-bold">{e.count}</div>
-              <div className="mt-0.5 text-xs font-medium">{e.label}</div>
-            </div>
-          ))}
+      {cargando ? (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Cargando datos...
         </div>
-      </div>
-
-      {/* Últimos pedidos del día */}
-      {pedidosHoy.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="mb-4 text-base font-semibold">Pedidos de hoy</h2>
-          <div className="space-y-2">
-            {pedidosHoy.slice(0, 10).map((o) => (
-              <div key={o.id} className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-4 py-2.5 text-sm">
-                <span className="font-mono text-xs text-muted-foreground">{o.id}</span>
-                <span className="font-medium">{o.customer}</span>
-                <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[o.status] ?? ""}`}>
-                  {ESTADO_PEDIDO[o.status] ?? o.status}
-                </span>
-              </div>
-            ))}
+      ) : (
+        <>
+          {/* KPIs principales */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard titulo="Pedidos hoy"          valor={pedidosHoy.length}          sufijo="" highlight />
+            <KpiCard titulo="Activos ahora"         valor={activosHoy.length}          sufijo="" />
+            <KpiCard titulo="Repartidores activos"  valor={repsActivos}                sufijo="" />
+            <KpiCard titulo="Tasa de cumplimiento"  valor={`${tasaCumplimiento}%`}     sufijo="" highlight />
           </div>
-        </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <KpiCard titulo="Tiempo promedio de entrega" valor={tiempoPromedio !== null ? `${tiempoPromedio} min` : "Sin datos"} sufijo="" />
+            <KpiCard titulo="Total pedidos sistema"      valor={pedidos.length}         sufijo="" />
+          </div>
+
+          {/* Distribución por estado */}
+          <div className="rounded-xl border border-border bg-card p-6">
+            <h2 className="mb-4 text-base font-semibold">Distribución por estado</h2>
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {pedidosPorEstado.map((e) => (
+                <div key={e.label} className={`rounded-xl px-4 py-3 text-center ${e.color}`}>
+                  <div className="text-2xl font-bold">{e.count}</div>
+                  <div className="mt-0.5 text-xs font-medium">{e.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Últimos pedidos */}
+          <div className="rounded-xl border border-border bg-card p-6">
+            <h2 className="mb-4 text-base font-semibold">Últimos pedidos</h2>
+            {recientes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin pedidos registrados.</p>
+            ) : (
+              <div className="space-y-2">
+                {recientes.map((p) => (
+                  <div key={p.Id_Pedido} className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-4 py-2.5 text-sm">
+                    <span className="font-mono text-xs text-muted-foreground">#{p.Id_Pedido}</span>
+                    <span className="font-medium">{p.Nombre_Cliente ?? "Cliente"}</span>
+                    <span className="text-xs text-muted-foreground">{p.Creacion_Pedido?.slice(0, 10)}</span>
+                    <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}>
+                      {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -212,74 +238,179 @@ function KpiCard({ titulo, valor, sufijo, highlight }: { titulo: string; valor: 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SeccionReportes() {
-  const orders  = useStore((s) => s.orders);
-  const drivers = useStore((s) => s.drivers);
+  type T = import("@/lib/api").ReporteTiemposApi;
+  type R = import("@/lib/api").RankingRepartidorApi;
+  type P = import("@/lib/api").PedidoApi;
+  type F = import("@/lib/api").PilotoFaseApi;
+  type A = import("@/lib/api").AuditoriaApi;
 
-  const entregados = orders.filter((o) => o.status === "entregado");
+  const [tiempos,   setTiempos]   = useState<T | null>(null);
+  const [ranking,   setRanking]   = useState<R[]>([]);
+  const [pedidos,   setPedidos]   = useState<P[]>([]);
+  const [piloto,    setPiloto]    = useState<F[]>([]);
+  const [auditoria, setAuditoria] = useState<A[]>([]);
+  const [cargando,  setCargando]  = useState(true);
+  const [desde,     setDesde]     = useState("");
+  const [hasta,     setHasta]     = useState("");
 
-  // Métricas de tiempos
-  const tiempos = entregados
-    .filter((o) => o.deliveredAt && o.assignedAt)
-    .map((o) => Math.round((o.deliveredAt! - o.assignedAt!) / 60000));
+  const cargarTiempos = (d?: string, h?: string) =>
+    api.reporteTiempos(d || h ? { desde: d, hasta: h } : undefined).then(setTiempos).catch(() => {});
 
-  const promedio  = tiempos.length ? Math.round(tiempos.reduce((a, b) => a + b, 0) / tiempos.length) : null;
-  const minimo    = tiempos.length ? Math.min(...tiempos) : null;
-  const maximo    = tiempos.length ? Math.max(...tiempos) : null;
-  const desviacion = tiempos.length > 1
-    ? Math.round(Math.sqrt(tiempos.reduce((a, b) => a + Math.pow(b - (promedio ?? 0), 2), 0) / tiempos.length))
-    : null;
+  useEffect(() => {
+    setCargando(true);
+    Promise.all([
+      cargarTiempos(),
+      api.reporteRepartidores().then(setRanking).catch(() => {}),
+      api.listarPedidos().then(setPedidos).catch(() => {}),
+      api.reportePiloto().then(setPiloto).catch(() => {}),
+      api.listarAuditoria({ limite: 50 }).then(setAuditoria).catch(() => {}),
+    ]).finally(() => setCargando(false));
+  }, []);
 
-  // Ranking de repartidores
-  const rankingDrivers = drivers.map((d) => {
-    const entregasConductor = entregados.filter((o) => o.driverId === d.id);
-    const tiemposConductor  = entregasConductor
-      .filter((o) => o.deliveredAt && o.assignedAt)
-      .map((o) => Math.round((o.deliveredAt! - o.assignedAt!) / 60000));
-    const promedioPropio = tiemposConductor.length
-      ? Math.round(tiemposConductor.reduce((a, b) => a + b, 0) / tiemposConductor.length)
-      : null;
-    return { driver: d, entregas: entregasConductor.length, promedioMin: promedioPropio };
-  }).sort((a, b) => b.entregas - a.entregas);
+  const promGlobal = tiempos?.promedio ?? 0;
 
-  const promGlobal = promedio ?? 0;
+  // Agrupar piloto por fase para resumen
+  const faseSummary = ["FIFO", "ACO"].map((f) => {
+    const rows = piloto.filter((r) => r.fase === f);
+    if (!rows.length) return null;
+    const totalN   = rows.reduce((s, r) => s + r.n, 0);
+    const tpeProm  = totalN ? rows.reduce((s, r) => s + r.tpe_promedio * r.n, 0) / totalN : 0;
+    const pct45    = totalN ? rows.reduce((s, r) => s + (r.pct_45min * r.n) / 100, 0) / totalN * 100 : 0;
+    const tpeMin   = Math.min(...rows.map((r) => r.tpe_min));
+    const tpeMax   = Math.max(...rows.map((r) => r.tpe_max));
+    return { fase: f, n: totalN, tpeProm: tpeProm.toFixed(1), tpeMin, tpeMax, pct45: pct45.toFixed(1) };
+  }).filter(Boolean);
+
+  const EVENTO_COLOR: Record<string, string> = {
+    login_ok:          "bg-emerald-500/10 text-emerald-700",
+    login_fallido:     "bg-destructive/10 text-destructive",
+    repartidor_creado: "bg-blue-500/10 text-blue-700",
+    pedido_creado:     "bg-accent/10 text-accent-foreground",
+    aco_config_update: "bg-purple-500/10 text-purple-700",
+  };
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Reportes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Análisis de tiempos de entrega y desempeño de repartidores.
+          Estadísticas en tiempo real desde SQL Server.
         </p>
       </div>
 
-      {/* Resumen estadístico HU026 */}
+      {cargando && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Cargando datos…
+        </div>
+      )}
+
+      {/* ── Filtro de fechas ───────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-card p-4">
+        <label className="space-y-1 text-sm">
+          <span className="text-muted-foreground">Desde</span>
+          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
+            className="block rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-muted-foreground">Hasta</span>
+          <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)}
+            className="block rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
+        </label>
+        <button
+          onClick={() => cargarTiempos(desde || undefined, hasta || undefined)}
+          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:brightness-105"
+        >
+          Aplicar filtro
+        </button>
+        {(desde || hasta) && (
+          <button onClick={() => { setDesde(""); setHasta(""); cargarTiempos(); }}
+            className="text-sm text-muted-foreground hover:text-foreground">
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      {/* ── Tiempos de entrega (HU026) ─────────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h2 className="mb-4 text-base font-semibold">Tiempos de entrega</h2>
-        {tiempos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no hay entregas completadas con datos de tiempo.</p>
+        <h2 className="mb-4 text-base font-semibold">Tiempos de entrega (entregas completadas)</h2>
+        {!tiempos || tiempos.total === 0 ? (
+          <p className="text-sm text-muted-foreground">Sin entregas completadas en el período seleccionado.</p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Promedio</p>
-              <p className="mt-1 text-2xl font-bold text-accent-foreground">{promedio} min</p>
-            </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Mínimo</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-600">{minimo} min</p>
-            </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Máximo</p>
-              <p className="mt-1 text-2xl font-bold text-primary">{maximo} min</p>
-            </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Desv. estándar</p>
-              <p className="mt-1 text-2xl font-bold">{desviacion} min</p>
-            </div>
+          <div className="grid gap-4 sm:grid-cols-5">
+            {[
+              { label: "Total entregas",  val: tiempos.total,                             color: "" },
+              { label: "Promedio",        val: tiempos.promedio != null ? `${tiempos.promedio} min` : "—",   color: "text-accent-foreground" },
+              { label: "Mínimo",          val: tiempos.minimo   != null ? `${tiempos.minimo} min`   : "—",   color: "text-emerald-600" },
+              { label: "Máximo",          val: tiempos.maximo   != null ? `${tiempos.maximo} min`   : "—",   color: "text-primary" },
+              { label: "Desv. estándar",  val: tiempos.desviacion != null ? `${Math.round(tiempos.desviacion)} min` : "—", color: "" },
+            ].map((c) => (
+              <div key={c.label} className="rounded-xl border border-border bg-muted/30 p-4 text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{c.label}</p>
+                <p className={`mt-1 text-2xl font-bold ${c.color}`}>{c.val}</p>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Ranking de repartidores HU027 */}
+      {/* ── Comparativa FIFO vs ACO (tesis) ───────────────────────────────── */}
+      {faseSummary.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="mb-1 text-base font-semibold">Comparativa piloto — FIFO vs ACO</h2>
+          <p className="mb-4 text-xs text-muted-foreground">Datos del experimento de la tesis (Tabla A.1)</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {faseSummary.map((f) => f && (
+              <div key={f.fase} className={`rounded-xl border p-5 ${f.fase === "ACO" ? "border-accent/40 bg-accent/5" : "border-border bg-muted/20"}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`rounded-md px-2.5 py-0.5 text-sm font-bold ${f.fase === "ACO" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}>
+                    {f.fase}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{f.n} pedidos</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">TPE promedio</span><span className="font-bold">{f.tpeProm} min</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">TPE mínimo</span><span>{f.tpeMin} min</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">TPE máximo</span><span>{f.tpeMax} min</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Entregas ≤ 45 min</span>
+                    <span className={`font-semibold ${parseFloat(f.pct45) >= 80 ? "text-emerald-600" : "text-destructive"}`}>{f.pct45}%</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Tabla por jornada */}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-secondary text-secondary-foreground">
+                <tr className="text-left">
+                  <Encabezado>Jornada</Encabezado>
+                  <Encabezado>Fase</Encabezado>
+                  <Encabezado>Pedidos</Encabezado>
+                  <Encabezado>TPE promedio</Encabezado>
+                  <Encabezado>TPE min</Encabezado>
+                  <Encabezado>TPE max</Encabezado>
+                  <Encabezado>≤ 45 min</Encabezado>
+                </tr>
+              </thead>
+              <tbody>
+                {piloto.map((r) => (
+                  <tr key={`${r.fase}-${r.jornada}`} className="border-t border-border">
+                    <Celda className="font-mono">{r.jornada}</Celda>
+                    <Celda><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${r.fase === "ACO" ? "bg-accent/15 text-accent-foreground" : "bg-secondary"}`}>{r.fase}</span></Celda>
+                    <Celda>{r.n}</Celda>
+                    <Celda className="font-medium">{r.tpe_promedio} min</Celda>
+                    <Celda>{r.tpe_min} min</Celda>
+                    <Celda>{r.tpe_max} min</Celda>
+                    <Celda className={parseFloat(String(r.pct_45min)) >= 80 ? "text-emerald-600 font-semibold" : "text-destructive"}>{r.pct_45min}%</Celda>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Ranking repartidores (HU027) ──────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-6">
         <h2 className="mb-4 text-base font-semibold">Desempeño de repartidores</h2>
         <div className="overflow-x-auto">
@@ -288,93 +419,128 @@ function SeccionReportes() {
               <tr className="text-left">
                 <Encabezado>#</Encabezado>
                 <Encabezado>Repartidor</Encabezado>
-                <Encabezado>Entregas</Encabezado>
-                <Encabezado>Tiempo promedio</Encabezado>
-                <Encabezado>Estado</Encabezado>
+                <Encabezado>Total asignados</Encabezado>
+                <Encabezado>Entregados</Encabezado>
+                <Encabezado>TPE promedio</Encabezado>
+                <Encabezado>Alerta</Encabezado>
               </tr>
             </thead>
             <tbody>
-              {rankingDrivers.map((r, i) => {
-                const bajDesempeno = promGlobal > 0 && r.promedioMin !== null && r.promedioMin > promGlobal * 1.3;
+              {ranking.map((r, i) => {
+                const bajDesempeno = promGlobal > 0 && r.avg_minutos != null && r.avg_minutos > promGlobal * 1.3;
                 return (
-                  <tr key={r.driver.id} className="border-t border-border">
-                    <Celda className="text-muted-foreground font-mono text-xs">#{i + 1}</Celda>
+                  <tr key={r.Id_Usuario} className="border-t border-border">
+                    <Celda className="font-mono text-xs text-muted-foreground">#{i + 1}</Celda>
                     <Celda>
-                      <div className="font-medium">{r.driver.name}</div>
-                      <div className="text-xs text-muted-foreground font-mono">{r.driver.id}</div>
+                      <div className="font-medium">{r.Nombre}</div>
+                      <div className="text-xs text-muted-foreground font-mono">ID #{r.Id_Usuario}</div>
                     </Celda>
+                    <Celda>{r.total_pedidos}</Celda>
+                    <Celda><span className="font-semibold text-emerald-700 dark:text-emerald-400">{r.entregados}</span></Celda>
                     <Celda>
-                      <span className="font-semibold">{r.entregas}</span>
-                    </Celda>
-                    <Celda>
-                      {r.promedioMin !== null
-                        ? <span className={bajDesempeno ? "text-destructive font-semibold" : ""}>{r.promedioMin} min</span>
+                      {r.avg_minutos != null
+                        ? <span className={bajDesempeno ? "text-destructive font-semibold" : ""}>{Math.round(r.avg_minutos)} min</span>
                         : <span className="text-muted-foreground">—</span>}
                     </Celda>
                     <Celda>
-                      {bajDesempeno ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                          <AlertTriangle className="h-3 w-3" /> Atención
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                          OK
-                        </span>
-                      )}
+                      {bajDesempeno
+                        ? <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"><AlertTriangle className="h-3 w-3" /> Atención</span>
+                        : <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">OK</span>}
                     </Celda>
                   </tr>
                 );
               })}
-              {rankingDrivers.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No hay repartidores registrados.
-                  </td>
-                </tr>
+              {ranking.length === 0 && !cargando && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">Sin datos de repartidores.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Historial de pedidos */}
+      {/* ── Historial de pedidos (HU028) ──────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h2 className="mb-4 text-base font-semibold">Historial de pedidos</h2>
+        <h2 className="mb-4 text-base font-semibold">Historial de pedidos (últimos 20)</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-secondary text-secondary-foreground">
               <tr className="text-left">
-                <Encabezado>ID</Encabezado>
+                <Encabezado>#</Encabezado>
                 <Encabezado>Cliente</Encabezado>
                 <Encabezado>Repartidor</Encabezado>
                 <Encabezado>Estado</Encabezado>
-                <Encabezado>T. entrega</Encabezado>
+                <Encabezado>TPE</Encabezado>
                 <Encabezado>Fecha</Encabezado>
               </tr>
             </thead>
             <tbody>
-              {[...orders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 20).map((o) => {
-                const driver = drivers.find((d) => d.id === o.driverId);
-                const tEntrega = o.deliveredAt && o.assignedAt
-                  ? Math.round((o.deliveredAt - o.assignedAt) / 60000)
+              {pedidos.slice(0, 20).map((p) => {
+                const tpe = p.Entrega_Pedido && p.Creacion_Pedido
+                  ? Math.round((new Date(p.Entrega_Pedido).getTime() - new Date(p.Creacion_Pedido).getTime()) / 60000)
+                  : null;
+                const repNombre = p.Nombre_Repartidor
+                  ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim()
                   : null;
                 return (
-                  <tr key={o.id} className="border-t border-border">
-                    <Celda className="font-mono text-xs">{o.id}</Celda>
-                    <Celda>{o.customer}</Celda>
-                    <Celda>{driver?.name ?? <span className="text-muted-foreground">—</span>}</Celda>
+                  <tr key={p.Id_Pedido} className="border-t border-border">
+                    <Celda className="font-mono text-xs text-muted-foreground">#{p.Id_Pedido}</Celda>
+                    <Celda>{p.Nombre_Cliente} {p.Apellido_Cliente}</Celda>
+                    <Celda>{repNombre ?? <span className="text-muted-foreground">—</span>}</Celda>
                     <Celda>
-                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[o.status] ?? ""}`}>
-                        {ESTADO_PEDIDO[o.status] ?? o.status}
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}>
+                        {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
                       </span>
                     </Celda>
-                    <Celda>{tEntrega !== null ? `${tEntrega} min` : <span className="text-muted-foreground">—</span>}</Celda>
-                    <Celda className="text-xs text-muted-foreground">
-                      {new Date(o.createdAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                    <Celda>{tpe != null ? `${tpe} min` : <span className="text-muted-foreground">—</span>}</Celda>
+                    <Celda className="text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(p.Creacion_Pedido).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
                     </Celda>
                   </tr>
                 );
               })}
+              {pedidos.length === 0 && !cargando && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">Sin pedidos registrados.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Log de auditoría (HU019) ──────────────────────────────────────── */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="mb-4 text-base font-semibold">Log de auditoría (últimos 50 eventos)</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary text-secondary-foreground">
+              <tr className="text-left">
+                <Encabezado>Timestamp</Encabezado>
+                <Encabezado>Usuario</Encabezado>
+                <Encabezado>Evento</Encabezado>
+                <Encabezado>Detalle</Encabezado>
+                <Encabezado>IP</Encabezado>
+              </tr>
+            </thead>
+            <tbody>
+              {auditoria.map((a) => (
+                <tr key={a.Id_Log} className="border-t border-border">
+                  <Celda className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(a.Timestamp).toLocaleString("es-PE", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })}
+                  </Celda>
+                  <Celda className="text-xs">
+                    {a.Nombre_Usuario ?? a.Email_Intento ?? <span className="text-muted-foreground">—</span>}
+                  </Celda>
+                  <Celda>
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${EVENTO_COLOR[a.Evento] ?? "bg-muted text-muted-foreground"}`}>
+                      {a.Evento}
+                    </span>
+                  </Celda>
+                  <Celda className="max-w-xs text-xs text-muted-foreground truncate">{a.Detalle ?? "—"}</Celda>
+                  <Celda className="font-mono text-xs text-muted-foreground">{a.IP ?? "—"}</Celda>
+                </tr>
+              ))}
+              {auditoria.length === 0 && !cargando && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">Sin eventos registrados.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -400,23 +566,22 @@ const ACO_RANGOS: Record<keyof AcoConfig, { min: number; max: number; step: numb
 
 function SeccionConfiguracion() {
   const acoConfig = useStore((s) => s.acoConfig);
-  const [local, setLocal]     = useState<AcoConfig>({ ...acoConfig });
-  const [errores, setErrores] = useState<Partial<Record<keyof AcoConfig, string>>>({});
-  const [guardado, setGuardado]   = useState(false);
-  const [cargando, setCargando]   = useState(true);
-  const [errorApi, setErrorApi]   = useState<string | null>(null);
-  const [guardando, setGuardando] = useState(false);
+  const [local,      setLocal]     = useState<AcoConfig>({ ...acoConfig });
+  const [guardada,   setGuardada]  = useState<AcoConfig>({ ...acoConfig });
+  const [errores,    setErrores]   = useState<Partial<Record<keyof AcoConfig, string>>>({});
+  const [guardado,   setGuardado]  = useState(false);
+  const [cargando,   setCargando]  = useState(true);
+  const [errorApi,   setErrorApi]  = useState<string | null>(null);
+  const [guardando,  setGuardando] = useState(false);
 
-  // Cargar config desde la BD al montar
   useEffect(() => {
     api.obtenerAcoConfig()
       .then((cfg) => {
         setLocal(cfg);
+        setGuardada(cfg);
         store.updateAcoConfig(cfg);
       })
-      .catch(() => {
-        // Sin backend: usar valores del store local
-      })
+      .catch(() => {})
       .finally(() => setCargando(false));
   }, []);
 
@@ -447,17 +612,18 @@ function SeccionConfiguracion() {
     setErrorApi(null);
     try {
       await api.guardarAcoConfig(local);
+      setGuardada({ ...local });
+      store.updateAcoConfig(local);
     } catch {
-      setErrorApi("No se pudo guardar en el servidor. Los cambios se aplicaron localmente.");
+      setErrorApi("No se pudo guardar en el servidor.");
     }
-    store.updateAcoConfig(local);
     setGuardando(false);
     setGuardado(true);
     setTimeout(() => setGuardado(false), 3000);
   }
 
   function handleReset() {
-    setLocal({ ...acoConfig });
+    setLocal({ ...guardada });
     setErrores({});
     setGuardado(false);
     setErrorApi(null);
@@ -548,19 +714,39 @@ function SeccionConfiguracion() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SeccionPedidos() {
-  const orders  = useStore((s) => s.orders);
-  const drivers = useStore((s) => s.drivers);
-  const [abierto, setAbierto] = useState(false);
-  const [copiado, setCopiado] = useState<string | null>(null);
+  const [pedidos,    setPedidos]    = useState<import("@/lib/api").PedidoApi[]>([]);
+  const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
+  const [cargando,   setCargando]   = useState(true);
+  const [abierto,    setAbierto]    = useState(false);
+  const [copiado,    setCopiado]    = useState<number | null>(null);
 
-  function copiarSeguimiento(id: string) {
-    const url = `${window.location.origin}/seguimiento/${id}`;
-    navigator.clipboard?.writeText(url);
+  const cargar = () => {
+    setCargando(true);
+    Promise.all([api.listarPedidos(), api.listarRepartidores()])
+      .then(([ps, rs]) => { setPedidos(ps); setRepartidores(rs); })
+      .catch(() => {})
+      .finally(() => setCargando(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  async function cambiarEstado(id: number, estado: string) {
+    await api.cambiarEstadoPedido(id, estado).catch(() => {});
+    cargar();
+  }
+
+  async function asignarRepartidor(idPedido: number, idRepartidor: number) {
+    await api.asignarPedido(idPedido, idRepartidor).catch(() => {});
+    cargar();
+  }
+
+  function copiarSeguimiento(id: number) {
+    navigator.clipboard?.writeText(`${window.location.origin}/seguimiento/${id}`);
     setCopiado(id);
     setTimeout(() => setCopiado(null), 1500);
   }
 
-  const repartidoresActivos = drivers.filter((d) => d.activo !== false);
+  const repsActivos = repartidores.filter((r) => r.Activo_Usuario);
 
   return (
     <>
@@ -568,7 +754,7 @@ function SeccionPedidos() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tablero de pedidos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Registra un nuevo pedido y asígnalo a un repartidor.
+            {cargando ? "Cargando…" : `${pedidos.length} pedido${pedidos.length !== 1 ? "s" : ""} registrados.`}
           </p>
         </div>
         <button
@@ -583,73 +769,79 @@ function SeccionPedidos() {
         <table className="w-full text-sm">
           <thead className="bg-secondary text-secondary-foreground">
             <tr className="text-left">
-              <Encabezado>Pedido</Encabezado>
+              <Encabezado>#</Encabezado>
               <Encabezado>Cliente</Encabezado>
               <Encabezado>Dirección</Encabezado>
-              <Encabezado>Alitas</Encabezado>
-              <Encabezado>Salsa</Encabezado>
+              <Encabezado>Productos</Encabezado>
               <Encabezado>Estado</Encabezado>
               <Encabezado>Repartidor</Encabezado>
-              <Encabezado>Seguimiento</Encabezado>
+              <Encabezado>Fecha</Encabezado>
+              <Encabezado>Enlace</Encabezado>
             </tr>
           </thead>
           <tbody>
-            {orders.map((o) => (
-              <tr key={o.id} className="border-t border-border">
-                <Celda className="font-mono text-xs">{o.id}</Celda>
-                <Celda>
-                  <div className="font-medium">{o.customer}</div>
-                  <div className="text-xs text-muted-foreground">{o.phone}</div>
-                </Celda>
-                <Celda className="max-w-xs text-muted-foreground">{o.address}</Celda>
-                <Celda>{o.wings}</Celda>
-                <Celda>
-                  <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                    {o.sauce}
-                  </span>
-                </Celda>
-                <Celda>
-                  <SelectEstado
-                    estado={o.status}
-                    onChange={(s) => store.setStatus(o.id, s)}
-                  />
-                </Celda>
-                <Celda>
-                  <select
-                    value={o.driverId ?? ""}
-                    onChange={(e) => { if (e.target.value) store.assignOrder(o.id, e.target.value); }}
-                    className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  >
-                    <option value="">Sin asignar</option>
-                    {repartidoresActivos.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </Celda>
-                <Celda>
-                  <button
-                    onClick={() => copiarSeguimiento(o.id)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary"
-                  >
-                    {copiado === o.id
-                      ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copiado</>
-                      : <><Copy className="h-3.5 w-3.5" /> Copiar enlace</>}
-                  </button>
-                </Celda>
+            {cargando ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </td>
               </tr>
-            ))}
-            {orders.length === 0 && (
+            ) : pedidos.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   Aún no hay pedidos — registra el primero.
                 </td>
               </tr>
+            ) : (
+              pedidos.map((p) => (
+                <tr key={p.Id_Pedido} className="border-t border-border">
+                  <Celda className="font-mono text-xs text-muted-foreground">#{p.Id_Pedido}</Celda>
+                  <Celda>
+                    <div className="font-medium">{p.Nombre_Cliente} {p.Apellido_Cliente}</div>
+                  </Celda>
+                  <Celda className="max-w-xs text-muted-foreground text-xs">{p.Direccion_Destino}</Celda>
+                  <Celda className="text-xs">{p.Productos ?? "—"}</Celda>
+                  <Celda>
+                    <SelectEstado
+                      estado={p.Estado}
+                      onChange={(s) => cambiarEstado(p.Id_Pedido, s)}
+                    />
+                  </Celda>
+                  <Celda>
+                    <select
+                      value={p.Id_Repartidor ?? ""}
+                      onChange={(e) => { if (e.target.value) asignarRepartidor(p.Id_Pedido, Number(e.target.value)); }}
+                      className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    >
+                      <option value="">Sin asignar</option>
+                      {repsActivos.map((r) => (
+                        <option key={r.Id_Usuario} value={r.Id_Usuario}>
+                          {r.Nombre_Usuario} {r.Apellido_Usuario}
+                        </option>
+                      ))}
+                    </select>
+                  </Celda>
+                  <Celda className="text-xs text-muted-foreground whitespace-nowrap">
+                    {p.Creacion_Pedido?.slice(0, 10)}
+                  </Celda>
+                  <Celda>
+                    <button
+                      onClick={() => copiarSeguimiento(p.Id_Pedido)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary"
+                    >
+                      {copiado === p.Id_Pedido
+                        ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copiado</>
+                        : <><Copy className="h-3.5 w-3.5" /> Copiar</>}
+                    </button>
+                  </Celda>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
 
-      {abierto && <DialogNuevoPedido onClose={() => setAbierto(false)} />}
+      {abierto && <DialogNuevoPedido onClose={() => { setAbierto(false); cargar(); }} />}
     </>
   );
 }
@@ -659,12 +851,22 @@ function SeccionPedidos() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SeccionRepartidores() {
-  const drivers = useStore((s) => s.drivers);
-  const [modalNuevo,  setModalNuevo]  = useState(false);
-  const [editando,    setEditando]    = useState<Driver | null>(null);
+  const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
+  const [cargando,     setCargando]     = useState(true);
+  const [modalNuevo,   setModalNuevo]   = useState(false);
+  const [editando,     setEditando]     = useState<import("@/lib/api").RepartidorApi | null>(null);
 
-  const total   = drivers.length;
-  const activos = drivers.filter((d) => d.activo !== false).length;
+  const cargar = () => {
+    setCargando(true);
+    api.listarRepartidores()
+      .then(setRepartidores)
+      .catch(() => {})
+      .finally(() => setCargando(false));
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const total   = repartidores.length;
+  const activos = repartidores.filter((r) => r.Activo_Usuario).length;
 
   return (
     <>
@@ -699,45 +901,37 @@ function SeccionRepartidores() {
             </tr>
           </thead>
           <tbody>
-            {drivers.map((d) => {
-              const activo = d.activo !== false;
+            {cargando ? (
+              <tr><td colSpan={7} className="px-4 py-12 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></td></tr>
+            ) : repartidores.map((r) => {
+              const activo = r.Activo_Usuario;
+              const nombre = `${r.Nombre_Usuario} ${r.Apellido_Usuario}`.trim();
               return (
-                <tr key={d.id} className={`border-t border-border ${activo ? "" : "opacity-60"}`}>
-                  {/* Avatar + nombre */}
+                <tr key={r.Id_Usuario} className={`border-t border-border ${activo ? "" : "opacity-60"}`}>
                   <Celda>
                     <div className="flex items-center gap-3">
-                      <Avatar nombre={d.name} activo={activo} />
+                      <Avatar nombre={nombre} activo={activo} />
                       <div>
-                        <div className="font-medium leading-tight">{d.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {d.id}
-                        </div>
+                        <div className="font-medium leading-tight">{nombre}</div>
+                        <div className="text-xs text-muted-foreground font-mono">ID #{r.Id_Usuario}</div>
                       </div>
                     </div>
                   </Celda>
-                  <Celda className="text-muted-foreground">{d.dni ?? "—"}</Celda>
-                  <Celda className="text-muted-foreground">{d.email ?? "—"}</Celda>
-                  <Celda className="text-muted-foreground">{d.phone ?? "—"}</Celda>
-                  <Celda>
-                    {d.zona
-                      ? <span className="rounded-md bg-secondary px-2 py-0.5 text-xs">{d.zona}</span>
-                      : <span className="text-muted-foreground">—</span>}
-                  </Celda>
-                  <Celda>
-                    <PastillaActivo activo={activo} />
-                  </Celda>
+                  <Celda className="text-muted-foreground">{r.DNI_Usuario ?? "—"}</Celda>
+                  <Celda className="text-muted-foreground">{r.Email_Usuario}</Celda>
+                  <Celda className="text-muted-foreground">{r.Telf_Usuario ?? "—"}</Celda>
+                  <Celda><span className="text-muted-foreground">—</span></Celda>
+                  <Celda><PastillaActivo activo={activo} /></Celda>
                   <Celda>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setEditando(d)}
-                        title="Editar datos"
+                        onClick={() => setEditando(r)}
                         className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary"
                       >
                         <Edit2 className="h-3.5 w-3.5" /> Editar
                       </button>
                       <button
-                        onClick={() => store.toggleActivoRepartidor(d.id)}
-                        title={activo ? "Desactivar cuenta" : "Activar cuenta"}
+                        onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
                         className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
                           activo
                             ? "border border-destructive/40 text-destructive hover:bg-destructive/10"
@@ -753,7 +947,7 @@ function SeccionRepartidores() {
                 </tr>
               );
             })}
-            {drivers.length === 0 && (
+            {!cargando && repartidores.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   Aún no hay repartidores registrados.
@@ -765,8 +959,8 @@ function SeccionRepartidores() {
       </div>
 
       {/* Modales */}
-      {modalNuevo && <DialogNuevoRepartidor onClose={() => setModalNuevo(false)} />}
-      {editando   && <DialogEditarRepartidor driver={editando} onClose={() => setEditando(null)} />}
+      {modalNuevo && <DialogNuevoRepartidor onClose={() => { setModalNuevo(false); cargar(); }} />}
+      {editando   && <DialogEditarRepartidor repartidor={editando} onClose={() => { setEditando(null); cargar(); }} />}
     </>
   );
 }
@@ -776,32 +970,32 @@ function SeccionRepartidores() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
-  const [nombre,  setNombre]  = useState("");
-  const [dni,     setDni]     = useState("");
-  const [correo,  setCorreo]  = useState("");
+  const [nombre,   setNombre]   = useState("");
+  const [apellido, setApellido] = useState("");
+  const [dni,      setDni]      = useState("");
+  const [correo,   setCorreo]   = useState("");
   const [telefono, setTelefono] = useState("");
-  const [zona,    setZona]    = useState("");
-  const [error,   setError]   = useState("");
+  const [error,    setError]    = useState("");
+  const [enviando, setEnviando] = useState(false);
 
-  // Estado post-creación: mostrar credenciales generadas
   const [credenciales, setCredenciales] = useState<{ correo: string; password: string } | null>(null);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (nombre.trim().length < 2) { setError("Ingresa el nombre completo."); return; }
-    if (!correo.includes("@"))    { setError("Ingresa un correo válido."); return; }
-
-    const resultado = store.agregarRepartidorAdmin({
-      name: nombre, dni, email: correo, phone: telefono, zona,
-    });
-
-    if (resultado.resultado === "email_taken") {
-      setError("Ya existe una cuenta con ese correo electrónico.");
-      return;
+    if (nombre.trim().length < 2) { setError("Ingresa el nombre."); return; }
+    if (!dni.trim())               { setError("El DNI es obligatorio."); return; }
+    if (!correo.includes("@"))     { setError("Ingresa un correo válido."); return; }
+    setEnviando(true);
+    try {
+      const res = await api.crearRepartidor({ nombre: nombre.trim(), apellido: apellido.trim(), email: correo.trim(), dni: dni.trim(), telefono: telefono.trim() });
+      setCredenciales({ correo: correo.trim(), password: res.passwordAuto });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg.includes("email_taken") ? "Ya existe una cuenta con ese correo." : "Error al registrar. Verifica los datos.");
+    } finally {
+      setEnviando(false);
     }
-
-    setCredenciales({ correo: resultado.driver.email!, password: resultado.passwordGenerado });
   }
 
   return (
@@ -816,30 +1010,30 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Campo label="Nombre completo" completo>
+            <Campo label="Nombre(s)">
               <input required maxLength={80} value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
-                className={clsInput} placeholder="Juan Pérez" />
+                className={clsInput} placeholder="Juan" />
+            </Campo>
+            <Campo label="Apellidos">
+              <input maxLength={80} value={apellido}
+                onChange={(e) => setApellido(e.target.value)}
+                className={clsInput} placeholder="Pérez García" />
             </Campo>
             <Campo label="DNI">
-              <input maxLength={15} value={dni}
+              <input required maxLength={8} value={dni}
                 onChange={(e) => setDni(e.target.value)}
                 className={clsInput} placeholder="12345678" />
             </Campo>
-            <Campo label="Correo electrónico">
+            <Campo label="Teléfono">
+              <input type="tel" maxLength={9} value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className={clsInput} placeholder="987654321" />
+            </Campo>
+            <Campo label="Correo electrónico" completo>
               <input required type="email" maxLength={120} value={correo}
                 onChange={(e) => setCorreo(e.target.value)}
                 className={clsInput} placeholder="juan@correo.com" />
-            </Campo>
-            <Campo label="Teléfono">
-              <input type="tel" maxLength={20} value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-                className={clsInput} placeholder="+51 999 999 999" />
-            </Campo>
-            <Campo label="Zona de reparto" completo>
-              <input maxLength={60} value={zona}
-                onChange={(e) => setZona(e.target.value)}
-                className={clsInput} placeholder="San Martín de Porres, Los Olivos…" />
             </Campo>
           </div>
 
@@ -847,7 +1041,9 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
 
           <div className="flex justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className={clsBtnSecundario}>Cancelar</button>
-            <button type="submit" className={clsBtnAccent}>Registrar repartidor</button>
+            <button type="submit" disabled={enviando} className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}>
+              {enviando ? <><Loader2 className="h-4 w-4 animate-spin" /> Registrando…</> : "Registrar repartidor"}
+            </button>
           </div>
         </form>
       ) : (
@@ -891,32 +1087,37 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
 // MODAL: EDITAR / DESACTIVAR REPARTIDOR  (HU005 los 3 escenarios)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function DialogEditarRepartidor({ driver, onClose }: { driver: Driver; onClose: () => void }) {
-  const [nombre,   setNombre]   = useState(driver.name);
-  const [dni,      setDni]      = useState(driver.dni ?? "");
-  const [correo,   setCorreo]   = useState(driver.email ?? "");
-  const [telefono, setTelefono] = useState(driver.phone ?? "");
-  const [zona,     setZona]     = useState(driver.zona ?? "");
+function DialogEditarRepartidor({ repartidor: r, onClose }: { repartidor: import("@/lib/api").RepartidorApi; onClose: () => void }) {
+  const [nombre,   setNombre]   = useState(r.Nombre_Usuario);
+  const [apellido, setApellido] = useState(r.Apellido_Usuario);
+  const [dni,      setDni]      = useState(r.DNI_Usuario ?? "");
+  const [correo,   setCorreo]   = useState(r.Email_Usuario);
+  const [telefono, setTelefono] = useState(r.Telf_Usuario ?? "");
   const [guardado, setGuardado] = useState(false);
+  const [guardando, setGuardando] = useState(false);
   const [confirmarDesactivar, setConfirmarDesactivar] = useState(false);
 
-  const activo = driver.activo !== false;
+  const activo = r.Activo_Usuario;
 
-  function handleGuardar(e: FormEvent) {
+  async function handleGuardar(e: FormEvent) {
     e.preventDefault();
-    store.actualizarRepartidor(driver.id, {
-      name: nombre.trim(),
-      dni:  dni.trim() || undefined,
-      email: correo.trim() || undefined,
-      phone: telefono.trim() || undefined,
-      zona: zona.trim() || undefined,
-    });
-    setGuardado(true);
-    setTimeout(() => { setGuardado(false); onClose(); }, 1200);
+    setGuardando(true);
+    try {
+      await api.editarRepartidor(r.Id_Usuario, {
+        nombre: nombre.trim(), apellido: apellido.trim(),
+        email: correo.trim(), dni: dni.trim(), telefono: telefono.trim(),
+      });
+      setGuardado(true);
+      setTimeout(() => { setGuardado(false); onClose(); }, 1200);
+    } catch {
+      // sin feedback extra — onClose igual
+    } finally {
+      setGuardando(false);
+    }
   }
 
-  function handleToggleActivo() {
-    store.toggleActivoRepartidor(driver.id);
+  async function handleToggleActivo() {
+    await api.toggleRepartidor(r.Id_Usuario).catch(() => {});
     onClose();
   }
 
@@ -925,35 +1126,35 @@ function DialogEditarRepartidor({ driver, onClose }: { driver: Driver; onClose: 
       <div className="space-y-6">
         {/* Encabezado */}
         <div className="flex items-center gap-3">
-          <Avatar nombre={driver.name} activo={activo} size="lg" />
+          <Avatar nombre={`${r.Nombre_Usuario} ${r.Apellido_Usuario}`.trim()} activo={activo} size="lg" />
           <div>
             <h2 className="text-xl font-semibold">Editar repartidor</h2>
-            <p className="text-sm text-muted-foreground font-mono">{driver.id}</p>
+            <p className="text-sm text-muted-foreground font-mono">ID #{r.Id_Usuario}</p>
           </div>
         </div>
 
         {/* Formulario de edición */}
         <form onSubmit={handleGuardar} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Campo label="Nombre completo" completo>
+            <Campo label="Nombre(s)">
               <input required maxLength={80} value={nombre}
                 onChange={(e) => setNombre(e.target.value)} className={clsInput} />
             </Campo>
+            <Campo label="Apellidos">
+              <input maxLength={80} value={apellido}
+                onChange={(e) => setApellido(e.target.value)} className={clsInput} />
+            </Campo>
             <Campo label="DNI">
-              <input maxLength={15} value={dni}
+              <input maxLength={8} value={dni}
                 onChange={(e) => setDni(e.target.value)} className={clsInput} placeholder="12345678" />
             </Campo>
-            <Campo label="Correo electrónico">
-              <input type="email" maxLength={120} value={correo}
-                onChange={(e) => setCorreo(e.target.value)} className={clsInput} />
-            </Campo>
             <Campo label="Teléfono">
-              <input type="tel" maxLength={20} value={telefono}
+              <input type="tel" maxLength={9} value={telefono}
                 onChange={(e) => setTelefono(e.target.value)} className={clsInput} />
             </Campo>
-            <Campo label="Zona de reparto" completo>
-              <input maxLength={60} value={zona}
-                onChange={(e) => setZona(e.target.value)} className={clsInput} />
+            <Campo label="Correo electrónico" completo>
+              <input type="email" maxLength={120} value={correo}
+                onChange={(e) => setCorreo(e.target.value)} className={clsInput} />
             </Campo>
           </div>
 
@@ -961,7 +1162,9 @@ function DialogEditarRepartidor({ driver, onClose }: { driver: Driver; onClose: 
             {guardado && <span className="text-sm text-emerald-600 font-medium">✓ Cambios guardados</span>}
             <div className="ml-auto flex gap-3">
               <button type="button" onClick={onClose} className={clsBtnSecundario}>Cancelar</button>
-              <button type="submit" className={clsBtnAccent}>Guardar cambios</button>
+              <button type="submit" disabled={guardando} className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}>
+                {guardando ? <><Loader2 className="h-4 w-4 animate-spin" /> Guardando…</> : "Guardar cambios"}
+              </button>
             </div>
           </div>
         </form>
@@ -996,7 +1199,7 @@ function DialogEditarRepartidor({ driver, onClose }: { driver: Driver; onClose: 
             <div className="space-y-3">
               <p className="text-sm font-medium">
                 ¿Confirmas que quieres {activo ? "desactivar" : "reactivar"} la cuenta de{" "}
-                <span className="text-foreground">{driver.name}</span>?
+                <span className="text-foreground">{r.Nombre_Usuario} {r.Apellido_Usuario}</span>?
               </p>
               <div className="flex gap-2">
                 <button

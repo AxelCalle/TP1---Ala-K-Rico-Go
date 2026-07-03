@@ -150,4 +150,32 @@ router.get('/zonas', soloAdmin, async (req, res) => {
   }
 });
 
+// GET /api/reportes/piloto  — comparativa FIFO vs ACO (tesis)
+router.get('/piloto', soloAdmin, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT
+        JSON_VALUE(v.Productos, '$[1]._fase')     AS fase,
+        JSON_VALUE(v.Productos, '$[1]._jornada')  AS jornada,
+        COUNT(*)                                   AS n,
+        CAST(AVG(CAST(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido) AS FLOAT)) AS DECIMAL(5,1)) AS tpe_promedio,
+        MIN(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido))  AS tpe_min,
+        MAX(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido))  AS tpe_max,
+        CAST(100.0 * SUM(CASE WHEN DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido) <= 45 THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(4,1)) AS pct_45min
+      FROM AKR_Pedidos v
+      WHERE v.Estado = 'entregado'
+        AND v.Entrega_Pedido IS NOT NULL
+        AND v.Productos IS NOT NULL
+        AND JSON_VALUE(v.Productos, '$[1]._fase') IN ('FIFO', 'ACO')
+      GROUP BY JSON_VALUE(v.Productos, '$[1]._fase'), JSON_VALUE(v.Productos, '$[1]._jornada')
+      ORDER BY fase, jornada
+    `);
+    return res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /reportes/piloto:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
 export default router;

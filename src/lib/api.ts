@@ -132,6 +132,24 @@ export type ReporteTiemposApi = {
   desviacion: number | null;
 };
 
+export type RankingRepartidorApi = {
+  Id_Usuario: number;
+  Nombre: string;
+  total_pedidos: number;
+  entregados: number;
+  avg_minutos: number | null;
+};
+
+export type PilotoFaseApi = {
+  fase: "FIFO" | "ACO";
+  jornada: string;
+  n: number;
+  tpe_promedio: number;
+  tpe_min: number;
+  tpe_max: number;
+  pct_45min: number;
+};
+
 export type AuditoriaApi = {
   Id_Log: number;
   Id_Usuario: number | null;
@@ -284,6 +302,16 @@ export const api = {
     });
   },
 
+  async editarRepartidor(id: number, datos: {
+    nombre: string; apellido?: string; email: string; dni?: string; telefono?: string;
+  }): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>(`/api/repartidores/${id}`, {
+      method: "PUT",
+      headers: cabeceraAuth(),
+      body: JSON.stringify(datos),
+    });
+  },
+
   async toggleRepartidor(id: number): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/repartidores/${id}/toggle`, {
       method: "PATCH",
@@ -373,12 +401,16 @@ export const api = {
     );
   },
 
-  async reporteRepartidores(): Promise<RepartidorApi[]> {
-    return solicitar<RepartidorApi[]>("/api/reportes/repartidores", { headers: cabeceraAuth() });
+  async reporteRepartidores(): Promise<RankingRepartidorApi[]> {
+    return solicitar<RankingRepartidorApi[]>("/api/reportes/repartidores", { headers: cabeceraAuth() });
   },
 
   async reporteZonas(): Promise<{ lat: number; lng: number; frecuencia: number; avg_minutos: number | null }[]> {
     return solicitar("/api/reportes/zonas", { headers: cabeceraAuth() });
+  },
+
+  async reportePiloto(): Promise<PilotoFaseApi[]> {
+    return solicitar<PilotoFaseApi[]>("/api/reportes/piloto", { headers: cabeceraAuth() });
   },
 
   // ── Config ACO ────────────────────────────────────────────────────────────

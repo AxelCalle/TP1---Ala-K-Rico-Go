@@ -100,6 +100,32 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT /api/repartidores/:id  — admin edita datos de un repartidor
+router.put('/:id', async (req, res) => {
+  if (req.usuario.role !== 'admin') return res.status(403).json({ error: 'Solo admin.' });
+  const { nombre, apellido, email, dni, telefono } = req.body;
+  if (!nombre || !email) return res.status(400).json({ error: 'nombre y email son obligatorios.' });
+  try {
+    const pool = await getPool();
+    await pool.request()
+      .input('id',       sql.Int,          parseInt(req.params.id))
+      .input('nombre',   sql.NVarChar(100), nombre)
+      .input('apellido', sql.NVarChar(100), apellido || '')
+      .input('email',    sql.NVarChar(150), email)
+      .input('dni',      sql.NVarChar(9),   dni || '')
+      .input('tel',      sql.NVarChar(9),   telefono || '')
+      .query(`UPDATE AKR_Usuarios SET
+        Nombre_Usuario=@nombre, Apellido_Usuario=@apellido,
+        Email_Usuario=@email, DNI_Usuario=@dni, Telf_Usuario=@tel,
+        Modificacion_Usuario=GETDATE()
+        WHERE Id_Usuario=@id AND Id_Roles=2`);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /repartidores/:id:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
 // PATCH /api/repartidores/:id/toggle  — activar/desactivar
 router.patch('/:id/toggle', async (req, res) => {
   if (req.usuario.role !== 'admin') {
