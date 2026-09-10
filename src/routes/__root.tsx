@@ -4,11 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
-  HeadContent,
-  Scripts,
 } from "@tanstack/react-router";
-
-import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
   return (
@@ -68,61 +64,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      {
-        httpEquiv: "Content-Security-Policy",
-        content: [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline'",
-          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-          "font-src 'self' https://fonts.gstatic.com",
-          "connect-src 'self' http://localhost:3001 https://nominatim.openstreetmap.org https://photon.komoot.io https://router.project-osrm.org",
-          "img-src 'self' data: https://*.tile.openstreetmap.org https://*.openstreetmap.org",
-          "frame-src https://www.google.com",
-          "frame-ancestors 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-        ].join("; "),
-      },
-      { title: "Ala K' Rico GO" },
-      { name: "description", content: "Sistema de gestión de entregas — Ala K' Rico GO" },
-      { name: "author", content: "AlaKRicoGo" },
-      { property: "og:title", content: "Ala K' Rico GO" },
-      { property: "og:description", content: "Sistema de gestión de entregas — Ala K' Rico GO" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@AlaKRicoGo" },
-    ],
-    links: [
-      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" },
-      { rel: "stylesheet", href: appCss },
-    ],
-  }),
-  shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
-
-function RootShell({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
