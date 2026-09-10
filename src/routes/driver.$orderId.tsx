@@ -134,24 +134,6 @@ function PaginaRuta() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // En SSR localStorage no existe → order es undefined; solo tirar notFound en el cliente
-  if (!order) {
-    if (typeof window !== "undefined") throw notFound();
-    return null;
-  }
-
-  const urlNavegacion = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
-    PICKUP.address,
-  )}&destination=${encodeURIComponent(order.address)}&travelmode=driving`;
-
-  const distanceKm = resultadoACO
-    ? resultadoACO.distanceKm.toFixed(1)
-    : (2 + (order.id.charCodeAt(order.id.length - 1) % 5)).toFixed(1);
-
-  const etaMin = resultadoACO
-    ? resultadoACO.etaMin
-    : 5 + (order.id.charCodeAt(order.id.length - 1) % 8);
-
   const redibujar = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
