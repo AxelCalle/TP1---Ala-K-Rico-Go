@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 
+import { RESTAURANTE_COORDS } from "@/lib/constants";
+
 const NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse";
 
-/** Centro por defecto: Cocina Ala K' Rico GO */
-const CENTRO_DEFAULT: [number, number] = [-12.0278455, -77.0895871];
+const CENTRO_DEFAULT = RESTAURANTE_COORDS;
 
 interface Props {
   onSeleccion: (coords: [number, number], direccion: string) => void;

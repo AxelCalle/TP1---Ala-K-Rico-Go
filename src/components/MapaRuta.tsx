@@ -311,6 +311,131 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
   );
 }
 
+// ─── Mapa multi-parada ────────────────────────────────────────────────────────
+
+/** Obtiene la ruta real por calles para N paradas (≤ 25) usando OSRM. */
+async function obtenerRutaMulti(coords: Coords[]): Promise<Coords[]> {
+  if (coords.length < 2) return [];
+  try {
+    const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
+    const url = `${OSRM}/${waypoints}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.code !== "Ok") return [];
+    return data.routes[0].geometry.coordinates.map(
+      ([lng, lat]: [number, number]) => [lat, lng] as Coords,
+    );
+  } catch {
+    return [];
+  }
+}
+
+export interface MultiStop {
+  coords: Coords;
+  label: string;  // número o etiqueta corta
+  sublabel?: string;
+  color: string;
+}
+
+interface MultiProps {
+  stops: MultiStop[];
+  altura?: number;
+  className?: string;
+}
+
+/**
+ * Mapa de ruta multi-parada con Leaflet.
+ * Muestra marcadores numerados y la ruta real por calles (OSRM).
+ * stops[0] es siempre el depot (punto de origen).
+ */
+export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProps) {
+  const contenedorRef = useRef<HTMLDivElement>(null);
+  const mapaRef       = useRef<any>(null);
+  const [estado, setEstado] = useState<Estado>("cargando");
+
+  useEffect(() => {
+    if (!contenedorRef.current || stops.length < 2) return;
+    let activo = true;
+    setEstado("cargando");
+
+    async function montar() {
+      const L = (await import("leaflet")).default;
+      if (!activo || !contenedorRef.current) return;
+
+      if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
+
+      const mapa = L.map(contenedorRef.current, { zoomControl: true })
+        .setView(stops[0].coords, 13);
+      mapaRef.current = mapa;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(mapa);
+
+      setTimeout(() => { if (activo && mapaRef.current) mapaRef.current.invalidateSize(); }, 100);
+
+      // Ajustar vista para que quepan todas las paradas
+      const bounds = L.latLngBounds(stops.map((s) => s.coords)).pad(0.2);
+      mapa.fitBounds(bounds);
+
+      // Marcadores numerados
+      stops.forEach((stop, idx) => {
+        const icon = markerIcon(L, stop.label, stop.color);
+        const popup = idx === 0
+          ? "<b>Ala K' Rico GO</b><br><small>Punto de partida</small>"
+          : `<b>Parada ${idx}</b><br><small>${stop.sublabel ?? ""}</small>`;
+        L.marker(stop.coords, { icon }).addTo(mapa).bindPopup(popup);
+      });
+
+      if (!activo) return;
+
+      // Ruta real por calles
+      const coords: Coords[] = stops.map((s) => s.coords);
+      const puntos = await obtenerRutaMulti(coords);
+
+      if (!activo) return;
+
+      if (puntos.length > 0) {
+        L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
+        L.polyline(puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
+        setEstado("listo");
+      } else {
+        // Sin OSRM: línea recta entre paradas
+        L.polyline(coords, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(mapa);
+        setEstado("sin-ruta");
+      }
+
+      mapa.invalidateSize();
+    }
+
+    montar().catch(() => { if (activo) setEstado("error"); });
+
+    return () => {
+      activo = false;
+      if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
+    };
+  }, [stops]);
+
+  return (
+    <div className={`relative overflow-hidden ${className}`} style={{ height: altura }}>
+      {estado === "cargando" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted" style={{ zIndex: 1000 }}>
+          <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Trazando ruta…</p>
+        </div>
+      )}
+      {estado === "sin-ruta" && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
+          Ruta aproximada — servicio de calles no disponible
+        </div>
+      )}
+      <div ref={contenedorRef} className="h-full w-full" />
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function markerIcon(L: any, label: string, color: string) {

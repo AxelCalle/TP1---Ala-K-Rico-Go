@@ -1,18 +1,29 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  Bell, BellRing, ChefHat, ClipboardList, Drumstick, LogOut, Map, MapPin,
+  Bell, BellRing, ChefHat, ClipboardList, KeyRound, LogOut, Map, MapPin,
   PackageCheck, Phone, Plus, Search, ShoppingBag, Timer,
   Truck, User, UtensilsCrossed, X, XCircle,
 } from "lucide-react";
+import { LogoIcon } from "../components/Logo";
 import { store, useStore, SAUCES, TIPOS_DOCUMENTO, type Sauce, type TipoDocumento } from "@/lib/store";
 import { MapaRuta } from "@/components/MapaRuta";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
+import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
+import { geocodificarDireccion } from "@/lib/geo";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/cliente")({
   head: () => ({
     meta: [{ title: "Mi cuenta — Ala K' Rico GO" }],
   }),
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const session = store.get().session;
+    if (!session || session.role !== "customer") {
+      throw redirect({ to: "/login" });
+    }
+  },
   component: ClientePage,
 });
 
@@ -43,44 +54,8 @@ const STEPS = [
   { key: "entregado",   label: "Entregado",          sub: "¡Disfruta tus alitas!",             icon: PackageCheck },
 ] as const;
 
-const COORDS_RESTAURANTE: [number, number] = [-12.0278455, -77.0895871];
-const DIR_RESTAURANTE = "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú";
-
-// ─── Geocodificación al crear pedido ─────────────────────────────────────────
-
-async function geocodificarDireccion(dir: string): Promise<[number, number] | undefined> {
-  const base = dir.toLowerCase().includes("peru") || dir.toLowerCase().includes("perú")
-    ? dir : `${dir}, Lima, Peru`;
-  const sinNum = dir.normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/\b\d{4,5}\b/g, "").replace(/,\s*,/g, ",").trim();
-
-  for (const q of [base, `${sinNum}, Lima, Peru`]) {
-    try {
-      const params = new URLSearchParams({ q, format: "json", limit: "1", countrycodes: "pe" });
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-        headers: { "Accept-Language": "es" },
-      });
-      if (!res.ok) continue;
-      const data: { lat: string; lon: string }[] = await res.json();
-      if (data.length) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-    } catch { /* siguiente */ }
-  }
-
-  // Fallback Photon
-  try {
-    const params = new URLSearchParams({ q: `${sinNum}, Lima, Peru`, limit: "1", lang: "es" });
-    const res = await fetch(`https://photon.komoot.io/api?${params}&bbox=-77.5,-12.3,-76.7,-11.6`);
-    if (res.ok) {
-      const data: { features: { geometry: { coordinates: [number, number] } }[] } = await res.json();
-      if (data.features?.length) {
-        const [lng, lat] = data.features[0].geometry.coordinates;
-        return [lat, lng];
-      }
-    }
-  } catch { /* sin coords */ }
-
-  return undefined;
-}
+const COORDS_RESTAURANTE = RESTAURANTE_COORDS;
+const DIR_RESTAURANTE = RESTAURANTE_DIRECCION;
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
@@ -93,9 +68,22 @@ function ClientePage() {
   const [modalPedido, setModalPedido] = useState(false);
   const [montado, setMontado]         = useState(false);
   const [mostrarNotifs, setMostrarNotifs] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   // Marcar como montado (solo en el cliente, nunca en SSR)
   useEffect(() => { setMontado(true); }, []);
+
+  // Cerrar dropdown de notificaciones al hacer clic fuera
+  useEffect(() => {
+    if (!mostrarNotifs) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setMostrarNotifs(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [mostrarNotifs]);
 
   // Redirigir si no hay sesión de cliente (solo después de montar)
   useEffect(() => {
@@ -116,26 +104,25 @@ function ClientePage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
-              <Drumstick className="h-5 w-5" />
-            </span>
-            <span className="text-lg font-semibold tracking-tight">Ala K' Rico GO</span>
+            <LogoIcon size={28} />
+            <span className="hidden text-lg font-semibold tracking-tight sm:inline">Ala K' Rico GO</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Botón principal: hacer pedido */}
             <button
               onClick={() => setModalPedido(true)}
               className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
             >
-              <Plus className="h-4 w-4" /> Hacer pedido
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Hacer pedido</span>
             </button>
             <span className="hidden text-sm text-muted-foreground sm:inline">
               Hola, <span className="font-medium text-foreground">{nombre.split(" ")[0]}</span>
             </span>
             {/* Campana de notificaciones */}
-            <div className="relative">
+            <div className="relative" ref={notifRef}>
               <button
                 onClick={() => {
                   setMostrarNotifs((v) => !v);
@@ -157,7 +144,7 @@ function ClientePage() {
                 <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <span className="text-sm font-semibold">Notificaciones</span>
-                    <button onClick={() => setMostrarNotifs(false)} className="text-muted-foreground hover:text-foreground">
+                    <button onClick={() => setMostrarNotifs(false)} className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -195,7 +182,7 @@ function ClientePage() {
             </div>
             <button
               onClick={() => { store.logout(); navigate({ to: "/" }); }}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -203,9 +190,9 @@ function ClientePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-8">
+      <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
         {/* Tabs */}
-        <div className="mb-8 flex gap-1 rounded-xl border border-border bg-card p-1">
+        <div className="mb-5 flex gap-1 rounded-xl border border-border bg-card p-1 sm:mb-8">
           <TabBtn active={tab === "pedidos"}      onClick={() => setTab("pedidos")}      icon={<ShoppingBag className="h-4 w-4" />}  label="Mis Pedidos" />
           <TabBtn active={tab === "seguimiento"}  onClick={() => setTab("seguimiento")}  icon={<MapPin className="h-4 w-4" />}       label="Seguimiento" />
           <TabBtn active={tab === "perfil"}       onClick={() => setTab("perfil")}       icon={<User className="h-4 w-4" />}         label="Mi Perfil" />
@@ -296,7 +283,7 @@ function ModalNuevoPedido({
       style={{ background: "rgba(0,0,0,0.55)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
         {/* ── Cabecera fija ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
@@ -542,7 +529,7 @@ function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevo
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs text-muted-foreground">{o.id}</span>
                   {o.status !== "entregado" && (
-                    <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent-foreground">
+                    <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
                       Activo
                     </span>
                   )}
@@ -620,14 +607,16 @@ function TabSeguimiento({ customerId }: { customerId: string }) {
     [allOrders, customerId],
   );
 
-  // Búsqueda por código (busca en TODOS los pedidos, no solo los activos)
+  // Búsqueda por código (solo pedidos propios — evita IDOR)
   const [codigo,  setCodigo]  = useState("");
   const [buscado, setBuscado] = useState("");
   const pedidoBuscado = useMemo(
     () => buscado
-      ? (allOrders.find((o) => o.id.toUpperCase() === buscado.toUpperCase()) ?? null)
+      ? (allOrders.find(
+          (o) => o.id.toUpperCase() === buscado.toUpperCase() && o.customerId === customerId
+        ) ?? null)
       : null,
-    [allOrders, buscado],
+    [allOrders, buscado, customerId],
   );
 
   return (
@@ -748,7 +737,7 @@ function TarjetaSeguimiento({
   const esActivo     = order.status !== "entregado";
 
   return (
-    <div className={`space-y-3 rounded-2xl border p-1 ${
+    <div className={`space-y-3 rounded-xl border p-1 ${
       esActivo ? "border-accent/30 bg-accent/[0.03]" : "border-border bg-card"
     }`}>
 
@@ -926,6 +915,31 @@ function TarjetaSeguimiento({
 function TabPerfil({ customerId }: { customerId: string }) {
   const customer = useStore((s) => s.customers.find((c) => c.id === customerId));
   const [guardado, setGuardado] = useState(false);
+  const [passActual,  setPassActual]  = useState("");
+  const [passNuevo,   setPassNuevo]   = useState("");
+  const [passConfirm, setPassConfirm] = useState("");
+  const [passError,   setPassError]   = useState("");
+  const [passOk,      setPassOk]      = useState(false);
+  const [passLoading, setPassLoading] = useState(false);
+
+  async function handleCambiarPass(e: FormEvent) {
+    e.preventDefault();
+    setPassError("");
+    if (passNuevo.length < 6) { setPassError("La contraseña debe tener al menos 6 caracteres."); return; }
+    if (passNuevo !== passConfirm) { setPassError("Las contraseñas no coinciden."); return; }
+    setPassLoading(true);
+    try {
+      await api.cambiarPassword(passActual, passNuevo);
+      setPassOk(true);
+      setPassActual(""); setPassNuevo(""); setPassConfirm("");
+      setTimeout(() => setPassOk(false), 3000);
+    } catch (err: unknown) {
+      const codigo = (err as { codigo?: string })?.codigo;
+      setPassError(codigo === "password_incorrecto" ? "La contraseña actual es incorrecta." : "Error al cambiar la contraseña.");
+    } finally {
+      setPassLoading(false);
+    }
+  }
 
   const [nombre,    setNombre]    = useState(customer?.name           ?? "");
   const [apellidos, setApellidos] = useState(customer?.apellidos       ?? "");
@@ -1016,13 +1030,50 @@ function TabPerfil({ customerId }: { customerId: string }) {
 
         <div className="flex items-center justify-between gap-4">
           {guardado && (
-            <span className="text-sm font-medium text-emerald-600">✓ Datos guardados correctamente</span>
+            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">✓ Datos guardados correctamente</span>
           )}
           <button type="submit" className="ml-auto rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105">
             Guardar cambios
           </button>
         </div>
       </form>
+
+      {/* Cambiar contraseña */}
+      <div>
+        <div className="mb-4 flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Cambiar contraseña</h2>
+        </div>
+        <form onSubmit={handleCambiarPass} className="rounded-xl border border-border bg-card p-6 space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="pass-actual" className="text-sm font-medium">Contraseña actual</label>
+            <input id="pass-actual" type="password" required maxLength={120} autoComplete="current-password"
+              value={passActual} onChange={(e) => setPassActual(e.target.value)} className={clsInput} placeholder="••••••••" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="pass-nuevo" className="text-sm font-medium">Nueva contraseña</label>
+              <input id="pass-nuevo" type="password" required minLength={6} maxLength={120} autoComplete="new-password"
+                value={passNuevo} onChange={(e) => setPassNuevo(e.target.value)} className={clsInput} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="pass-confirm" className="text-sm font-medium">Confirmar contraseña</label>
+              <input id="pass-confirm" type="password" required maxLength={120} autoComplete="new-password"
+                value={passConfirm} onChange={(e) => setPassConfirm(e.target.value)}
+                className={`${clsInput} ${passConfirm && passNuevo !== passConfirm ? "border-destructive" : ""}`}
+                placeholder="Repite la contraseña" />
+            </div>
+          </div>
+          {passError && <p className="text-sm text-destructive">{passError}</p>}
+          {passOk    && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">✓ Contraseña actualizada correctamente</p>}
+          <div className="flex justify-end">
+            <button type="submit" disabled={passLoading}
+              className="rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60">
+              {passLoading ? "Guardando…" : "Actualizar contraseña"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1057,7 +1108,7 @@ function TabBtn({
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition ${
         active
-          ? "bg-accent text-accent-foreground shadow-sm"
+          ? "bg-accent text-accent-foreground shadow-[var(--shadow-card)]"
           : "text-muted-foreground hover:text-foreground"
       }`}
     >

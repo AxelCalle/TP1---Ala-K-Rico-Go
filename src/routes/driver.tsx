@@ -1,155 +1,252 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { Drumstick, ExternalLink, Loader2, LogOut, MapPin, Navigation, Route as RouteIcon, ShieldCheck } from "lucide-react";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  CheckCircle2, ExternalLink, Loader2, LogOut, MapPin,
+  Navigation, Route as RouteIcon, ShieldCheck, Zap,
+} from "lucide-react";
+import { LogoIcon } from "../components/Logo";
 import { store, useStore } from "@/lib/store";
-import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
-import { MapaRuta } from "@/components/MapaRuta";
-import type { Order } from "@/lib/store";
+import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION, ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { ejecutarACO_TSP, type Stop, type TSPResult } from "@/lib/aco";
+import { MapaRutaMulti, type MultiStop } from "@/components/MapaRuta";
+import { api, type PedidoApi } from "@/lib/api";
 
 export const Route = createFileRoute("/driver")({
   head: () => ({
     meta: [{ title: "Portal del repartidor — Ala K' Rico GO" }],
   }),
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    const session = store.get().session;
+    if (!session || (session.role !== "driver" && session.role !== "admin")) {
+      throw redirect({ to: "/login" });
+    }
+  },
   component: PaginaRepartidor,
 });
 
-const RESTAURANTE_DIRECCION = "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú";
-const RESTAURANTE_COORDS: [number, number] = [-12.0278455, -77.0895871];
+const STATUS_ES = ESTADO_PEDIDO_ES;
 
-const STATUS_ES: Record<string, string> = {
-  sin_asignar: "Sin asignar",
-  asignado: "Asignado",
-  en_camino: "En camino",
-  entregado: "Entregado",
+const STATUS_COLOR: Record<string, string> = {
+  sin_asignar: "bg-muted text-muted-foreground",
+  asignado:    "bg-accent/20 text-accent",
+  en_camino:   "bg-primary/15 text-primary dark:text-primary",
+  entregado:   "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
 };
+
+/** Colores para los marcadores del mapa según posición en la ruta */
+const STOP_COLORS = [
+  "#ea580c", "#d97706", "#92400e", "#b45309",
+  "#dc2626", "#c2410c", "#78350f", "#9a3412",
+];
 
 // ─── Página principal ──────────────────────────────────────────────────────────
 
 function PaginaRepartidor() {
-  const navigate = useNavigate();
-  const session = useStore((s) => s.session);
-  const drivers = useStore((s) => s.drivers);
-  const orders = useStore((s) => s.orders);
-  const [montado, setMontado] = useState(false);
+  const navigate  = useNavigate();
+  const session   = useStore((s) => s.session);
+  const [montado, setMontado]   = useState(false);
+  const [pedidos, setPedidos]   = useState<PedidoApi[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [tspResult, setTspResult] = useState<TSPResult | null>(null);
+  const [tspRunning, setTspRunning] = useState(false);
 
   useEffect(() => { setMontado(true); }, []);
+
   useEffect(() => {
     if (montado && (!session || (session.role !== "driver" && session.role !== "admin"))) {
       navigate({ to: "/login" });
     }
   }, [session, navigate, montado]);
 
-  const [pedidoActivo, setPedidoActivo] = useState<Order | null>(null);
+  useEffect(() => {
+    if (!montado || !session) return;
+    setCargando(true);
+    api.listarPedidos()
+      .then(setPedidos)
+      .catch(() => setPedidos([]))
+      .finally(() => setCargando(false));
+  }, [montado, session]);
 
   if (!montado || !session) return null;
 
-  const activeDriverId = session?.driverId ?? drivers[0]?.id ?? "";
-  const activeDriver = drivers.find((d) => d.id === activeDriverId);
-  const myOrders = orders.filter((o) => o.driverId === activeDriverId);
+  const nombreRepartidor = session.nombre
+    ? `${session.nombre} ${session.apellido ?? ""}`.trim()
+    : "Repartidor";
 
   function cerrarSesion() {
     store.logout();
     navigate({ to: "/" });
   }
 
+  // Solo pedidos activos (no entregados ni cancelados) entran en la optimización
+  const pedidosActivos = pedidos.filter(
+    (p) => p.Estado !== "entregado" && p.Estado !== "cancelado",
+  );
+
+  function generarRutaOptima() {
+    if (pedidosActivos.length === 0) return;
+    setTspRunning(true);
+    setTspResult(null);
+    setTimeout(() => {
+      try {
+        const stops: Stop[] = [
+          {
+            id: "depot",
+            lat: RESTAURANTE_COORDS[0],
+            lng: RESTAURANTE_COORDS[1],
+            label: "Ala K' Rico GO",
+          },
+          ...pedidosActivos.map((p) => ({
+            id: String(p.Id_Pedido),
+            lat:  p.Lat_Destino,
+            lng:  p.Lng_Destino,
+            label: `WO-${String(p.Id_Pedido).padStart(4, "0")}`,
+          })),
+        ];
+        setTspResult(ejecutarACO_TSP(stops));
+      } catch {
+        setTspResult(null);
+      } finally {
+        setTspRunning(false);
+      }
+    }, 60);
+  }
+
+  // Armar los stops para MapaRutaMulti a partir del TSP result
+  const mapaStops: MultiStop[] = tspResult
+    ? tspResult.orden.map((stop, idx) => ({
+        coords: [stop.lat, stop.lng] as [number, number],
+        label: idx === 0 ? "🏪" : String(idx),
+        sublabel: stop.label,
+        color: STOP_COLORS[idx % STOP_COLORS.length],
+      }))
+    : [];
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Header */}
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
-              <Drumstick className="h-5 w-5" />
-            </span>
-            <span className="text-lg font-semibold tracking-tight">Ala K' Rico GO</span>
-            <span className="ml-2 rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+            <LogoIcon size={32} />
+            <span className="font-display text-base tracking-wide">GO</span>
+            <span className="ml-2 rounded-sm bg-secondary px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-secondary-foreground">
               Repartidor
             </span>
           </Link>
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">
-              {activeDriver?.name ?? "Repartidor"}
-            </span>
+            <span className="hidden text-sm text-muted-foreground sm:inline">{nombreRepartidor}</span>
             <Link
               to="/admin"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ShieldCheck className="h-4 w-4" /> Admin
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">Admin</span>
             </Link>
             <button
               onClick={cerrarSesion}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <LogOut className="h-4 w-4" /> Salir
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Salir</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* Layout principal: tabla + mapa lado a lado */}
-      <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[1fr_400px]">
+      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1fr_420px]">
 
-        {/* Columna izquierda: pedidos */}
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {activeDriver?.name ?? "Repartidor"}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {myOrders.length} pedido{myOrders.length === 1 ? "" : "s"} asignado{myOrders.length === 1 ? "" : "s"}.
-              Selecciona uno para ver la ruta.
-            </p>
+        {/* ── Columna izquierda: lista de pedidos ── */}
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">{nombreRepartidor}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {cargando
+                  ? "Cargando pedidos…"
+                  : `${pedidosActivos.length} pedido${pedidosActivos.length !== 1 ? "s" : ""} activo${pedidosActivos.length !== 1 ? "s" : ""} · ${pedidos.filter((p) => p.Estado === "entregado").length} entregado${pedidos.filter((p) => p.Estado === "entregado").length !== 1 ? "s" : ""}`}
+              </p>
+            </div>
+
+            {/* Botón principal ACO */}
+            <button
+              onClick={generarRutaOptima}
+              disabled={tspRunning || pedidosActivos.length === 0}
+              className="inline-flex shrink-0 items-center gap-2 rounded-sm bg-accent px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-accent-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {tspRunning ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</>
+              ) : (
+                <><Zap className="h-4 w-4" /> Generar ruta óptima</>
+              )}
+            </button>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <table className="w-full text-sm">
+          {/* Tabla de pedidos */}
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full min-w-[420px] text-sm">
               <thead className="bg-secondary text-secondary-foreground">
                 <tr className="text-left">
-                  <Encabezado>Pedido</Encabezado>
-                  <Encabezado>Cliente</Encabezado>
-                  <Encabezado>Estado</Encabezado>
-                  <Encabezado>Acción</Encabezado>
+                  <Th>Pedido</Th>
+                  <Th>Cliente</Th>
+                  <Th className="hidden md:table-cell">Dirección</Th>
+                  <Th>Estado</Th>
                 </tr>
               </thead>
               <tbody>
-                {myOrders.map((o) => (
-                  <tr
-                    key={o.id}
-                    className={`border-t border-border transition-colors ${
-                      pedidoActivo?.id === o.id ? "bg-accent/8" : "hover:bg-muted/40"
-                    }`}
-                  >
-                    <Celda>
-                      <div className="font-mono text-xs text-muted-foreground">{o.id}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{o.address}</div>
-                    </Celda>
-                    <Celda>
-                      <div className="font-medium">{o.customer}</div>
-                      <div className="text-xs text-muted-foreground">{o.phone}</div>
-                    </Celda>
-                    <Celda>
-                      <span className="inline-block rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                        {STATUS_ES[o.status] ?? o.status}
-                      </span>
-                    </Celda>
-                    <Celda>
-                      <button
-                        onClick={() => setPedidoActivo(o)}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                          pedidoActivo?.id === o.id
-                            ? "bg-accent text-accent-foreground"
-                            : "bg-primary text-primary-foreground hover:opacity-90"
+                {[...pedidos]
+                  .sort((a, b) => b.Id_Pedido - a.Id_Pedido)
+                  .map((o) => {
+                    // Posición en la ruta óptima (si existe)
+                    const posEnRuta = tspResult
+                      ? tspResult.orden.findIndex((s) => s.id === String(o.Id_Pedido))
+                      : -1;
+
+                    return (
+                      <tr
+                        key={o.Id_Pedido}
+                        className={`border-t border-border transition-colors ${
+                          posEnRuta > 0 ? "bg-accent/5" : "hover:bg-muted/40"
                         }`}
                       >
-                        <MapPin className="h-3.5 w-3.5" />
-                        {pedidoActivo?.id === o.id ? "Activo" : "Generar ruta"}
-                      </button>
-                    </Celda>
-                  </tr>
-                ))}
-                {myOrders.length === 0 && (
+                        <Td>
+                          <div className="flex items-center gap-2">
+                            {posEnRuta > 0 && (
+                              <span
+                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                style={{ background: STOP_COLORS[posEnRuta % STOP_COLORS.length] }}
+                              >
+                                {posEnRuta}
+                              </span>
+                            )}
+                            <span className="font-mono text-xs text-muted-foreground">
+                              WO-{String(o.Id_Pedido).padStart(4, "0")}
+                            </span>
+                          </div>
+                        </Td>
+                        <Td>
+                          <div className="font-medium">
+                            {o.Nombre_Cliente ?? ""} {o.Apellido_Cliente ?? ""}
+                          </div>
+                        </Td>
+                        <Td className="hidden md:table-cell">
+                          <div className="max-w-[180px] truncate text-xs text-muted-foreground">
+                            {o.Direccion_Destino}
+                          </div>
+                        </Td>
+                        <Td>
+                          <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
+                            {STATUS_ES[o.Estado] ?? o.Estado}
+                          </span>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                {!cargando && pedidos.length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      Aún no tienes pedidos asignados.
+                      Aún no tenés pedidos asignados.
                     </td>
                   </tr>
                 )}
@@ -158,239 +255,128 @@ function PaginaRepartidor() {
           </div>
         </div>
 
-        {/* Columna derecha: mapa siempre visible */}
-        <PanelMapa pedido={pedidoActivo} />
+        {/* ── Columna derecha: panel de ruta óptima ── */}
+        <div className="sticky top-6 space-y-4">
+          {!tspResult && !tspRunning && (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card py-16 text-center">
+              <Navigation className="h-10 w-10 text-muted-foreground/30" />
+              <p className="text-sm font-medium text-muted-foreground">
+                Presioná <strong>Generar ruta óptima</strong>
+              </p>
+              <p className="max-w-[200px] text-xs text-muted-foreground">
+                El ACO calculará el orden óptimo para entregar todos los pedidos activos.
+              </p>
+            </div>
+          )}
+
+          {tspRunning && (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-accent" />
+              <p className="text-sm text-muted-foreground">Optimizando con ACO…</p>
+            </div>
+          )}
+
+          {tspResult && (
+            <>
+              {/* Estadísticas totales */}
+              <div className="grid grid-cols-3 gap-2">
+                <StatBox label="Paradas" value={String(tspResult.orden.length - 1)} />
+                <StatBox label="Distancia" value={`${tspResult.distanciaKm} km`} />
+                <StatBox label="ETA total" value={`${tspResult.etaMin} min`} />
+              </div>
+
+              {/* Secuencia de paradas */}
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <RouteIcon className="h-4 w-4 text-accent" />
+                    Ruta óptima — {tspResult.orden.length - 1} entrega{tspResult.orden.length - 1 !== 1 ? "s" : ""}
+                  </div>
+                </div>
+                <ol className="divide-y divide-border">
+                  {tspResult.orden.map((stop, idx) => {
+                    const pedido = pedidos.find((p) => String(p.Id_Pedido) === stop.id);
+                    const etaStr = idx === 0 ? "Salida" : `+${tspResult.etaAcumulado[idx]} min`;
+                    const isDepot = idx === 0;
+
+                    return (
+                      <li key={stop.id} className="flex items-start gap-3 px-4 py-3">
+                        {/* Número de parada */}
+                        <span
+                          className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                          style={{ background: STOP_COLORS[idx % STOP_COLORS.length] }}
+                        >
+                          {isDepot ? "🏪" : idx}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-medium">
+                              {isDepot
+                                ? "Ala K' Rico GO"
+                                : `${pedido?.Nombre_Cliente ?? ""} ${pedido?.Apellido_Cliente ?? ""}`.trim() || stop.label}
+                            </span>
+                            <span className="shrink-0 text-xs font-semibold text-accent">{etaStr}</span>
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {isDepot ? RESTAURANTE_DIRECCION : pedido?.Direccion_Destino ?? ""}
+                          </div>
+                          {!isDepot && pedido && (
+                            <div className="mt-1 flex items-center gap-2">
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_COLOR[pedido.Estado] ?? ""}`}>
+                                {STATUS_ES[pedido.Estado] ?? pedido.Estado}
+                              </span>
+                              <a
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pedido.Direccion_Destino.slice(0, 200))}&travelmode=driving`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:underline focus-visible:outline-none"
+                              >
+                                <ExternalLink className="h-3 w-3" /> Navegar
+                              </a>
+                            </div>
+                          )}
+                          {isDepot && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <CheckCircle2 className="h-3 w-3 text-green-500" /> Punto de partida
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+
+              {/* Mapa multi-parada */}
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3 text-sm font-medium">
+                  <MapPin className="h-4 w-4 text-accent" />
+                  Ruta en mapa
+                </div>
+                <MapaRutaMulti stops={mapaStops} altura={320} />
+              </div>
+            </>
+          )}
+        </div>
       </main>
     </div>
   );
 }
 
-// ─── Panel de mapa (siempre visible) ─────────────────────────────────────────
-
-function PanelMapa({ pedido }: { pedido: Order | null }) {
-  const [acoResult, setAcoResult] = useState<AcoResult | null>(null);
-  const [acoRunning, setAcoRunning] = useState(false);
-  const [grafo, setGrafo] = useState<AcoGraph | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Cuando cambia el pedido, reiniciar el estado ACO y construir nuevo grafo
-  useEffect(() => {
-    setAcoResult(null);
-    setGrafo(pedido ? construirGrafo(pedido.id) : null);
-  }, [pedido?.id]);
-
-
-  const navegacionUrl = pedido
-    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(RESTAURANTE_DIRECCION)}&destination=${encodeURIComponent(pedido.address)}&travelmode=driving`
-    : "#";
-
-  // Si el ACO ya calculó, usa sus valores (km y ETA ya vienen calibrados para moto).
-  // Si no, muestra una estimación inicial basada en el ID del pedido.
-  const distanciaKm = pedido
-    ? acoResult
-      ? acoResult.distanceKm.toFixed(1)
-      : (2 + (pedido.id.charCodeAt(pedido.id.length - 1) % 5)).toFixed(1)
-    : null;
-  const etaMin = pedido
-    ? acoResult
-      ? acoResult.etaMin
-      : 5 + (pedido.id.charCodeAt(pedido.id.length - 1) % 8)
-    : null;
-
-  const redibujar = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !grafo) return;
-    const dpr = window.devicePixelRatio ?? 1;
-    const cssW = canvas.clientWidth || 360;
-    const cssH = canvas.clientHeight || 160;
-    canvas.width = cssW * dpr;
-    canvas.height = cssH * dpr;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    dibujarGrafo(ctx, cssW, cssH, grafo, acoResult);
-  }, [grafo, acoResult]);
-
-  useEffect(() => {
-    redibujar();
-  }, [redibujar]);
-
-  function calcularACO() {
-    if (!grafo) return;
-    setAcoRunning(true);
-    setTimeout(() => {
-      try {
-        setAcoResult(ejecutarACO(grafo));
-      } catch {
-        setAcoResult(null);
-      } finally {
-        setAcoRunning(false);
-      }
-    }, 60);
-  }
-
-  return (
-    <div className="sticky top-6 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-
-      {/* Encabezado */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Navigation className="h-4 w-4 text-accent" />
-          {pedido ? (
-            <span>Ruta → <span className="text-accent-foreground">{pedido.customer}</span></span>
-          ) : (
-            <span className="text-muted-foreground">Selecciona un pedido</span>
-          )}
-        </div>
-        {pedido && (
-          <a
-            href={navegacionUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
-          >
-            <ExternalLink className="h-3 w-3" /> Navegar
-          </a>
-        )}
-      </div>
-
-      {/* Mapa con altura fija */}
-      {!pedido ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-2 bg-muted">
-          <MapPin className="h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">Selecciona un pedido para ver la ruta</p>
-        </div>
-      ) : (
-        <MapaRuta
-          key={pedido.id}
-          origen={RESTAURANTE_DIRECCION}
-          coordsOrigen={RESTAURANTE_COORDS}
-          destino={pedido.address}
-          coordsDestino={pedido.coords}
-          altura={320}
-        />
-      )}
-
-      {/* Info y ACO (solo si hay pedido seleccionado) */}
-      {pedido && (
-        <div className="border-t border-border p-4 space-y-3">
-          {/* Dirección */}
-          <div className="flex items-start gap-2 text-sm">
-            <MapPin className="mt-0.5 h-4 w-4 flex-none text-accent" />
-            <span className="text-muted-foreground">{pedido.address}</span>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className={`rounded-lg border p-2 text-center ${acoResult ? "border-accent/40 bg-accent/10" : "border-border"}`}>
-              <div className="text-xs text-muted-foreground">Distancia</div>
-              <div className="font-semibold">{distanciaKm} km</div>
-            </div>
-            <div className={`rounded-lg border p-2 text-center ${acoResult ? "border-accent/40 bg-accent/10" : "border-border"}`}>
-              <div className="text-xs text-muted-foreground">ETA</div>
-              <div className="font-semibold">{etaMin} min</div>
-            </div>
-          </div>
-
-          {/* ACO */}
-          <div>
-            <canvas
-              ref={canvasRef}
-              className="w-full rounded-md bg-muted"
-              style={{ height: 120 }}
-            />
-            <button
-              onClick={calcularACO}
-              disabled={acoRunning}
-              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60"
-            >
-              {acoRunning ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando…</>
-              ) : (
-                <><RouteIcon className="h-3.5 w-3.5" /> {acoResult ? "Recalcular ACO" : "Calcular ruta óptima (ACO)"}</>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Función de dibujo ACO ────────────────────────────────────────────────────
-
-function dibujarGrafo(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number,
-  grafo: AcoGraph,
-  resultado: AcoResult | null,
-) {
-  const PAD = 18;
-  ctx.clearRect(0, 0, W, H);
-  const toX = (x: number) => PAD + x * (W - PAD * 2);
-  const toY = (y: number) => PAD + y * (H - PAD * 2);
-
-  let maxFer = 0;
-  if (resultado) resultado.pheromones.forEach((v) => { if (v > maxFer) maxFer = v; });
-
-  const optimas = new Set<string>();
-  if (resultado) {
-    for (let i = 0; i < resultado.path.length - 1; i++) {
-      const a = resultado.path[i], b = resultado.path[i + 1];
-      optimas.add(a < b ? `${a}-${b}` : `${b}-${a}`);
-    }
-  }
-
-  for (const e of grafo.edges) {
-    const k = e.from < e.to ? `${e.from}-${e.to}` : `${e.to}-${e.from}`;
-    if (optimas.has(k)) continue;
-    const ph = resultado ? (resultado.pheromones.get(k) ?? 0) / maxFer : 0;
-    ctx.beginPath();
-    ctx.moveTo(toX(grafo.nodes[e.from].x), toY(grafo.nodes[e.from].y));
-    ctx.lineTo(toX(grafo.nodes[e.to].x), toY(grafo.nodes[e.to].y));
-    ctx.strokeStyle = resultado ? `rgba(99,102,241,${0.07 + ph * 0.3})` : "rgba(148,163,184,0.18)";
-    ctx.lineWidth = resultado ? 1 + ph * 2 : 1;
-    ctx.stroke();
-  }
-
-  if (resultado?.path.length) {
-    ctx.beginPath();
-    ctx.moveTo(toX(grafo.nodes[resultado.path[0]].x), toY(grafo.nodes[resultado.path[0]].y));
-    for (let i = 1; i < resultado.path.length; i++) {
-      ctx.lineTo(toX(grafo.nodes[resultado.path[i]].x), toY(grafo.nodes[resultado.path[i]].y));
-    }
-    ctx.strokeStyle = "hsl(var(--accent))";
-    ctx.lineWidth = 2.5;
-    ctx.lineJoin = "round";
-    ctx.stroke();
-  }
-
-  for (const n of grafo.nodes) {
-    const cx = toX(n.x), cy = toY(n.y);
-    ctx.beginPath();
-    ctx.arc(cx, cy, n.id === 0 || n.id === 1 ? 7 : resultado?.path.includes(n.id) ? 4.5 : 3, 0, Math.PI * 2);
-    ctx.fillStyle =
-      n.id === 0 ? "hsl(var(--primary))" :
-      n.id === 1 ? "hsl(var(--accent))" :
-      resultado?.path.includes(n.id) ? "hsl(var(--accent) / 0.65)" :
-      "hsl(var(--muted-foreground) / 0.3)";
-    ctx.fill();
-    if (n.label) {
-      ctx.fillStyle = "hsl(var(--primary-foreground))";
-      ctx.font = "bold 7px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(n.label, cx, cy);
-    }
-  }
-}
-
 // ─── Componentes de tabla ─────────────────────────────────────────────────────
 
-function Encabezado({ children }: { children: React.ReactNode }) {
-  return <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">{children}</th>;
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className ?? ""}`}>{children}</th>;
 }
-function Celda({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>;
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={`px-4 py-3 align-top ${className ?? ""}`}>{children}</td>;
+}
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-3 text-center">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-bold text-accent">{value}</div>
+    </div>
+  );
 }

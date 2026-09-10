@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { Drumstick, Eye, EyeOff, KeyRound, MailCheck } from "lucide-react";
-import { store } from "@/lib/store";
+import { KeyRound, MailCheck } from "lucide-react";
+import { inputCls, ErrorMsg, TogglePass } from "@/components/FormBits";
+import { LogoIcon } from "../components/Logo";
+import { api } from "@/lib/api";
+
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
@@ -28,16 +31,11 @@ function ForgotPasswordPage() {
       setError("Ingresa un correo electrónico válido.");
       return;
     }
-    const existe = store.emailExists(email.trim());
-    if (!existe) {
-      setError("No encontramos una cuenta asociada a ese correo.");
-      return;
-    }
     setPaso("nueva-clave");
   }
 
   // ── Paso 2: establecer nueva contraseña ────────────────────────────────────
-  function handlePasswordSubmit(e: FormEvent) {
+  async function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     if (password.length < 6) {
@@ -48,23 +46,21 @@ function ForgotPasswordPage() {
       setError("Las contraseñas no coinciden.");
       return;
     }
-    const result = store.resetPassword(email.trim(), password);
-    if (result === "not_found") {
+    try {
+      await api.resetPassword(email.trim(), password);
+      setPaso("exito");
+    } catch {
       setError("Ocurrió un error. Intenta nuevamente.");
-      return;
     }
-    setPaso("exito");
   }
 
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6">
       <div className="w-full max-w-sm space-y-6">
         {/* Logo */}
-        <Link to="/" className="flex items-center justify-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
-            <Drumstick className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">Ala K' Rico GO</span>
+        <Link to="/" className="flex items-center justify-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <LogoIcon size={32} />
+          <span className="font-display text-xl tracking-wide">Ala K' Rico GO</span>
         </Link>
 
         {/* ── Paso 1: Correo ─────────────────────────────────────────────────── */}
@@ -74,7 +70,7 @@ function ForgotPasswordPage() {
             className="space-y-5 rounded-xl border border-border bg-card p-8 shadow-[var(--shadow-elegant)]"
           >
             <div className="flex flex-col items-center gap-2 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent/15 text-accent-foreground">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent/15 text-accent">
                 <KeyRound className="h-6 w-6" />
               </span>
               <h1 className="text-xl font-semibold">¿Olvidaste tu contraseña?</h1>
@@ -102,7 +98,7 @@ function ForgotPasswordPage() {
             </button>
 
             <p className="text-center text-sm text-muted-foreground">
-              <Link to="/login" className="text-accent-foreground hover:underline">
+              <Link to="/login" className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 ← Volver al inicio de sesión
               </Link>
             </p>
@@ -182,7 +178,7 @@ function ForgotPasswordPage() {
             </p>
             <Link
               to="/login"
-              className="inline-block w-full rounded-md bg-accent px-4 py-2.5 text-center text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+              className="inline-block w-full rounded-md bg-accent px-4 py-2.5 text-center text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Ir al inicio de sesión
             </Link>
@@ -195,24 +191,5 @@ function ForgotPasswordPage() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const inputCls =
-  "w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2";
 const btnAccent =
-  "w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105";
-
-function ErrorMsg({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{children}</p>
-  );
-}
-
-function TogglePass({ ver, toggle }: { ver: boolean; toggle: () => void }) {
-  return (
-    <button
-      type="button" onClick={toggle} tabIndex={-1}
-      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-    >
-      {ver ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
-  );
-}
+  "w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";

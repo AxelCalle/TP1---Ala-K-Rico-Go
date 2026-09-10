@@ -158,6 +158,73 @@ router.post('/register', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/auth/change-password  (requiere token — usuario logueado)
+// ---------------------------------------------------------------------------
+router.post('/change-password', verificarToken, async (req, res) => {
+  const { passwordActual, passwordNuevo } = req.body;
+  if (!passwordActual || !passwordNuevo) {
+    return res.status(400).json({ error: 'Campos incompletos.' });
+  }
+  if (passwordNuevo.length < 6) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('id', sql.Int, req.usuario.id)
+      .query('SELECT Contraseña_Usuario FROM AKR_Usuarios WHERE Id_Usuario = @id');
+    const usuario = result.recordset[0];
+    if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado.' });
+    const valida = await bcrypt.compare(passwordActual, usuario.Contraseña_Usuario);
+    if (!valida) return res.status(401).json({ error: 'password_incorrecto' });
+    const hash = await bcrypt.hash(passwordNuevo, 10);
+    await pool.request()
+      .input('id',   sql.Int,          req.usuario.id)
+      .input('hash', sql.NVarChar(250), hash)
+      .query('UPDATE AKR_Usuarios SET Contraseña_Usuario = @hash, Modificacion_Usuario = GETDATE() WHERE Id_Usuario = @id');
+    await registrarAuditoria(pool, req.usuario.id, req.usuario.email, 'cambio_password', 'Cambio exitoso', req);
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Error en /change-password:', err.message);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password  (sin token — flujo "olvidé contraseña")
+// ---------------------------------------------------------------------------
+router.post('/reset-password', async (req, res) => {
+  const { email, passwordNuevo } = req.body;
+  if (!email || !passwordNuevo) {
+    return res.status(400).json({ error: 'Campos incompletos.' });
+  }
+  if (passwordNuevo.length < 6) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('email', sql.NVarChar(150), email)
+      .query('SELECT Id_Usuario FROM AKR_Usuarios WHERE Email_Usuario = @email AND Activo_Usuario = 1');
+    if (result.recordset.length === 0) {
+      // Respuesta genérica para no revelar si el email existe
+      return res.status(200).json({ ok: true });
+    }
+    const id = result.recordset[0].Id_Usuario;
+    const hash = await bcrypt.hash(passwordNuevo, 10);
+    await pool.request()
+      .input('id',   sql.Int,          id)
+      .input('hash', sql.NVarChar(250), hash)
+      .query('UPDATE AKR_Usuarios SET Contraseña_Usuario = @hash, Modificacion_Usuario = GETDATE() WHERE Id_Usuario = @id');
+    await registrarAuditoria(pool, id, email, 'reset_password', 'Reset sin token (piloto)', req);
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Error en /reset-password:', err.message);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/auth/perfil  (requiere token)
 // ---------------------------------------------------------------------------
 router.get('/perfil', verificarToken, async (req, res) => {

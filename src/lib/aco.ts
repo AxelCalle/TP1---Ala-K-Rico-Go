@@ -221,6 +221,179 @@ export function construirGrafo(semillaStr: string, numNodos = 16): AcoGraph {
   return { nodes, edges, adj };
 }
 
+// ─── TSP multi-parada con coordenadas GPS reales ─────────────────────────────
+
+/** Distancia en km entre dos puntos GPS usando la fórmula de Haversine. */
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Una parada en la ruta multi-pedido (depot o entrega). */
+export interface Stop {
+  id: string;
+  lat: number;
+  lng: number;
+  label: string;   // texto corto para mostrar en UI
+}
+
+/** Resultado del ACO para ruta multi-parada. */
+export interface TSPResult {
+  /** Paradas en orden óptimo — stops[0] siempre es el depot. */
+  orden: Stop[];
+  /** Distancia total de la ruta en km. */
+  distanciaKm: number;
+  /** ETA total desde el depot hasta la última entrega (min). */
+  etaMin: number;
+  /** ETA acumulado al llegar a cada parada en min. etaAcumulado[0] = 0 (depot). */
+  etaAcumulado: number[];
+}
+
+/**
+ * ACO para TSP abierto (sin retorno al depot).
+ *
+ * Dado un arreglo de paradas con coordenadas GPS reales, el algoritmo
+ * encuentra el orden de visita que minimiza la distancia total.
+ * La primera parada (stops[0]) es siempre el depot de salida;
+ * el resto se ordenan libremente.
+ *
+ * Distancias: Haversine en km (vuelo de pájaro).
+ * Velocidad de moto urbana: MOTO_KMH = 25 km/h para el ETA.
+ *
+ * @param stops  Array de paradas incluyendo depot en posición 0.
+ *               Mínimo 2 elementos (depot + 1 entrega).
+ */
+export function ejecutarACO_TSP(stops: Stop[]): TSPResult | null {
+  if (stops.length < 2) return null;
+
+  const n = stops.length;
+
+  // Matriz de distancias Haversine entre todos los pares de paradas
+  const distMat: number[][] = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) =>
+      i === j ? 0 : haversine(stops[i].lat, stops[i].lng, stops[j].lat, stops[j].lng),
+    ),
+  );
+
+  // Parámetros ACO — calibrados para N pequeño (2–15 paradas)
+  const numAnts = Math.max(12, n * 4);
+  const iterations = 100;
+  const alpha = 1.0;
+  const beta = 3.5;   // mayor peso a distancia corta
+  const rho = 0.25;
+  const Q = 1.0;
+  const eliteFactor = 5;
+  const tauMin = 0.01;
+  const tauInit = 1.0;
+
+  // Matriz de feromonas n×n inicializada uniformemente
+  const tau: number[][] = Array.from({ length: n }, () => Array(n).fill(tauInit));
+
+  let bestTour: number[] = [];
+  let bestCost = Infinity;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const solutions: { tour: number[]; cost: number }[] = [];
+
+    for (let a = 0; a < numAnts; a++) {
+      // Construcción del tour: siempre empieza en el depot (índice 0)
+      const visited = new Set<number>([0]);
+      const tour: number[] = [0];
+      let cur = 0;
+      let cost = 0;
+
+      while (visited.size < n) {
+        const candidates: number[] = [];
+        for (let j = 0; j < n; j++) {
+          if (!visited.has(j)) candidates.push(j);
+        }
+
+        // Score de atracción: τ^α · (1/d)^β
+        const scores = candidates.map((j) => {
+          const t = tau[cur][j];
+          const d = distMat[cur][j];
+          const eta = d > 0 ? 1 / d : 1;
+          return Math.pow(t, alpha) * Math.pow(eta, beta);
+        });
+
+        const total = scores.reduce((s, v) => s + v, 0);
+        let next: number;
+        if (total === 0) {
+          next = candidates[Math.floor(Math.random() * candidates.length)];
+        } else {
+          let r = Math.random() * total;
+          next = candidates[candidates.length - 1];
+          for (let i = 0; i < candidates.length; i++) {
+            r -= scores[i];
+            if (r <= 0) { next = candidates[i]; break; }
+          }
+        }
+
+        cost += distMat[cur][next];
+        visited.add(next);
+        tour.push(next);
+        cur = next;
+      }
+
+      solutions.push({ tour, cost });
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestTour = [...tour];
+      }
+    }
+
+    // Evaporación global
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        tau[i][j] = Math.max(tauMin, tau[i][j] * (1 - rho));
+      }
+    }
+
+    // Depósito estándar (todas las hormigas)
+    for (const { tour, cost } of solutions) {
+      const deposit = Q / cost;
+      for (let i = 0; i < tour.length - 1; i++) {
+        tau[tour[i]][tour[i + 1]] = Math.max(tauMin, tau[tour[i]][tour[i + 1]] + deposit);
+        tau[tour[i + 1]][tour[i]] = Math.max(tauMin, tau[tour[i + 1]][tour[i]] + deposit);
+      }
+    }
+
+    // Depósito elitista (mejor ruta global)
+    if (bestTour.length > 0) {
+      const eliteDeposit = (eliteFactor * Q) / bestCost;
+      for (let i = 0; i < bestTour.length - 1; i++) {
+        tau[bestTour[i]][bestTour[i + 1]] = Math.max(tauMin, tau[bestTour[i]][bestTour[i + 1]] + eliteDeposit);
+        tau[bestTour[i + 1]][bestTour[i]] = Math.max(tauMin, tau[bestTour[i + 1]][bestTour[i]] + eliteDeposit);
+      }
+    }
+  }
+
+  if (bestTour.length === 0) return null;
+
+  // Construir resultado con ETA acumulado por parada
+  const orden = bestTour.map((i) => stops[i]);
+  const etaAcumulado: number[] = [0]; // depot = 0 min
+  let cumKm = 0;
+  for (let i = 0; i < bestTour.length - 1; i++) {
+    cumKm += distMat[bestTour[i]][bestTour[i + 1]];
+    etaAcumulado.push(calcularETA(cumKm));
+  }
+
+  return {
+    orden,
+    distanciaKm: parseFloat(bestCost.toFixed(1)),
+    etaMin: calcularETA(bestCost),
+    etaAcumulado,
+  };
+}
+
 // ─── Algoritmo ACS con elitismo y piso de feromona ───────────────────────────
 
 /**

@@ -1,0 +1,11 @@
+<svg width="160" height="200" viewBox="0 0 160 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Silueta de llama -->
+  <path
+    d="M80 8 C84 18,97 30,92 48 C103 33,116 40,110 60 C122 50,130 65,120 82 C132 90,136 112,124 132 C130 150,122 180,80 186 C38 180,30 150,36 132 C24 112,28 90,40 82 C30 65,38 50,50 60 C44 40,57 33,68 48 C63 30,76 18,80 8Z"
+    fill="#d4530f"
+  />
+  <!-- Texto interior -->
+  <text x="80" y="108" text-anchor="middle" font-family="'Arial Black','Arial',sans-serif" font-weight="900" font-size="30" fill="#1c120c" letter-spacing="-0.5">ALA</text>
+  <text x="80" y="135" text-anchor="middle" font-family="'Arial Black','Arial',sans-serif" font-weight="900" font-size="26" fill="#1c120c">K'</text>
+  <text x="80" y="165" text-anchor="middle" font-family="'Arial Black','Arial',sans-serif" font-weight="900" font-size="30" fill="#1c120c" letter-spacing="-0.5">RICO</text>
+</svg>

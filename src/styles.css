@@ -30,78 +30,157 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-ring-offset-background: var(--background);
-  --color-navy: var(--navy);
-  --color-navy-soft: var(--navy-soft);
-  --color-amber: var(--amber);
+  --color-coal:   var(--coal);
+  --color-flame:  var(--flame);
+  --color-amber:  var(--amber);
+  --color-cream:  var(--cream);
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.375rem;
 
-  /* Logistics Bold palette */
-  --navy: oklch(0.22 0.06 254);
-  --navy-soft: oklch(0.36 0.08 240);
-  --amber: oklch(0.78 0.16 70);
+  /*
+   * PALETA — Teoría del color para comida rápida
+   *
+   * Naranja-rojo (hue 28°): color de máxima estimulación del apetito.
+   * Usado por KFC, Popeyes, Burger King. Genera urgencia y calor.
+   *
+   * Carbón cálido (hue 30°): evoca parrilla y carbón. Contrasta fuerte
+   * con el CTA naranja. Mucho más apetitoso que negro neutro o azul marino.
+   *
+   * Crema cálida (hue 78°): nunca blanco frío. Los blancos clínicos
+   * reducen la percepción de sabor. La crema remite a salsas y masa natural.
+   *
+   * Ámbar secundario (hue 58°): complemento análogo al naranja-rojo,
+   * refuerza la energía y rapidez (asociación universal con velocidad).
+   */
 
-  --background: oklch(0.985 0.005 240);
-  --foreground: oklch(0.22 0.06 254);
+  /* Tokens de marca */
+  --coal:      oklch(0.13 0.030 30);   /* carbón parrilla — marrón-negro cálido */
+  --coal-mid:  oklch(0.20 0.032 30);   /* capa intermedia para tarjetas oscuras */
+  --flame:     oklch(0.63 0.24 28);    /* naranja-rojo: CTA principal, apetito */
+  --flame-lt:  oklch(0.72 0.21 36);    /* naranja más claro: hover/resaltado */
+  --amber:     oklch(0.82 0.16 58);    /* ámbar cálido: acento secundario */
+  --cream:     oklch(0.97 0.018 78);   /* crema: fondo de contenido */
+  --smoke:     oklch(0.55 0.025 30);   /* texto apagado sobre fondo oscuro */
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.06 254);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.06 254);
+  /* Semantic tokens (Tailwind / shadcn) */
+  --background:             var(--cream);
+  --foreground:             var(--coal);
 
-  --primary: oklch(0.22 0.06 254);
-  --primary-foreground: oklch(1 0 0);
+  --card:                   oklch(1 0 0);
+  --card-foreground:        var(--coal);
+  --popover:                oklch(1 0 0);
+  --popover-foreground:     var(--coal);
 
-  --secondary: oklch(0.95 0.01 240);
-  --secondary-foreground: oklch(0.22 0.06 254);
+  --primary:                var(--coal);
+  --primary-foreground:     var(--cream);
 
-  --muted: oklch(0.95 0.01 240);
-  --muted-foreground: oklch(0.50 0.03 250);
+  --secondary:              oklch(0.93 0.012 70);
+  --secondary-foreground:   var(--coal);
 
-  --accent: oklch(0.78 0.16 70);
-  --accent-foreground: oklch(0.22 0.06 254);
+  --muted:                  oklch(0.93 0.012 70);
+  --muted-foreground:       oklch(0.48 0.022 50);
 
-  --destructive: oklch(0.6 0.22 27);
+  --accent:                 var(--flame);
+  --accent-foreground:      oklch(1 0 0);
+
+  --destructive:            oklch(0.55 0.24 25);
   --destructive-foreground: oklch(1 0 0);
 
-  --border: oklch(0.90 0.01 240);
-  --input: oklch(0.90 0.01 240);
-  --ring: oklch(0.78 0.16 70);
+  --border:  oklch(0.87 0.012 70);
+  --input:   oklch(0.87 0.012 70);
+  --ring:    var(--flame);
 
-  --gradient-hero: linear-gradient(135deg, oklch(0.22 0.06 254) 0%, oklch(0.36 0.08 240) 100%);
-  --shadow-elegant: 0 20px 60px -20px color-mix(in oklab, var(--navy) 35%, transparent);
-  --shadow-amber: 0 10px 30px -10px color-mix(in oklab, var(--amber) 50%, transparent);
+  --gradient-hero:    linear-gradient(160deg, var(--coal) 0%, var(--coal-mid) 100%);
+  --shadow-card:      0 4px 24px -8px color-mix(in oklab, var(--coal) 18%, transparent);
+  --shadow-flame:     0 8px 32px -8px color-mix(in oklab, var(--flame) 40%, transparent);
+  --shadow-elegant:   0 4px 20px -6px color-mix(in oklab, var(--coal) 12%, transparent);
+  --shadow-amber:     0 6px 20px -4px color-mix(in oklab, var(--amber) 55%, transparent);
 }
 
 .dark {
-  --background: oklch(0.15 0.04 254);
-  --foreground: oklch(0.98 0.005 240);
-  --card: oklch(0.22 0.06 254);
-  --card-foreground: oklch(0.98 0.005 240);
-  --popover: oklch(0.22 0.06 254);
-  --popover-foreground: oklch(0.98 0.005 240);
-  --primary: oklch(0.78 0.16 70);
-  --primary-foreground: oklch(0.22 0.06 254);
-  --secondary: oklch(0.30 0.05 250);
-  --secondary-foreground: oklch(0.98 0.005 240);
-  --muted: oklch(0.30 0.05 250);
-  --muted-foreground: oklch(0.75 0.02 240);
-  --accent: oklch(0.78 0.16 70);
-  --accent-foreground: oklch(0.22 0.06 254);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.78 0.16 70);
+  --background:             var(--coal);
+  --foreground:             var(--cream);
+  --card:                   var(--coal-mid);
+  --card-foreground:        var(--cream);
+  --popover:                var(--coal-mid);
+  --popover-foreground:     var(--cream);
+  --primary:                var(--flame);
+  --primary-foreground:     oklch(1 0 0);
+  --secondary:              oklch(0.28 0.025 30);
+  --secondary-foreground:   var(--cream);
+  --muted:                  oklch(0.28 0.025 30);
+  --muted-foreground:       oklch(0.65 0.020 50);
+  --accent:                 var(--flame);
+  --accent-foreground:      oklch(1 0 0);
+  --border:  oklch(1 0 0 / 10%);
+  --input:   oklch(1 0 0 / 12%);
+  --ring:    var(--flame);
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ─── Login panel decorativo ────────────────────────────────────────── */
+.login-panel {
+  background:
+    radial-gradient(ellipse 110% 55% at 50% 108%, oklch(0.63 0.24 28 / 55%) 0%, transparent 62%),
+    radial-gradient(ellipse 55% 35% at 88% 8%,   oklch(0.82 0.16 58 / 14%) 0%, transparent 60%),
+    var(--coal);
+}
+
+.login-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 13rem;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1.5px oklch(1 0 0 / 5%);
+  transform: rotate(-18deg) translateY(8%);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.ember {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, oklch(0.92 0.14 65) 0%, oklch(0.63 0.24 28) 55%, transparent 100%);
+  animation:
+    ember-rise var(--dur, 3.2s) ease-in var(--delay, 0s) infinite,
+    ember-sway calc(var(--dur, 3.2s) * 0.8) ease-in-out var(--delay, 0s) infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes ember-rise {
+  0%   { transform: translateY(0);      opacity: 0;   }
+  8%   { opacity: 0.9; }
+  80%  { opacity: 0.5; }
+  100% { transform: translateY(-220px); opacity: 0;   }
+}
+
+@keyframes ember-sway {
+  from { margin-left: -10px; }
+  to   { margin-left:  10px; }
 }
 
 @layer base {
-  * {
-    border-color: var(--color-border);
-  }
+  * { border-color: var(--color-border); }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+  h1, h2, h3, .font-display {
+    font-family: "Bebas Neue", "Inter", ui-sans-serif, sans-serif;
+    letter-spacing: 0.02em;
   }
 }

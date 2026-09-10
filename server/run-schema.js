@@ -1,6 +1,6 @@
-import dotenv from 'dotenv';
-import sql from 'mssql';
-import fs from 'fs';
+import dotenv from "dotenv";
+import sql from "mssql";
+import fs from "fs";
 
 dotenv.config();
 
@@ -15,15 +15,16 @@ const config = {
 
 try {
   const pool = await new sql.ConnectionPool(config).connect();
-  console.log('Conectado a SQL Server correctamente.');
+  console.log("Conectado a SQL Server correctamente.");
 
-  const schema = fs.readFileSync('./schema.sql', 'utf8');
+  const schema = fs.readFileSync("./schema.sql", "utf8");
   const statements = schema
     .split(/\n(?=IF\s|INSERT\s)/i)
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
-  let ok = 0, errores = 0;
+  let ok = 0,
+    errores = 0;
   for (let stmt of statements) {
     try {
       // Para bloques que insertan en AKR_Roles con Id explícito,
@@ -33,16 +34,18 @@ try {
       }
       await pool.request().query(stmt);
       ok++;
-    } catch(e) {
-      console.error('Error:', e.message.substring(0, 150));
+    } catch (e) {
+      console.error("Error:", e.message.substring(0, 150));
       errores++;
     }
   }
   console.log(`Schema aplicado: ${ok} OK, ${errores} errores de ${statements.length} bloques.`);
 
   // Verificar datos semilla en AKR_Roles
-  const roles = await pool.request().query('SELECT Id_Role, Nombre_Role FROM AKR_Roles ORDER BY Id_Role');
-  console.log('Roles:', roles.recordset.map(r => `${r.Id_Role}=${r.Nombre_Role}`).join(', '));
+  const roles = await pool
+    .request()
+    .query("SELECT Id_Role, Nombre_Role FROM AKR_Roles ORDER BY Id_Role");
+  console.log("Roles:", roles.recordset.map((r) => `${r.Id_Role}=${r.Nombre_Role}`).join(", "));
 
   // Verificar tablas
   const tablas = await pool.request().query(`
@@ -50,10 +53,11 @@ try {
     WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME LIKE 'AKR_%'
     ORDER BY TABLE_NAME
   `);
-  console.log('Tablas:', tablas.recordset.map(r => r.TABLE_NAME).join(', '));
+  // eslint-disable-next-line prettier/prettier
+  console.log("Tablas:", tablas.recordset.map(r => r.TABLE_NAME).join(", "));
 
   await pool.close();
-} catch(err) {
-  console.error('Error de conexion:', err.message);
+} catch (err) {
+  console.error("Error de conexion:", err.message);
   process.exit(1);
 }

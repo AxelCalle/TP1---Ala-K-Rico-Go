@@ -21,7 +21,7 @@ export type Driver = {
   dni?: string;
   phone?: string;
   zona?: string;
-  activo?: boolean;  // undefined = activo (compatibilidad con datos previos)
+  activo?: boolean; // undefined = activo (compatibilidad con datos previos)
   createdAt?: number;
 };
 
@@ -32,7 +32,7 @@ export type Customer = {
   name: string;
   apellidos?: string;
   email: string;
-  password: string; // texto plano — solo prototipo
+  password?: string; // texto plano — solo prototipo; nunca persiste en localStorage
   phone?: string;
   address?: string;
   tipoDocumento?: TipoDocumento;
@@ -107,6 +107,8 @@ const DEFAULT_ACO_CONFIG: AcoConfig = {
 export type Session = {
   email: string;
   role: "admin" | "driver" | "customer";
+  nombre?: string;
+  apellido?: string;
   driverId?: string;
   customerId?: string;
 } | null;
@@ -118,15 +120,15 @@ export type Session = {
  * - locked:  cuenta bloqueada; lockedUntil = timestamp de desbloqueo
  */
 export type LoginResult =
-  | { status: "ok";      role: "admin" | "driver" | "customer" }
+  | { status: "ok"; role: "admin" | "driver" | "customer" }
   | { status: "invalid" }
-  | { status: "locked";  lockedUntil: number };
+  | { status: "locked"; lockedUntil: number };
 
 /** Intentos fallidos por correo: { count, lockedUntil (0 = no bloqueado) } */
 type LoginAttempts = Record<string, { count: number; lockedUntil: number }>;
 
-const MAX_INTENTOS  = 5;
-const BLOQUEO_MS    = 15 * 60 * 1000; // 15 minutos
+const MAX_INTENTOS = 5;
+const BLOQUEO_MS = 15 * 60 * 1000; // 15 minutos
 
 type State = {
   orders: Order[];
@@ -150,15 +152,30 @@ const valoresIniciales = (): State => ({
       name: "Mario",
       apellidos: "Bros",
       email: "mariob@gmail.com",
-      password: "1234",
+      password: import.meta.env.DEV ? "1234" : undefined,
       phone: "999888777",
       createdAt: 1700000000000,
     },
   ],
   drivers: [
-    { id: "d1", name: "Junior Bellido",  email: "repartidor1@alakricogo.com", password: "repartidor1" },
-    { id: "d2", name: "Jean Paul Rojas", email: "repartidor2@alakricogo.com", password: "repartidor2" },
-    { id: "d3", name: "Santiago Garcia", email: "repartidor3@alakricogo.com", password: "repartidor3" },
+    {
+      id: "d1",
+      name: "Junior Bellido",
+      email: "repartidor1@alakricogo.com",
+      password: import.meta.env.DEV ? "repartidor1" : undefined,
+    },
+    {
+      id: "d2",
+      name: "Jean Paul Rojas",
+      email: "repartidor2@alakricogo.com",
+      password: import.meta.env.DEV ? "repartidor2" : undefined,
+    },
+    {
+      id: "d3",
+      name: "Santiago Garcia",
+      email: "repartidor3@alakricogo.com",
+      password: import.meta.env.DEV ? "repartidor3" : undefined,
+    },
   ],
   orders: [
     {
@@ -188,10 +205,20 @@ let state: State = (() => {
     const raw = localStorage.getItem(CLAVE);
     if (!raw) return valoresIniciales();
     const parsed = JSON.parse(raw) as State;
-    if (!parsed.customers)      parsed.customers      = [];
-    if (!parsed.loginAttempts)  parsed.loginAttempts  = {};
+    if (!parsed.customers) parsed.customers = [];
+    if (!parsed.loginAttempts) parsed.loginAttempts = {};
     if (!parsed.notificaciones) parsed.notificaciones = [];
-    if (!parsed.acoConfig)      parsed.acoConfig      = DEFAULT_ACO_CONFIG;
+    if (!parsed.acoConfig) parsed.acoConfig = DEFAULT_ACO_CONFIG;
+    // Restaurar contraseñas semilla en memoria (nunca se persisten en disco)
+    const semilla = valoresIniciales();
+    parsed.drivers = parsed.drivers.map((d) => {
+      const s = semilla.drivers.find((sd) => sd.id === d.id);
+      return s ? { ...d, password: s.password } : d;
+    });
+    parsed.customers = parsed.customers.map((c) => {
+      const s = semilla.customers.find((sc) => sc.id === c.id);
+      return s ? { ...c, password: s.password } : c;
+    });
     return parsed;
   } catch {
     return valoresIniciales();
@@ -202,7 +229,13 @@ const oyentes = new Set<() => void>();
 
 function persistir() {
   if (typeof window !== "undefined") {
-    localStorage.setItem(CLAVE, JSON.stringify(state));
+    // Nunca persiste contraseñas en localStorage
+    const serializable = {
+      ...state,
+      customers: state.customers.map(({ password: _p, ...c }) => c),
+      drivers: state.drivers.map(({ password: _p, ...d }) => d),
+    };
+    localStorage.setItem(CLAVE, JSON.stringify(serializable));
   }
   oyentes.forEach((l) => l());
 }
@@ -224,9 +257,9 @@ export function useStore<T>(selector: (s: State) => T): T {
 
 /** Registra un intento fallido y bloquea la cuenta si se alcanzan MAX_INTENTOS. */
 function registrarIntentoFallido(emailL: string) {
-  const prev    = state.loginAttempts[emailL] ?? { count: 0, lockedUntil: 0 };
-  const count   = prev.count + 1;
-  const locked  = count >= MAX_INTENTOS ? Date.now() + BLOQUEO_MS : 0;
+  const prev = state.loginAttempts[emailL] ?? { count: 0, lockedUntil: 0 };
+  const count = prev.count + 1;
+  const locked = count >= MAX_INTENTOS ? Date.now() + BLOQUEO_MS : 0;
   state = {
     ...state,
     loginAttempts: {
@@ -262,12 +295,13 @@ export const store = {
     // ── Intentar autenticar ───────────────────────────────────────────────
 
     // 1. Cliente registrado
-    const customer = state.customers.find(
-      (c) => c.email === emailL && c.password === password,
-    );
+    const customer = state.customers.find((c) => c.email === emailL && c.password === password);
     if (customer) {
       limpiarIntentos(emailL);
-      state = { ...state, session: { email: customer.email, role: "customer", customerId: customer.id } };
+      state = {
+        ...state,
+        session: { email: customer.email, role: "customer", customerId: customer.id },
+      };
       persistir();
       return { status: "ok", role: "customer" };
     }
@@ -284,14 +318,6 @@ export const store = {
       state = { ...state, session: { email: driver.email!, role: "driver", driverId: driver.id } };
       persistir();
       return { status: "ok", role: "driver" };
-    }
-
-    // 3. Acceso de admin por email (sin contraseña real — solo demo)
-    if (emailL.includes("admin") || emailL.includes("alakricogo")) {
-      limpiarIntentos(emailL);
-      state = { ...state, session: { email, role: "admin" } };
-      persistir();
-      return { status: "ok", role: "admin" };
     }
 
     // ── Credenciales incorrectas → registrar intento fallido ─────────────
@@ -316,7 +342,7 @@ export const store = {
 
   /** Intentos fallidos restantes antes del bloqueo (0 si ya está bloqueado). */
   remainingAttempts(email: string): number {
-    const emailL  = email.trim().toLowerCase();
+    const emailL = email.trim().toLowerCase();
     const attempts = state.loginAttempts[emailL];
     if (!attempts) return MAX_INTENTOS;
     if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) return 0;
@@ -338,7 +364,7 @@ export const store = {
    * o 0 si no está bloqueada.
    */
   getBloqueo(email: string): number {
-    const emailL   = email.trim().toLowerCase();
+    const emailL = email.trim().toLowerCase();
     const attempts = state.loginAttempts[emailL];
     if (attempts?.lockedUntil && Date.now() < attempts.lockedUntil) {
       return attempts.lockedUntil;
@@ -354,13 +380,17 @@ export const store = {
     id: number;
     email: string;
     role: "admin" | "driver" | "customer";
+    nombre?: string;
+    apellido?: string;
   }) {
     state = {
       ...state,
       session: {
         email: usuario.email,
-        role:  usuario.role,
-        driverId:   usuario.role === "driver"   ? String(usuario.id) : undefined,
+        role: usuario.role,
+        nombre: usuario.nombre,
+        apellido: usuario.apellido,
+        driverId: usuario.role === "driver" ? String(usuario.id) : undefined,
         customerId: usuario.role === "customer" ? String(usuario.id) : undefined,
       },
     };
@@ -382,11 +412,17 @@ export const store = {
     let found = false;
 
     const customers = state.customers.map((c) => {
-      if (c.email === emailL) { found = true; return { ...c, password: newPassword }; }
+      if (c.email === emailL) {
+        found = true;
+        return { ...c, password: newPassword };
+      }
       return c;
     });
     const drivers = state.drivers.map((d) => {
-      if (d.email?.toLowerCase() === emailL) { found = true; return { ...d, password: newPassword }; }
+      if (d.email?.toLowerCase() === emailL) {
+        found = true;
+        return { ...d, password: newPassword };
+      }
       return d;
     });
 
@@ -401,7 +437,12 @@ export const store = {
 
   // ── Registro ──────────────────────────────────────────────────────────────
 
-  registerCustomer(name: string, email: string, password: string, phone?: string): "ok" | "email_taken" {
+  registerCustomer(
+    name: string,
+    email: string,
+    password: string,
+    phone?: string,
+  ): "ok" | "email_taken" {
     const emailL = email.trim().toLowerCase();
     if (store.emailExists(emailL)) return "email_taken";
     const customer: Customer = {
@@ -449,7 +490,7 @@ export const store = {
     if (store.emailExists(emailL)) return { resultado: "email_taken" };
 
     const primerNombre = datos.name.trim().split(" ")[0].toLowerCase();
-    const sufijoDni    = datos.dni ? datos.dni.trim().slice(-4) : String(Date.now()).slice(-4);
+    const sufijoDni = datos.dni ? datos.dni.trim().slice(-4) : String(Date.now()).slice(-4);
     const passwordGenerado = `${primerNombre}.${sufijoDni}`;
 
     const driver: Driver = {
@@ -484,9 +525,7 @@ export const store = {
   toggleActivoRepartidor(id: string) {
     state = {
       ...state,
-      drivers: state.drivers.map((d) =>
-        d.id === id ? { ...d, activo: !(d.activo ?? true) } : d,
-      ),
+      drivers: state.drivers.map((d) => (d.id === id ? { ...d, activo: !(d.activo ?? true) } : d)),
     };
     persistir();
   },
@@ -495,7 +534,12 @@ export const store = {
 
   updateCustomerProfile(
     id: string,
-    data: Partial<Pick<Customer, "name" | "apellidos" | "phone" | "address" | "tipoDocumento" | "numeroDocumento">>,
+    data: Partial<
+      Pick<
+        Customer,
+        "name" | "apellidos" | "phone" | "address" | "tipoDocumento" | "numeroDocumento"
+      >
+    >,
   ) {
     state = {
       ...state,
@@ -512,7 +556,7 @@ export const store = {
       .map((ord) => parseInt(ord.id.replace("WO-", ""), 10))
       .filter((n) => !isNaN(n));
     const next = nums.length ? Math.max(...nums) + 1 : 1;
-    const id   = `WO-${String(next).padStart(4, "0")}`;
+    const id = `WO-${String(next).padStart(4, "0")}`;
 
     const order: Order = { ...o, id, createdAt: Date.now(), status: "sin_asignar" };
     state = { ...state, orders: [order, ...state.orders] };
@@ -616,9 +660,7 @@ export const store = {
   marcarNotificacionLeida(id: string) {
     state = {
       ...state,
-      notificaciones: state.notificaciones.map((n) =>
-        n.id === id ? { ...n, leida: true } : n,
-      ),
+      notificaciones: state.notificaciones.map((n) => (n.id === id ? { ...n, leida: true } : n)),
     };
     persistir();
   },

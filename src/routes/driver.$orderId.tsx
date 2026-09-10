@@ -1,7 +1,20 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Drumstick, Loader2, MapPin, Navigation, Phone, Route as RouteIcon, Truck, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Drumstick,
+  Loader2,
+  MapPin,
+  Navigation,
+  Phone,
+  Route as RouteIcon,
+  Truck,
+  X,
+} from "lucide-react";
 import { store, useStore } from "@/lib/store";
+import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
 import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
 
@@ -14,7 +27,7 @@ export const Route = createFileRoute("/driver/$orderId")({
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
         <h1 className="text-2xl font-semibold">Pedido no encontrado</h1>
-        <Link to="/driver" className="mt-4 inline-block text-accent-foreground underline">
+        <Link to="/driver" className="mt-4 inline-block text-foreground underline">
           Volver al portal del repartidor
         </Link>
       </div>
@@ -24,10 +37,9 @@ export const Route = createFileRoute("/driver/$orderId")({
 
 const PICKUP = {
   label: "Cocina Ala K' Rico GO",
-  address: "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú",
-  coords: [-12.0278455, -77.0895871] as [number, number],
+  address: RESTAURANTE_DIRECCION,
+  coords: RESTAURANTE_COORDS,
 };
-
 
 function dibujarGrafo(
   ctx: CanvasRenderingContext2D,
@@ -45,13 +57,17 @@ function dibujarGrafo(
 
   // Compute max pheromone for normalisation
   let maxPh = 0;
-  if (result) result.pheromones.forEach((v) => { if (v > maxPh) maxPh = v; });
+  if (result)
+    result.pheromones.forEach((v) => {
+      if (v > maxPh) maxPh = v;
+    });
 
   // Best path edge set for quick lookup
   const bestEdges = new Set<string>();
   if (result) {
     for (let i = 0; i < result.path.length - 1; i++) {
-      const a = result.path[i], b = result.path[i + 1];
+      const a = result.path[i],
+        b = result.path[i + 1];
       bestEdges.add(a < b ? `${a}-${b}` : `${b}-${a}`);
     }
   }
@@ -67,9 +83,7 @@ function dibujarGrafo(
     ctx.beginPath();
     ctx.moveTo(toX(graph.nodes[e.from].x), toY(graph.nodes[e.from].y));
     ctx.lineTo(toX(graph.nodes[e.to].x), toY(graph.nodes[e.to].y));
-    ctx.strokeStyle = result
-      ? `rgba(99,102,241,${0.08 + ph * 0.35})`
-      : "rgba(148,163,184,0.25)";
+    ctx.strokeStyle = result ? `rgba(212,83,15,${0.08 + ph * 0.35})` : "rgba(148,163,184,0.25)";
     ctx.lineWidth = result ? 1 + ph * 2.5 : 1;
     ctx.stroke();
   }
@@ -83,7 +97,7 @@ function dibujarGrafo(
       const n = graph.nodes[result.path[i]];
       ctx.lineTo(toX(n.x), toY(n.y));
     }
-    ctx.strokeStyle = "hsl(var(--accent))";
+    ctx.strokeStyle = "#d4530f";
     ctx.lineWidth = 3;
     ctx.lineJoin = "round";
     ctx.stroke();
@@ -100,18 +114,18 @@ function dibujarGrafo(
     ctx.arc(cx, cy, isEndpoint ? 9 : onPath ? 6 : 4, 0, Math.PI * 2);
 
     if (n.id === 0) {
-      ctx.fillStyle = "hsl(var(--primary))";
+      ctx.fillStyle = "#1c120c";
     } else if (n.id === 1) {
-      ctx.fillStyle = "hsl(var(--accent))";
+      ctx.fillStyle = "#d4530f";
     } else if (onPath) {
-      ctx.fillStyle = "hsl(var(--accent) / 0.7)";
+      ctx.fillStyle = "rgba(212,83,15,0.7)";
     } else {
-      ctx.fillStyle = "hsl(var(--muted-foreground) / 0.4)";
+      ctx.fillStyle = "rgba(107,91,78,0.4)";
     }
     ctx.fill();
 
     if (n.label) {
-      ctx.fillStyle = "hsl(var(--primary-foreground))";
+      ctx.fillStyle = "#fdf8f2";
       ctx.font = "bold 9px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -165,11 +179,32 @@ function PaginaRuta() {
     }, 60);
   }, [grafoACO]);
 
+  // En SSR localStorage no existe → order es undefined; solo tirar notFound en el cliente
+  if (!order) {
+    if (typeof window !== "undefined") throw notFound();
+    return null;
+  }
+
+  const urlNavegacion = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+    PICKUP.address,
+  )}&destination=${encodeURIComponent(order.address)}&travelmode=driving`;
+
+  const distanceKm = resultadoACO
+    ? resultadoACO.distanceKm.toFixed(1)
+    : (2 + (order.id.charCodeAt(order.id.length - 1) % 5)).toFixed(1);
+
+  const etaMin = resultadoACO
+    ? resultadoACO.etaMin
+    : 5 + (order.id.charCodeAt(order.id.length - 1) % 8);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/driver" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground">
+          <Link
+            to="/driver"
+            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+          >
             <ArrowLeft className="h-4 w-4" /> Volver a pedidos
           </Link>
           <Link to="/" className="flex items-center gap-2">
@@ -184,7 +219,7 @@ function PaginaRuta() {
       <main className="mx-auto grid max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[1fr_360px]">
         {/* Map section */}
         <div className="flex flex-col gap-6">
-          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
+          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant)">
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Navigation className="h-4 w-4 text-accent" />
@@ -209,14 +244,14 @@ function PaginaRuta() {
           </section>
 
           {/* ACO visualization panel */}
-          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
+          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant)">
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <RouteIcon className="h-4 w-4 text-accent" />
                 Optimización de ruta (ACO)
               </div>
               {resultadoACO && (
-                <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+                <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
                   {resultadoACO.path.length - 1} segmentos · {resultadoACO.distanceKm.toFixed(1)} km
                 </span>
               )}
@@ -238,7 +273,7 @@ function PaginaRuta() {
                 <button
                   onClick={ejecutarOptimizacion}
                   disabled={calculandoACO}
-                  className="inline-flex flex-none items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60"
+                  className="inline-flex flex-none items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {calculandoACO ? (
                     <>
@@ -262,13 +297,16 @@ function PaginaRuta() {
           <div className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-muted-foreground">{order.id}</span>
-              <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+              <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
                 {order.sauce}
               </span>
             </div>
             <h2 className="mt-2 text-xl font-semibold">{order.customer}</h2>
             <div className="mt-3 space-y-2 text-sm">
-              <a href={`tel:${order.phone}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+              <a
+                href={`tel:${order.phone}`}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
+              >
                 <Phone className="h-4 w-4" /> {order.phone || "Sin teléfono"}
               </a>
               <div className="flex items-start gap-2 text-foreground">
@@ -285,23 +323,21 @@ function PaginaRuta() {
 
           <div className="grid grid-cols-3 gap-3">
             <Estadistica label="Alitas" value={order.wings} />
-            <Estadistica
-              label="Distancia"
-              value={`${distanceKm} km`}
-              highlight={!!resultadoACO}
-            />
-            <Estadistica
-              label="ETA"
-              value={`${etaMin} min`}
-              highlight={!!resultadoACO}
-            />
+            <Estadistica label="Distancia" value={`${distanceKm} km`} highlight={!!resultadoACO} />
+            <Estadistica label="ETA" value={`${etaMin} min`} highlight={!!resultadoACO} />
           </div>
 
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold">Paradas de la ruta</h3>
             <ol className="mt-3 space-y-3 text-sm">
               <ParadaRuta index="A" title="Recogida" sub={PICKUP.label} addr={PICKUP.address} />
-              <ParadaRuta index="B" title="Entrega" sub={order.customer} addr={order.address} accent />
+              <ParadaRuta
+                index="B"
+                title="Entrega"
+                sub={order.customer}
+                addr={order.address}
+                accent
+              />
             </ol>
           </div>
 
@@ -317,32 +353,36 @@ function PaginaRuta() {
               {/* Estado actual */}
               <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5 text-xs">
                 <span className="text-muted-foreground">Estado actual</span>
-                <span className={`font-semibold ${
-                  order.status === "en_camino"
-                    ? "text-primary"
-                    : order.status === "asignado"
-                    ? "text-accent-foreground"
-                    : "text-muted-foreground"
-                }`}>
+                <span
+                  className={`font-semibold ${
+                    order.status === "en_camino"
+                      ? "text-primary"
+                      : order.status === "asignado"
+                        ? "text-accent"
+                        : "text-muted-foreground"
+                  }`}
+                >
                   {order.status === "sin_asignar" && "⏳ Sin asignar"}
-                  {order.status === "asignado"    && "🍗 En preparación"}
-                  {order.status === "en_camino"   && "🛵 En camino"}
+                  {order.status === "asignado" && "🍗 En preparación"}
+                  {order.status === "en_camino" && "🛵 En camino"}
                 </span>
               </div>
 
               {/* Botones de avance */}
-              <div className={`grid gap-2 ${order.status === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}>
+              <div
+                className={`grid gap-2 ${order.status === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}
+              >
                 {order.status !== "en_camino" && (
                   <button
                     onClick={() => store.setStatus(order.id, "en_camino")}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Truck className="h-4 w-4" /> Iniciar entrega
                   </button>
                 )}
                 <button
                   onClick={() => store.setStatus(order.id, "entregado")}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <CheckCircle2 className="h-4 w-4" /> Marcar entregado
                 </button>
@@ -353,7 +393,7 @@ function PaginaRuta() {
                 !mostrarIncidencia ? (
                   <button
                     onClick={() => setMostrarIncidencia(true)}
-                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary"
+                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <AlertTriangle className="h-3.5 w-3.5" /> Reportar incidencia
                   </button>
@@ -361,7 +401,10 @@ function PaginaRuta() {
                   <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-destructive">Reportar incidencia</p>
-                      <button onClick={() => setMostrarIncidencia(false)} className="text-muted-foreground hover:text-foreground">
+                      <button
+                        onClick={() => setMostrarIncidencia(false)}
+                        className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
@@ -384,8 +427,11 @@ function PaginaRuta() {
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
                     />
                     <button
-                      onClick={() => { setIncidenciaEnviada(true); setMostrarIncidencia(false); }}
-                      className="w-full rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90"
+                      onClick={() => {
+                        setIncidenciaEnviada(true);
+                        setMostrarIncidencia(false);
+                      }}
+                      className="w-full rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       Enviar reporte al administrador
                     </button>
@@ -415,7 +461,9 @@ function Estadistica({
   highlight?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border p-3 text-center ${highlight ? "border-accent/40 bg-accent/10" : "border-border bg-card"}`}>
+    <div
+      className={`rounded-xl border p-3 text-center ${highlight ? "border-accent/40 bg-accent/10" : "border-border bg-card"}`}
+    >
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-lg font-semibold ${highlight ? "text-accent-foreground" : ""}`}>
         {value}

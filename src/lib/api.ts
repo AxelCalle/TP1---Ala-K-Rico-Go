@@ -5,9 +5,7 @@
  * Si no hay backend disponible (ErrorRed), la capa de login cae al mock store.
  */
 
-const URL_API: string =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (import.meta as any).env?.VITE_API_URL ?? "http://localhost:3001";
+const URL_API: string = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
 const CLAVE_TOKEN = "akr-jwt-token";
 
@@ -187,6 +185,12 @@ async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T
 
   const datos = await res.json().catch(() => ({ error: "respuesta_invalida" }));
 
+  if (res.status === 401) {
+    api.limpiarToken();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new ErrorApi(401, "sesion_expirada");
+  }
+
   if (!res.ok) {
     throw new ErrorApi(res.status, (datos as { error?: string }).error ?? "error_desconocido");
   }
@@ -234,6 +238,21 @@ export const api = {
     return solicitar("/api/auth/perfil", { headers: cabeceraAuth() });
   },
 
+  async cambiarPassword(passwordActual: string, passwordNuevo: string): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>("/api/auth/change-password", {
+      method: "POST",
+      headers: cabeceraAuth(),
+      body: JSON.stringify({ passwordActual, passwordNuevo }),
+    });
+  },
+
+  async resetPassword(email: string, passwordNuevo: string): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ email, passwordNuevo }),
+    });
+  },
+
   async ping(): Promise<boolean> {
     try {
       await solicitar("/api/health");
@@ -271,7 +290,7 @@ export const api = {
     });
   },
 
-  async asignarPedido(idPedido: number, idRepartidor: number): Promise<{ ok: boolean }> {
+  async asignarPedido(idPedido: number, idRepartidor: number | null): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/pedidos/${idPedido}/asignar`, {
       method: "PATCH",
       headers: cabeceraAuth(),

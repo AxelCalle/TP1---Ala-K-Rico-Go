@@ -1,6 +1,7 @@
 // Entry point del servidor Express — Ala K' Rico GO API
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
 import authRoutes          from './routes/auth.js';
@@ -21,6 +22,24 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 
 // ---------------------------------------------------------------------------
+// Rate limiting — C3 fix
+// ---------------------------------------------------------------------------
+const limiterAuth = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Intente en 15 minutos.' },
+});
+
+const limiterGeneral = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ---------------------------------------------------------------------------
 // Middlewares globales
 // ---------------------------------------------------------------------------
 app.use(cors({
@@ -29,6 +48,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(limiterGeneral);
 
 // ---------------------------------------------------------------------------
 // Log de accesos no autorizados — CP006 / CP018
@@ -56,7 +76,7 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // Rutas
 // ---------------------------------------------------------------------------
-app.use('/api/auth',           authRoutes);
+app.use('/api/auth',           limiterAuth, authRoutes);
 app.use('/api/usuarios',       usuariosRoutes);
 app.use('/api/pedidos',        pedidosRoutes);
 app.use('/api/repartidores',   repartidoresRoutes);

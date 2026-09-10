@@ -99,10 +99,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/pedidos  — crear pedido (solo clientes)
+// POST /api/pedidos  — crear pedido (clientes y admins)
 router.post('/', async (req, res) => {
-  if (req.usuario.role !== 'customer') {
-    return res.status(403).json({ error: 'Solo los clientes pueden crear pedidos.' });
+  if (!['customer', 'admin'].includes(req.usuario.role)) {
+    return res.status(403).json({ error: 'Sin permiso para crear pedidos.' });
   }
 
   const { latDestino, lngDestino, direccionDestino, productos, total, latOrigen, lngOrigen } = req.body;
@@ -204,9 +204,10 @@ router.patch('/:id/estado', async (req, res) => {
         entregado:  `Tu pedido #${req.params.id} fue entregado. ¡Buen provecho!`,
         cancelado:  `Tu pedido #${req.params.id} fue cancelado.`,
       };
+      const tipoNotif = estado === 'en_camino' ? 'pedido_en_camino' : estado;
       await pool.request()
         .input('idCli',  sql.Int,          pedido.Id_Cliente)
-        .input('tipo',   sql.NVarChar(30),  estado)
+        .input('tipo',   sql.NVarChar(30),  tipoNotif)
         .input('msg',    sql.NVarChar(300), mensajes[estado])
         .input('idPed',  sql.Int,           parseInt(req.params.id))
         .query(`
@@ -225,48 +226,64 @@ router.patch('/:id/estado', async (req, res) => {
   }
 });
 
-// PATCH /api/pedidos/:id/asignar  — admin asigna repartidor
+// PATCH /api/pedidos/:id/asignar  — admin asigna o desasigna repartidor
 router.patch('/:id/asignar', async (req, res) => {
   if (req.usuario.role !== 'admin') {
     return res.status(403).json({ error: 'Solo admin puede asignar.' });
   }
 
   const { idRepartidor } = req.body;
-  if (!idRepartidor) return res.status(400).json({ error: 'idRepartidor requerido.' });
+  const desasignar = idRepartidor === null || idRepartidor === undefined || idRepartidor === '';
 
   try {
     const pool = await getPool();
-    const now = new Date();
-    await pool.request()
-      .input('id',    sql.Int,          parseInt(req.params.id))
-      .input('repId', sql.Int,          idRepartidor)
-      .input('now',   sql.DateTime,     now)
-      .query(`
-        UPDATE AKR_Pedidos SET
-          Id_Repartidor     = @repId,
-          Estado            = 'asignado',
-          Asignacion_Pedido = @now
-        WHERE Id_Pedido = @id AND Estado = 'sin_asignar'
-      `);
 
-    const cur = await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id))
-      .query('SELECT Id_Cliente FROM AKR_Pedidos WHERE Id_Pedido = @id');
-    const pedido = cur.recordset[0];
-
-    if (pedido) {
+    if (desasignar) {
       await pool.request()
-        .input('idCli', sql.Int,          pedido.Id_Cliente)
-        .input('msg',   sql.NVarChar(300), `Tu pedido #${req.params.id} fue asignado a un repartidor.`)
-        .input('idPed', sql.Int,           parseInt(req.params.id))
+        .input('id', sql.Int, parseInt(req.params.id))
         .query(`
-          INSERT INTO AKR_Notificaciones (Id_Cliente, Tipo, Mensaje, Id_Pedido)
-          VALUES (@idCli, 'asignado', @msg, @idPed)
+          UPDATE AKR_Pedidos SET
+            Id_Repartidor     = NULL,
+            Estado            = 'sin_asignar',
+            Asignacion_Pedido = NULL
+          WHERE Id_Pedido = @id AND Estado IN ('asignado', 'sin_asignar')
         `);
-    }
 
-    await registrarAuditoria(pool, req.usuario.id, null, 'pedido_asignado',
-      `Pedido #${req.params.id} asignado a repartidor ${idRepartidor}`, req);
+      await registrarAuditoria(pool, req.usuario.id, null, 'pedido_desasignado',
+        `Pedido #${req.params.id} desasignado`, req);
+    } else {
+      const now = new Date();
+      await pool.request()
+        .input('id',    sql.Int,      parseInt(req.params.id))
+        .input('repId', sql.Int,      idRepartidor)
+        .input('now',   sql.DateTime, now)
+        .query(`
+          UPDATE AKR_Pedidos SET
+            Id_Repartidor     = @repId,
+            Estado            = 'asignado',
+            Asignacion_Pedido = @now
+          WHERE Id_Pedido = @id AND Estado IN ('sin_asignar', 'asignado')
+        `);
+
+      const cur = await pool.request()
+        .input('id', sql.Int, parseInt(req.params.id))
+        .query('SELECT Id_Cliente FROM AKR_Pedidos WHERE Id_Pedido = @id');
+      const pedido = cur.recordset[0];
+
+      if (pedido) {
+        await pool.request()
+          .input('idCli', sql.Int,          pedido.Id_Cliente)
+          .input('msg',   sql.NVarChar(300), `Tu pedido #${req.params.id} fue asignado a un repartidor.`)
+          .input('idPed', sql.Int,           parseInt(req.params.id))
+          .query(`
+            INSERT INTO AKR_Notificaciones (Id_Cliente, Tipo, Mensaje, Id_Pedido)
+            VALUES (@idCli, 'asignado', @msg, @idPed)
+          `);
+      }
+
+      await registrarAuditoria(pool, req.usuario.id, null, 'pedido_asignado',
+        `Pedido #${req.params.id} asignado a repartidor ${idRepartidor}`, req);
+    }
 
     return res.json({ ok: true });
   } catch (err) {
