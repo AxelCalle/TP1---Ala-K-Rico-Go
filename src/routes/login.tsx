@@ -308,9 +308,10 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
 
 function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
   const navigate = useNavigate();
-  const [nombre, setNombre] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [nombre,   setNombre]   = useState("");
+  const [apellido, setApellido] = useState("");
+  const [email,    setEmail]    = useState("");
+  const [phone,    setPhone]    = useState("");
   const [password, setPassword] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [verPass, setVerPass] = useState(false);
@@ -321,7 +322,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
     e.preventDefault();
     setError("");
     if (nombre.trim().length < 2) {
-      setError("Ingresa tu nombre completo.");
+      setError("Ingresa tu nombre.");
       return;
     }
     if (!email.includes("@")) {
@@ -340,16 +341,15 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
     setCargando(true);
 
     try {
-      // ── 1. Intentar registro en el backend real ───────────────────────
       await api.registrar({
-        nombre: nombre.trim(),
-        email: email.trim(),
+        nombre:   nombre.trim(),
+        apellido: apellido.trim() || undefined,
+        email:    email.trim(),
         password,
         telefono: phone.trim() || undefined,
-        idRole: 3, // siempre cliente
+        idRole:   3,
       });
 
-      // Registro ok → auto-login en la API
       const respuesta = await api.login(email.trim(), password);
       api.guardarToken(respuesta.token);
       store.setApiSession(respuesta.usuario);
@@ -358,13 +358,11 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       if (err instanceof ErrorApi && err.status === 409) {
         setError("Ya existe una cuenta con ese correo.");
       } else if (err instanceof ErrorRed) {
-        // ── Sin conexión: modo local (mock store) ─────────────────────
         const resultado = store.registerCustomer(nombre.trim(), email.trim(), password, phone);
         if (resultado === "email_taken") {
           setError("Ya existe una cuenta con ese correo.");
           return;
         }
-        // Auto-login local
         api.limpiarToken();
         const loginResult = store.login(email.trim(), password);
         if (loginResult.status === "ok") navigate({ to: "/cliente" });
@@ -388,22 +386,39 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         </p>
       </div>
 
-      {/* Nombre */}
-      <div className="space-y-1.5">
-        <label htmlFor="reg-nombre" className="text-sm font-medium">
-          Nombre completo <Req />
-        </label>
-        <input
-          id="reg-nombre"
-          type="text"
-          autoComplete="name"
-          required
-          maxLength={80}
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          className={inputCls}
-          placeholder="Juan Pérez"
-        />
+      {/* Nombre + Apellido */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label htmlFor="reg-nombre" className="text-sm font-medium">
+            Nombres <Req />
+          </label>
+          <input
+            id="reg-nombre"
+            type="text"
+            autoComplete="given-name"
+            required
+            maxLength={80}
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            className={inputCls}
+            placeholder="Juan"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="reg-apellido" className="text-sm font-medium">
+            Apellidos
+          </label>
+          <input
+            id="reg-apellido"
+            type="text"
+            autoComplete="family-name"
+            maxLength={80}
+            value={apellido}
+            onChange={(e) => setApellido(e.target.value)}
+            className={inputCls}
+            placeholder="Pérez"
+          />
+        </div>
       </div>
 
       {/* Correo */}
