@@ -56,12 +56,16 @@ function dibujarGrafo(
   const toY = (y: number) => PAD + y * (H - PAD * 2);
 
   let maxPh = 0;
-  if (result) result.pheromones.forEach((v) => { if (v > maxPh) maxPh = v; });
+  if (result)
+    result.pheromones.forEach((v) => {
+      if (v > maxPh) maxPh = v;
+    });
 
   const bestEdges = new Set<string>();
   if (result) {
     for (let i = 0; i < result.path.length - 1; i++) {
-      const a = result.path[i], b = result.path[i + 1];
+      const a = result.path[i],
+        b = result.path[i + 1];
       bestEdges.add(a < b ? `${a}-${b}` : `${b}-${a}`);
     }
   }
@@ -93,7 +97,8 @@ function dibujarGrafo(
   }
 
   for (const n of graph.nodes) {
-    const cx = toX(n.x), cy = toY(n.y);
+    const cx = toX(n.x),
+      cy = toY(n.y);
     const isEndpoint = n.id === 0 || n.id === 1;
     const onPath = result?.path.includes(n.id);
     ctx.beginPath();
@@ -117,7 +122,11 @@ function PaginaRuta() {
   const { orderId } = Route.useParams();
   const qc = useQueryClient();
 
-  const { data: pedido, isLoading, isError } = useQuery({
+  const {
+    data: pedido,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["pedido", orderId],
     queryFn: () => api.obtenerPedido(Number(orderId)),
     refetchInterval: 15000,
@@ -150,14 +159,20 @@ function PaginaRuta() {
     dibujarGrafo(ctx, cssW, cssH, grafoACO, resultadoACO);
   }, [grafoACO, resultadoACO]);
 
-  useEffect(() => { redibujar(); }, [redibujar]);
+  useEffect(() => {
+    redibujar();
+  }, [redibujar]);
 
   const ejecutarOptimizacion = useCallback(() => {
     setCalculandoACO(true);
     setTimeout(() => {
-      try { setResultadoACO(ejecutarACO(grafoACO)); }
-      catch { setResultadoACO(null); }
-      finally { setCalculandoACO(false); }
+      try {
+        setResultadoACO(ejecutarACO(grafoACO));
+      } catch {
+        setResultadoACO(null);
+      } finally {
+        setCalculandoACO(false);
+      }
     }, 60);
   }, [grafoACO]);
 
@@ -179,7 +194,11 @@ function PaginaRuta() {
     if (!pedido) return;
     setEnviandoIncidencia(true);
     try {
-      await api.reportarIncidencia(pedido.Id_Pedido, incidenciaTipo, incidenciaDetalle || undefined);
+      await api.reportarIncidencia(
+        pedido.Id_Pedido,
+        incidenciaTipo,
+        incidenciaDetalle || undefined,
+      );
       setIncidenciaEnviada(true);
       setMostrarIncidencia(false);
     } catch {
@@ -212,10 +231,17 @@ function PaginaRuta() {
     );
   }
 
-  const productos = (() => { try { return JSON.parse(pedido.Productos ?? "[]"); } catch { return []; } })();
+  const productos = (() => {
+    try {
+      return JSON.parse(pedido.Productos ?? "[]");
+    } catch {
+      return [];
+    }
+  })();
   const p0 = productos[0] ?? {};
   const estado = pedido.Estado;
-  const nombreCliente = `${pedido.Nombre_Cliente ?? ""} ${pedido.Apellido_Cliente ?? ""}`.trim() || "Cliente";
+  const nombreCliente =
+    `${pedido.Nombre_Cliente ?? ""} ${pedido.Apellido_Cliente ?? ""}`.trim() || "Cliente";
   const telefonoCliente = pedido.Telf_Cliente ?? "";
   const woId = `WO-${String(pedido.Id_Pedido).padStart(4, "0")}`;
   const coordsDestino: [number, number] = [pedido.Lat_Destino, pedido.Lng_Destino];
@@ -228,9 +254,7 @@ function PaginaRuta() {
     ? resultadoACO.distanceKm.toFixed(1)
     : (2 + (pedido.Id_Pedido % 5)).toFixed(1);
 
-  const etaMin = resultadoACO
-    ? resultadoACO.etaMin
-    : 5 + (pedido.Id_Pedido % 8);
+  const etaMin = resultadoACO ? resultadoACO.etaMin : 5 + (pedido.Id_Pedido % 8);
 
   return (
     <div className="min-h-screen bg-background">
@@ -292,7 +316,11 @@ function PaginaRuta() {
               )}
             </div>
             <div className="p-4">
-              <canvas ref={canvasRef} className="w-full rounded-lg bg-muted" style={{ height: 220 }} />
+              <canvas
+                ref={canvasRef}
+                className="w-full rounded-lg bg-muted"
+                style={{ height: 220 }}
+              />
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
                   {resultadoACO
@@ -305,9 +333,14 @@ function PaginaRuta() {
                   className="inline-flex flex-none items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {calculandoACO ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando…</>
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando…
+                    </>
                   ) : (
-                    <><RouteIcon className="h-3.5 w-3.5" /> {resultadoACO ? "Recalcular" : "Generar ruta"}</>
+                    <>
+                      <RouteIcon className="h-3.5 w-3.5" />{" "}
+                      {resultadoACO ? "Recalcular" : "Generar ruta"}
+                    </>
                   )}
                 </button>
               </div>
@@ -362,7 +395,13 @@ function PaginaRuta() {
             <h3 className="text-sm font-semibold">Paradas de la ruta</h3>
             <ol className="mt-3 space-y-3 text-sm">
               <ParadaRuta index="A" title="Recogida" sub={PICKUP.label} addr={PICKUP.address} />
-              <ParadaRuta index="B" title="Entrega" sub={nombreCliente} addr={pedido.Direccion_Destino} accent />
+              <ParadaRuta
+                index="B"
+                title="Entrega"
+                sub={nombreCliente}
+                addr={pedido.Direccion_Destino}
+                accent
+              />
             </ol>
           </div>
 
@@ -376,25 +415,35 @@ function PaginaRuta() {
             <div className="space-y-2">
               <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5 text-xs">
                 <span className="text-muted-foreground">Estado actual</span>
-                <span className={`font-semibold ${
-                  estado === "en_camino" ? "text-primary"
-                    : estado === "asignado" ? "text-accent"
-                    : "text-muted-foreground"
-                }`}>
+                <span
+                  className={`font-semibold ${
+                    estado === "en_camino"
+                      ? "text-primary"
+                      : estado === "asignado"
+                        ? "text-accent"
+                        : "text-muted-foreground"
+                  }`}
+                >
                   {estado === "sin_asignar" && "⏳ Sin asignar"}
                   {estado === "asignado" && "🍗 En preparación"}
                   {estado === "en_camino" && "🛵 En camino"}
                 </span>
               </div>
 
-              <div className={`grid gap-2 ${estado === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}>
+              <div
+                className={`grid gap-2 ${estado === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}
+              >
                 {estado !== "en_camino" && (
                   <button
                     onClick={() => cambiarEstado("en_camino")}
                     disabled={cambioEstadoLoading}
                     className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    {cambioEstadoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+                    {cambioEstadoLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Truck className="h-4 w-4" />
+                    )}
                     Iniciar entrega
                   </button>
                 )}
@@ -403,7 +452,11 @@ function PaginaRuta() {
                   disabled={cambioEstadoLoading}
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {cambioEstadoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {cambioEstadoLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
                   Marcar entregado
                 </button>
               </div>
@@ -477,23 +530,51 @@ function PaginaRuta() {
   );
 }
 
-function Estadistica({ label, value, highlight }: { label: string; value: string | number; highlight?: boolean }) {
+function Estadistica({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string | number;
+  highlight?: boolean;
+}) {
   return (
-    <div className={`rounded-xl border p-3 text-center ${highlight ? "border-accent/40 bg-accent/10" : "border-border bg-card"}`}>
+    <div
+      className={`rounded-xl border p-3 text-center ${highlight ? "border-accent/40 bg-accent/10" : "border-border bg-card"}`}
+    >
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${highlight ? "text-accent-foreground" : ""}`}>{value}</div>
+      <div className={`mt-1 text-lg font-semibold ${highlight ? "text-accent-foreground" : ""}`}>
+        {value}
+      </div>
     </div>
   );
 }
 
-function ParadaRuta({ index, title, sub, addr, accent }: { index: string; title: string; sub: string; addr: string; accent?: boolean }) {
+function ParadaRuta({
+  index,
+  title,
+  sub,
+  addr,
+  accent,
+}: {
+  index: string;
+  title: string;
+  sub: string;
+  addr: string;
+  accent?: boolean;
+}) {
   return (
     <li className="flex gap-3">
-      <span className={`grid h-7 w-7 flex-none place-items-center rounded-full text-xs font-bold ${accent ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground"}`}>
+      <span
+        className={`grid h-7 w-7 flex-none place-items-center rounded-full text-xs font-bold ${accent ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground"}`}
+      >
         {index}
       </span>
       <div>
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </div>
         <div className="font-medium">{sub}</div>
         <div className="text-xs text-muted-foreground">{addr}</div>
       </div>
