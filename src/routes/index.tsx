@@ -100,7 +100,7 @@ export function PaginaInicio() {
           borderColor: "oklch(1 0 0 / 8%)",
         }}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-3">
           {/* Marca — logo SVG con fondo transparente */}
           <Link to="/" className="flex items-center gap-3 group">
             <span className="transition group-hover:brightness-110">
@@ -117,7 +117,7 @@ export function PaginaInicio() {
           {/* CTA secundario — Heurística #7: flexibilidad para usuarios del equipo */}
           <Link
             to="/login"
-            className="inline-flex items-center gap-1.5 rounded-sm px-4 py-2 text-sm font-bold uppercase tracking-wide transition hover:brightness-110"
+            className="inline-flex items-center gap-1.5 rounded-sm px-3 py-2 text-sm font-bold uppercase tracking-wide transition hover:brightness-110 active:brightness-95"
             style={{ background: "var(--flame)", color: "var(--cream)" }}
           >
             Panel
@@ -135,7 +135,7 @@ export function PaginaInicio() {
         className="relative overflow-hidden"
         style={{ background: "var(--gradient-hero)" }}
       >
-        <div className="mx-auto max-w-6xl px-6 py-16 md:py-24 lg:py-28">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-16 md:py-24 lg:py-28">
 
           {/* Eyebrow — Heurística #2: lenguaje del mundo real */}
           <p
@@ -172,7 +172,7 @@ export function PaginaInicio() {
               Heurística #5: prevención de errores (placeholder + validación)
               Heurística #9: mensajes de error útiles
              ────────────────────────────────── */}
-          <div className="mt-8 max-w-md">
+          <div className="mt-6 sm:mt-8 w-full max-w-md">
             <form onSubmit={rastrear}>
               <div
                 className="flex items-stretch overflow-hidden rounded-sm"
@@ -270,9 +270,9 @@ export function PaginaInicio() {
           Heurística #6: reconocimiento sobre recuerdo
           Heurística #2: lenguaje del mundo real
          ══════════════════════════════════════ */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-20">
         {/* Encabezado de sección */}
-        <div className="mb-10 md:flex md:items-end md:justify-between">
+        <div className="mb-8 sm:mb-10 md:flex md:items-end md:justify-between">
           <h2
             className="font-display leading-none"
             style={{
@@ -295,7 +295,7 @@ export function PaginaInicio() {
           {PASOS.map((paso) => (
             <article
               key={paso.n}
-              className="bg-background px-8 py-10 transition-colors hover:bg-card"
+              className="bg-background px-5 py-8 sm:px-8 sm:py-10 transition-colors hover:bg-card"
             >
               {/* Número grande como contexto visual — no como texto funcional */}
               <span
@@ -340,10 +340,10 @@ export function PaginaInicio() {
           Los usuarios del equipo tienen acceso rápido desde cualquier parte
          ══════════════════════════════════════ */}
       <section
-        className="py-14"
+        className="py-10 sm:py-14"
         style={{ background: "var(--coal)" }}
       >
-        <div className="mx-auto max-w-6xl px-6 md:flex md:items-center md:justify-between">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 md:flex md:items-center md:justify-between">
           <div>
             <h2
               className="font-display leading-none"
@@ -362,7 +362,7 @@ export function PaginaInicio() {
 
           <Link
             to="/login"
-            className="mt-6 inline-flex items-center gap-2 rounded-sm px-8 py-4 text-sm font-bold uppercase tracking-wider transition hover:brightness-110 active:brightness-95 md:mt-0"
+            className="mt-6 inline-flex items-center gap-2 rounded-sm px-6 py-3.5 text-sm font-bold uppercase tracking-wider transition hover:brightness-110 active:brightness-95 md:mt-0"
             style={{ background: "var(--flame)", color: "var(--cream)" }}
           >
             Ingresar al panel
