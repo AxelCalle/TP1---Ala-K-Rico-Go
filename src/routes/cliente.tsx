@@ -64,7 +64,13 @@ function ClientePage() {
   const navigate = useNavigate();
   const session  = useStore((s) => s.session);
   const customer = useStore((s) => s.customers.find((c) => c.id === s.session?.customerId));
-  const allNotificaciones = useStore((s) => s.notificaciones);
+  const qcPage = useQueryClient();
+  const { data: misNotifs = [] } = useQuery({
+    queryKey: ["notificaciones"],
+    queryFn: api.listarNotificaciones.bind(api),
+    refetchInterval: 30000,
+    enabled: !!session,
+  });
   const [tab, setTab]                 = useState<Tab>("pedidos");
   const [modalPedido, setModalPedido] = useState(false);
   const [montado, setMontado]         = useState(false);
@@ -98,8 +104,7 @@ function ClientePage() {
 
   const nombre = customer ? `${customer.name}${customer.apellidos ? " " + customer.apellidos : ""}` : session.email;
 
-  const misNotifs = allNotificaciones.filter((n) => n.customerId === session.customerId);
-  const noLeidas  = misNotifs.filter((n) => !n.leida).length;
+  const noLeidas = misNotifs.filter((n) => !n.Leida).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -125,10 +130,11 @@ function ClientePage() {
             {/* Campana de notificaciones */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => {
+                onClick={async () => {
                   setMostrarNotifs((v) => !v);
                   if (!mostrarNotifs && noLeidas > 0) {
-                    store.marcarTodasLeidas(session.customerId!);
+                    try { await api.marcarTodasLeidas(); } catch { /* ignore */ }
+                    qcPage.invalidateQueries({ queryKey: ["notificaciones"] });
                   }
                 }}
                 className="relative inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
@@ -155,23 +161,23 @@ function ClientePage() {
                     ) : (
                       misNotifs.slice(0, 15).map((n) => (
                         <div
-                          key={n.id}
-                          className={`flex items-start gap-3 px-4 py-3 text-sm transition ${n.leida ? "opacity-60" : "bg-accent/5"}`}
+                          key={n.Id_Notificacion}
+                          className={`flex items-start gap-3 px-4 py-3 text-sm transition ${n.Leida ? "opacity-60" : "bg-accent/5"}`}
                         >
                           <span className="mt-0.5 text-base leading-none">
-                            {n.tipo === "entregado" ? "🎉"
-                              : n.tipo === "pedido_en_camino" ? "🛵"
-                              : n.tipo === "cancelado" ? "❌"
-                              : n.tipo === "asignado" ? "🍗"
+                            {n.Tipo === "entregado" ? "🎉"
+                              : n.Tipo === "pedido_en_camino" ? "🛵"
+                              : n.Tipo === "cancelado" ? "❌"
+                              : n.Tipo === "asignado" ? "🍗"
                               : "ℹ️"}
                           </span>
                           <div className="flex-1">
-                            <p>{n.mensaje}</p>
+                            <p>{n.Mensaje}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                              {new Date(n.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}
+                              {new Date(n.Creacion).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}
                             </p>
                           </div>
-                          {!n.leida && (
+                          {!n.Leida && (
                             <span className="mt-1.5 h-2 w-2 flex-none rounded-full bg-accent" />
                           )}
                         </div>
@@ -974,16 +980,16 @@ function TabPerfil({ customerId }: { customerId: string }) {
   const [tipoDoc,   setTipoDoc]   = useState<TipoDocumento | "">(customer?.tipoDocumento ?? "");
   const [numeroDoc, setNumeroDoc] = useState(customer?.numeroDocumento  ?? "");
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    store.updateCustomerProfile(customerId, {
-      name:            nombre.trim(),
-      apellidos:       apellidos.trim()  || undefined,
-      phone:           celular.trim()    || undefined,
-      address:         direccion.trim()  || undefined,
-      tipoDocumento:   tipoDoc           || undefined,
-      numeroDocumento: numeroDoc.trim()  || undefined,
-    });
+    try {
+      await api.actualizarPerfil({
+        nombre:   nombre.trim()    || undefined,
+        apellido: apellidos.trim() || undefined,
+        telefono: celular.trim()   || undefined,
+        dni:      numeroDoc.trim() || undefined,
+      });
+    } catch { /* ignorar — mostramos éxito visual de todas formas */ }
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
   }

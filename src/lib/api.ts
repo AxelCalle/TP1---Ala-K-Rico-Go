@@ -72,6 +72,7 @@ export type PedidoApi = {
   Cancelacion_Pedido: string | null;
   Nombre_Cliente?: string;
   Apellido_Cliente?: string;
+  Telf_Cliente?: string | null;
   Nombre_Repartidor?: string;
   Apellido_Repartidor?: string;
 };
@@ -236,6 +237,16 @@ export const api = {
 
   async perfil(): Promise<Record<string, unknown>> {
     return solicitar("/api/auth/perfil", { headers: cabeceraAuth() });
+  },
+
+  async actualizarPerfil(datos: {
+    nombre?: string; apellido?: string; dni?: string; telefono?: string;
+  }): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>("/api/auth/perfil", {
+      method: "PUT",
+      headers: cabeceraAuth(),
+      body: JSON.stringify(datos),
+    });
   },
 
   async cambiarPassword(passwordActual: string, passwordNuevo: string): Promise<{ ok: boolean }> {

@@ -264,4 +264,34 @@ router.get('/perfil', verificarToken, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// PUT /api/auth/perfil  — el propio usuario actualiza sus datos
+// ---------------------------------------------------------------------------
+router.put('/perfil', verificarToken, async (req, res) => {
+  const { nombre, apellido, dni, telefono } = req.body;
+  try {
+    const pool = await getPool();
+    await pool.request()
+      .input('id',       sql.Int,          req.usuario.id)
+      .input('nombre',   sql.NVarChar(100), nombre   ?? null)
+      .input('apellido', sql.NVarChar(100), apellido ?? null)
+      .input('dni',      sql.NVarChar(20),  dni      ?? null)
+      .input('telefono', sql.NVarChar(20),  telefono ?? null)
+      .query(`
+        UPDATE AKR_Usuarios
+        SET
+          Nombre_Usuario       = COALESCE(@nombre,   Nombre_Usuario),
+          Apellido_Usuario     = COALESCE(@apellido, Apellido_Usuario),
+          DNI_Usuario          = COALESCE(@dni,      DNI_Usuario),
+          Telf_Usuario         = COALESCE(@telefono, Telf_Usuario),
+          Modificacion_Usuario = GETDATE()
+        WHERE Id_Usuario = @id
+      `);
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Error en PUT /perfil:', err.message);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
 export default router;

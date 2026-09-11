@@ -1,7 +1,11 @@
-import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
-import { Check, MapPin, PackageCheck, Truck, ChefHat, ClipboardList, ChevronLeft, Phone } from "lucide-react";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Check, MapPin, PackageCheck, Truck, ChefHat, ClipboardList, ChevronLeft, Phone, Loader2 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
-import { store, useStore } from "@/lib/store";
+import { store } from "@/lib/store";
+import { api } from "@/lib/api";
+import { MapaRuta } from "@/components/MapaRuta";
+import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
 
 export const Route = createFileRoute("/seguimiento/$orderId")({
   head: ({ params }) => ({
@@ -59,29 +63,62 @@ const SUBTITLES: Record<StepKey, string> = {
 
 function PaginaSeguimiento() {
   const { orderId } = Route.useParams();
-  const session = useStore((s) => s.session);
-  const order = useStore((s) =>
-    s.orders.find(
-      (o) => o.id === orderId &&
-        (session?.role === "admin" || o.customerId === session?.customerId),
-    ),
-  );
-  const drivers = useStore((s) => s.drivers);
 
-  if (!order) {
-    if (typeof window !== "undefined") throw notFound();
-    return null;
+  const { data: pedido, isLoading, isError } = useQuery({
+    queryKey: ["seguimiento", orderId],
+    queryFn: () => api.obtenerPedido(Number(orderId)),
+    refetchInterval: 10000,
+    retry: 1,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-accent" />
+      </div>
+    );
   }
 
-  const driver = drivers.find((d) => d.id === order.driverId);
-  const currentIndex = STEPS.findIndex((s) => s.key === order.status);
+  if (isError || !pedido) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
+        <div className="space-y-4">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-muted text-muted-foreground">
+            <PackageCheck className="h-7 w-7" />
+          </div>
+          <h1 className="text-xl font-semibold">Pedido no encontrado</h1>
+          <p className="text-sm text-muted-foreground">
+            Verifica el código de seguimiento o revisa tus pedidos activos.
+          </p>
+          <Link
+            to="/cliente"
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Ver mis pedidos
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const productos = (() => { try { return JSON.parse(pedido.Productos ?? "[]"); } catch { return []; } })();
+  const p0 = productos[0] ?? {};
+
+  const estado = pedido.Estado as StepKey;
+  const currentIndex = STEPS.findIndex((s) => s.key === estado);
   const currentStep = STEPS[currentIndex] ?? STEPS[0];
-  const nombre = order.customer.split(" ")[0];
-  const urlMapa = `https://www.google.com/maps?q=${encodeURIComponent(order.address)}&output=embed`;
+
+  const nombre = pedido.Nombre_Cliente?.split(" ")[0] ?? "Cliente";
+  const coordsDestino: [number, number] = [pedido.Lat_Destino, pedido.Lng_Destino];
+
+  const nombreRepartidor = pedido.Nombre_Repartidor
+    ? `${pedido.Nombre_Repartidor} ${pedido.Apellido_Repartidor ?? ""}`.trim()
+    : null;
+
+  const woId = `WO-${String(pedido.Id_Pedido).padStart(4, "0")}`;
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
           <Link to="/" className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -99,26 +136,25 @@ function PaginaSeguimiento() {
 
       <main className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:px-6">
 
-        {/* ── Encabezado de estado ─────────────────────────────────────────── */}
+        {/* Encabezado de estado */}
         <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {order.id}
+                {woId}
               </p>
               <h1 className="mt-1 text-2xl font-semibold leading-tight sm:text-3xl">
-                {GREETINGS[currentStep.key as StepKey]?.(nombre) ?? `Hola, ${nombre}`}
+                {GREETINGS[currentStep.key]?.(nombre) ?? `Hola, ${nombre}`}
               </h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                {SUBTITLES[currentStep.key as StepKey]}
+                {SUBTITLES[currentStep.key]}
               </p>
             </div>
-            {/* Ícono de estado grande */}
             <span
               className={`hidden shrink-0 sm:grid h-14 w-14 place-items-center rounded-full ${
-                order.status === "entregado"
+                estado === "entregado"
                   ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : order.status === "en_camino"
+                  : estado === "en_camino"
                   ? "bg-accent/15 text-accent"
                   : "bg-muted text-muted-foreground"
               }`}
@@ -128,7 +164,7 @@ function PaginaSeguimiento() {
           </div>
         </div>
 
-        {/* ── Stepper ─────────────────────────────────────────────────────── */}
+        {/* Stepper */}
         <div className="rounded-xl border border-border bg-card px-5 py-5 sm:px-6">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Estado del pedido
@@ -143,7 +179,6 @@ function PaginaSeguimiento() {
 
               return (
                 <li key={step.key} className="flex gap-4">
-                  {/* Línea + círculo */}
                   <div className="flex flex-col items-center">
                     <span
                       className={`relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 transition-all ${
@@ -169,8 +204,6 @@ function PaginaSeguimiento() {
                       />
                     )}
                   </div>
-
-                  {/* Texto */}
                   <div className={`pb-5 pt-1.5 ${isLast ? "pb-0" : ""}`}>
                     <p className={`text-sm font-semibold ${future ? "text-muted-foreground" : "text-foreground"}`}>
                       {step.label}
@@ -188,56 +221,45 @@ function PaginaSeguimiento() {
           </ol>
         </div>
 
-        {/* ── Grid: detalles + repartidor ─────────────────────────────────── */}
+        {/* Grid: detalles + repartidor */}
         <div className="grid gap-4 sm:grid-cols-2">
-
-          {/* Detalles del pedido */}
           <div className="rounded-xl border border-border bg-card p-5">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Tu pedido
             </h2>
             <dl className="space-y-2.5 text-sm">
-              <FilaDato label="Alitas" value={`${order.wings} piezas`} />
-              <FilaDato label="Salsa"  value={order.sauce} />
-              <FilaDato label="Dirección" value={order.address} multiline />
-              {order.notes && <FilaDato label="Notas" value={order.notes} />}
+              {p0.alitas && <FilaDato label="Alitas" value={`${p0.alitas} piezas`} />}
+              {p0.salsa  && <FilaDato label="Salsa"  value={p0.salsa} />}
+              <FilaDato label="Dirección" value={pedido.Direccion_Destino} multiline />
+              {p0.notas  && <FilaDato label="Notas"  value={p0.notas} />}
             </dl>
           </div>
 
-          {/* Repartidor */}
           <div className="rounded-xl border border-border bg-card p-5">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Tu repartidor
             </h2>
-            {driver && order.status !== "sin_asignar" ? (
+            {nombreRepartidor && estado !== "sin_asignar" ? (
               <div className="flex items-center gap-3">
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent/15 text-base font-bold text-accent">
-                  {driver.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                  {nombreRepartidor.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                 </span>
                 <div className="min-w-0">
-                  <p className="font-semibold">{driver.name}</p>
+                  <p className="font-semibold">{nombreRepartidor}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {order.status === "en_camino"
+                    {estado === "en_camino"
                       ? "En camino a tu dirección"
-                      : order.status === "entregado"
+                      : estado === "entregado"
                       ? "Pedido entregado"
                       : "Listo para salir de cocina"}
                   </p>
-                  {driver.phone && (
-                    <a
-                      href={`tel:${driver.phone}`}
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-sm text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <Phone className="h-3 w-3" /> {driver.phone}
-                    </a>
-                  )}
                 </div>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 <div className="h-12 w-12 rounded-full bg-muted" />
                 <p className="text-sm text-muted-foreground">
-                  {order.status === "sin_asignar"
+                  {estado === "sin_asignar"
                     ? "Estamos asignando un repartidor a tu pedido."
                     : "Un repartidor está siendo asignado."}
                 </p>
@@ -246,23 +268,29 @@ function PaginaSeguimiento() {
           </div>
         </div>
 
-        {/* ── Mapa ────────────────────────────────────────────────────────── */}
+        {/* Mapa — Leaflet + OpenStreetMap, NUNCA Google Maps */}
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           <div className="flex items-center gap-2 border-b border-border px-5 py-3">
             <MapPin className="h-4 w-4 text-accent" />
             <span className="text-sm font-medium">Destino de entrega</span>
           </div>
-          <div className="relative h-[300px] w-full bg-muted sm:h-[360px]">
-            <iframe
-              title={`Mapa a ${order.address}`}
-              src={urlMapa}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              sandbox="allow-scripts allow-same-origin"
-              className="absolute inset-0 h-full w-full border-0"
-            />
-          </div>
+          <MapaRuta
+            origen={RESTAURANTE_DIRECCION}
+            coordsOrigen={RESTAURANTE_COORDS}
+            destino={pedido.Direccion_Destino}
+            coordsDestino={coordsDestino}
+            altura={320}
+          />
         </div>
+
+        {pedido.Telf_Cliente && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm">
+            <Phone className="h-4 w-4 text-accent" />
+            <a href={`tel:${pedido.Telf_Cliente}`} className="text-accent hover:underline">
+              {pedido.Telf_Cliente}
+            </a>
+          </div>
+        )}
 
         <p className="text-center text-xs text-muted-foreground">
           ¿Algún problema con tu pedido?{" "}
