@@ -377,7 +377,7 @@ export function PaginaInicio() {
         style={{ borderColor: "var(--border)" }}
       >
         <div
-          className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 text-xs"
+          className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-5 text-xs"
           style={{ color: "var(--muted-foreground)" }}
         >
           <span>© {new Date().getFullYear()} Ala K&apos; Rico GO</span>

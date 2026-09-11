@@ -108,7 +108,7 @@ function LoginPage() {
       </div>
 
       {/* Panel del formulario */}
-      <div className="flex flex-col items-center justify-center gap-5 bg-background p-6">
+      <div className="flex flex-col items-center justify-center gap-5 bg-background p-4 sm:p-6">
         {/* Branding — solo visible en mobile (el panel decorativo lo oculta en md+) */}
         <Link to="/" className="flex items-center gap-2 md:hidden">
           <LogoIcon size={28} />
@@ -213,7 +213,7 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-card p-8 shadow-(--shadow-elegant)"
+      className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-card p-5 sm:p-8 shadow-(--shadow-elegant)"
     >
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Bienvenido</h1>
@@ -377,7 +377,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-8 shadow-(--shadow-elegant)"
+      className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-5 sm:p-8 shadow-(--shadow-elegant)"
     >
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Crear cuenta</h1>
