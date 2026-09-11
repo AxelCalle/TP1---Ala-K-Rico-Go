@@ -1,4 +1,5 @@
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Bell, BellRing, ChefHat, ClipboardList, KeyRound, LogOut, Map, MapPin,
@@ -236,6 +237,7 @@ function ModalNuevoPedido({
   const [notas,         setNotas]         = useState("");
   const [enviando,      setEnviando]      = useState(false);
   const [error,         setError]         = useState("");
+  const qcModal = useQueryClient();
 
   // Estado del selector de mapa
   const [mostrarMapa,   setMostrarMapa]   = useState(false);
@@ -261,19 +263,29 @@ function ModalNuevoPedido({
 
     // Si el cliente fijó el pin, usamos esas coords exactas; si no, geocodificamos el texto
     const coords = coordsPin ?? await geocodificarDireccion(direccion.trim());
+    if (!coords) {
+      setError("No se pudo ubicar la dirección. Intenta seleccionarla en el mapa.");
+      setEnviando(false);
+      return;
+    }
 
-    store.addOrder({
-      customer:   customer ? `${customer.name}${customer.apellidos ? " " + customer.apellidos : ""}` : "Cliente",
-      customerId,
-      phone:      telefono.trim().slice(0, 40),
-      address:    direccion.trim().slice(0, 200),
-      wings:      Math.min(200, Math.max(1, alitas)),
-      sauce:      salsa,
-      notes:      notas.trim().slice(0, 200) || undefined,
-      coords,
-    });
+    try {
+      await api.crearPedido({
+        latDestino:        coords[0],
+        lngDestino:        coords[1],
+        direccionDestino:  direccion.trim().slice(0, 300),
+        productos: [{ alitas: Math.min(200, Math.max(1, alitas)), salsa, notas: notas.trim().slice(0, 200) || undefined }],
+        latOrigen:  RESTAURANTE_COORDS[0],
+        lngOrigen:  RESTAURANTE_COORDS[1],
+      });
+    } catch {
+      setError("Error al registrar el pedido. Intenta de nuevo.");
+      setEnviando(false);
+      return;
+    }
 
     setEnviando(false);
+    qcModal.invalidateQueries({ queryKey: ["mis-pedidos"] });
     onCreado();
   }
 
@@ -464,15 +476,24 @@ function ModalNuevoPedido({
 
 // ─── Tab: Mis Pedidos ─────────────────────────────────────────────────────────
 
-function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevoPedido: () => void }) {
-  const allOrders = useStore((s) => s.orders);
-  const orders = useMemo(
-    () => allOrders
-      .filter((o) => o.customerId === customerId)
-      .sort((a, b) => b.createdAt - a.createdAt),
-    [allOrders, customerId],
-  );
-  const [confirmandoCancelar, setConfirmandoCancelar] = useState<string | null>(null);
+function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () => void }) {
+  const qc = useQueryClient();
+  const { data: orders = [], isLoading } = useQuery({
+    queryKey: ["mis-pedidos"],
+    queryFn: api.listarPedidos.bind(api),
+    refetchInterval: 15000,
+  });
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState<number | null>(null);
+
+  async function cancelar(id: number) {
+    try { await api.cambiarEstadoPedido(id, "cancelado"); } catch { /* ignore */ }
+    qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
+    setConfirmandoCancelar(null);
+  }
+
+  if (isLoading) {
+    return <div className="py-10 text-center text-sm text-muted-foreground">Cargando pedidos…</div>;
+  }
 
   if (orders.length === 0) {
     return (
@@ -492,100 +513,102 @@ function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevo
     );
   }
 
-  const activo = orders.find((o) => o.status !== "entregado");
+  const activo = orders.find((o) => o.Estado !== "entregado" && o.Estado !== "cancelado");
 
   return (
     <div className="space-y-5">
-      {/* Pedido activo destacado */}
       {activo && (
         <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-5">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-accent-foreground">
               Pedido en curso
             </span>
-            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[activo.status]}`}>
-              {STATUS_ES[activo.status]}
+            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[activo.Estado] ?? ""}`}>
+              {STATUS_ES[activo.Estado] ?? activo.Estado}
             </span>
           </div>
-          <BarraProgreso status={activo.status} />
+          <BarraProgreso status={activo.Estado} />
           <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="font-mono text-xs text-muted-foreground">{activo.id} · {activo.wings} alitas · {activo.sauce}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              WO-{String(activo.Id_Pedido).padStart(4, "0")} · {activo.Direccion_Destino}
+            </span>
           </div>
         </div>
       )}
 
-      {/* Historial */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-muted-foreground">
           Historial ({orders.length})
         </h2>
         <div className="space-y-3">
-          {orders.map((o) => (
-            <div
-              key={o.id}
-              className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card px-5 py-4"
-            >
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-muted-foreground">{o.id}</span>
-                  {o.status !== "entregado" && (
-                    <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-                      Activo
+          {orders.map((o) => {
+            const productos = (() => { try { return JSON.parse(o.Productos ?? "[]"); } catch { return []; } })();
+            const p0 = productos[0] ?? {};
+            return (
+              <div
+                key={o.Id_Pedido}
+                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card px-5 py-4"
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      WO-{String(o.Id_Pedido).padStart(4, "0")}
                     </span>
+                    {o.Estado !== "entregado" && o.Estado !== "cancelado" && (
+                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
+                        Activo
+                      </span>
+                    )}
+                  </div>
+                  {p0.alitas && <div className="font-medium">{p0.alitas} alitas{p0.salsa ? ` · ${p0.salsa}` : ""}</div>}
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <MapPin className="h-3 w-3 flex-none" />
+                    {o.Direccion_Destino}
+                  </div>
+                  {p0.notas && <div className="text-xs text-muted-foreground">Nota: {p0.notas}</div>}
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[o.Estado] ?? ""}`}>
+                    {STATUS_ES[o.Estado] ?? o.Estado}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(o.Creacion_Pedido).toLocaleDateString("es-PE", {
+                      day: "2-digit", month: "short", year: "numeric",
+                    })}
+                  </span>
+                  {o.Estado === "sin_asignar" && (
+                    confirmandoCancelar === o.Id_Pedido ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">¿Cancelar?</span>
+                        <button
+                          onClick={() => cancelar(o.Id_Pedido)}
+                          className="rounded-md bg-destructive px-2.5 py-1 text-xs font-semibold text-destructive-foreground transition hover:opacity-90"
+                        >
+                          Sí
+                        </button>
+                        <button
+                          onClick={() => setConfirmandoCancelar(null)}
+                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-secondary"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmandoCancelar(o.Id_Pedido)}
+                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+                      >
+                        <XCircle className="h-3 w-3" /> Cancelar
+                      </button>
+                    )
+                  )}
+                  {o.Estado === "en_camino" && (
+                    <span className="text-[10px] text-muted-foreground">No cancelable en tránsito</span>
                   )}
                 </div>
-                <div className="font-medium">{o.wings} alitas · {o.sauce}</div>
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <MapPin className="h-3 w-3 flex-none" />
-                  {o.address}
-                </div>
-                {o.notes && (
-                  <div className="text-xs text-muted-foreground">Nota: {o.notes}</div>
-                )}
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[o.status] ?? ""}`}>
-                  {STATUS_ES[o.status] ?? o.status}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(o.createdAt).toLocaleDateString("es-PE", {
-                    day: "2-digit", month: "short", year: "numeric",
-                  })}
-                </span>
-                {/* Cancelar pedido — solo si aún no fue asignado */}
-                {o.status === "sin_asignar" && (
-                  confirmandoCancelar === o.id ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">¿Cancelar?</span>
-                      <button
-                        onClick={() => { store.cancelOrder(o.id); setConfirmandoCancelar(null); }}
-                        className="rounded-md bg-destructive px-2.5 py-1 text-xs font-semibold text-destructive-foreground transition hover:opacity-90"
-                      >
-                        Sí
-                      </button>
-                      <button
-                        onClick={() => setConfirmandoCancelar(null)}
-                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-secondary"
-                      >
-                        No
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmandoCancelar(o.id)}
-                      className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
-                    >
-                      <XCircle className="h-3 w-3" /> Cancelar
-                    </button>
-                  )
-                )}
-                {/* Indicador de no cancelable cuando está en tránsito */}
-                {o.status === "en_camino" && (
-                  <span className="text-[10px] text-muted-foreground">No cancelable en tránsito</span>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -594,29 +617,29 @@ function TabPedidos({ customerId, onNuevoPedido }: { customerId: string; onNuevo
 
 // ─── Tab: Seguimiento ─────────────────────────────────────────────────────────
 
-function TabSeguimiento({ customerId }: { customerId: string }) {
-  const allOrders = useStore((s) => s.orders);
-  const drivers   = useStore((s) => s.drivers);
+function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
+  const { data: allOrders = [] } = useQuery({
+    queryKey: ["mis-pedidos"],
+    queryFn: api.listarPedidos.bind(api),
+    refetchInterval: 10000,
+  });
 
-  // Todos los pedidos activos del cliente, más reciente primero
   const pedidosActivos = useMemo(
-    () =>
-      allOrders
-        .filter((o) => o.customerId === customerId && o.status !== "entregado")
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [allOrders, customerId],
+    () => allOrders
+      .filter((o) => o.Estado !== "entregado" && o.Estado !== "cancelado")
+      .sort((a, b) => new Date(b.Creacion_Pedido).getTime() - new Date(a.Creacion_Pedido).getTime()),
+    [allOrders],
   );
 
-  // Búsqueda por código (solo pedidos propios — evita IDOR)
   const [codigo,  setCodigo]  = useState("");
   const [buscado, setBuscado] = useState("");
   const pedidoBuscado = useMemo(
     () => buscado
       ? (allOrders.find(
-          (o) => o.id.toUpperCase() === buscado.toUpperCase() && o.customerId === customerId
+          (o) => `WO-${String(o.Id_Pedido).padStart(4, "0")}`.toUpperCase() === buscado.toUpperCase()
         ) ?? null)
       : null,
-    [allOrders, buscado, customerId],
+    [allOrders, buscado],
   );
 
   return (
@@ -687,7 +710,7 @@ function TabSeguimiento({ customerId }: { customerId: string }) {
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Resultado de búsqueda
           </p>
-          <TarjetaSeguimiento order={pedidoBuscado} drivers={drivers} />
+          <TarjetaSeguimiento order={pedidoBuscado} />
         </div>
       )}
 
@@ -704,8 +727,7 @@ function TabSeguimiento({ customerId }: { customerId: string }) {
       {!buscado && pedidosActivos.length > 0 && (
         <div className="space-y-6">
           {pedidosActivos.map((order, idx) => (
-            <div key={order.id}>
-              {/* Separador de número cuando hay varios */}
+            <div key={order.Id_Pedido}>
               {pedidosActivos.length > 1 && (
                 <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-accent text-[10px] font-bold text-accent-foreground">
@@ -714,7 +736,7 @@ function TabSeguimiento({ customerId }: { customerId: string }) {
                   Pedido activo
                 </p>
               )}
-              <TarjetaSeguimiento order={order} drivers={drivers} />
+              <TarjetaSeguimiento order={order} />
             </div>
           ))}
         </div>
@@ -725,16 +747,26 @@ function TabSeguimiento({ customerId }: { customerId: string }) {
 
 // ─── Tarjeta de seguimiento individual ───────────────────────────────────────
 
-function TarjetaSeguimiento({
-  order,
-  drivers,
-}: {
-  order: any;
-  drivers: any[];
-}) {
-  const driver       = drivers.find((d) => d.id === order.driverId);
-  const currentIndex = STEPS.findIndex((s) => s.key === order.status);
-  const esActivo     = order.status !== "entregado";
+function TarjetaSeguimiento({ order }: { order: any }) {
+  const productos = (() => { try { return JSON.parse(order.Productos ?? "[]"); } catch { return []; } })();
+  const p0        = productos[0] ?? {};
+  const estado    = order.Estado ?? order.status ?? "";
+  const orderId   = order.Id_Pedido
+    ? `WO-${String(order.Id_Pedido).padStart(4, "0")}`
+    : (order.id ?? "");
+  const createdAt  = order.Creacion_Pedido ?? order.createdAt;
+  const assignedAt = order.Asignacion_Pedido ?? null;
+  const deliveredAt = order.Entrega_Pedido ?? null;
+  const address    = order.Direccion_Destino ?? order.address ?? "";
+  const coords: [number, number] | undefined = order.Lat_Destino != null
+    ? [order.Lat_Destino, order.Lng_Destino]
+    : order.coords;
+  const driverNombre = order.Nombre_Repartidor
+    ? `${order.Nombre_Repartidor}${order.Apellido_Repartidor ? " " + order.Apellido_Repartidor : ""}`
+    : null;
+
+  const currentIndex = STEPS.findIndex((s) => s.key === estado);
+  const esActivo     = estado !== "entregado" && estado !== "cancelado";
 
   return (
     <div className={`space-y-3 rounded-xl border p-1 ${
@@ -746,9 +778,9 @@ function TarjetaSeguimiento({
         {/* Cabecera */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold">{order.id}</span>
+            <span className="font-mono text-sm font-semibold">{orderId}</span>
             <span className="text-xs text-muted-foreground">
-              {new Date(order.createdAt).toLocaleDateString("es-PE", {
+              {new Date(createdAt).toLocaleDateString("es-PE", {
                 day: "2-digit", month: "short", year: "numeric",
                 hour: "2-digit", minute: "2-digit",
               })}
@@ -764,14 +796,14 @@ function TarjetaSeguimiento({
                 En curso
               </span>
             )}
-            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[order.status] ?? ""}`}>
-              {STATUS_ES[order.status] ?? order.status}
+            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[estado] ?? ""}`}>
+              {STATUS_ES[estado] ?? estado}
             </span>
           </div>
         </div>
 
         {/* Barra de progreso compacta */}
-        <BarraProgreso status={order.status} />
+        <BarraProgreso status={estado} />
 
         {/* Steps detallados */}
         <ol className="relative mt-5">
@@ -820,35 +852,39 @@ function TarjetaSeguimiento({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Tu pedido
           </p>
-          <p>
-            <span className="text-muted-foreground">Alitas: </span>
-            <span className="font-medium">{order.wings} pzas</span>
-          </p>
-          <p>
-            <span className="text-muted-foreground">Salsa: </span>
-            <span className="font-medium">{order.sauce}</span>
-          </p>
+          {p0.alitas && (
+            <p>
+              <span className="text-muted-foreground">Alitas: </span>
+              <span className="font-medium">{p0.alitas} pzas</span>
+            </p>
+          )}
+          {p0.salsa && (
+            <p>
+              <span className="text-muted-foreground">Salsa: </span>
+              <span className="font-medium">{p0.salsa}</span>
+            </p>
+          )}
           <div className="flex items-start gap-1.5">
             <MapPin className="mt-0.5 h-3.5 w-3.5 flex-none text-muted-foreground" />
-            <span className="text-muted-foreground leading-snug">{order.address}</span>
+            <span className="text-muted-foreground leading-snug">{address}</span>
           </div>
-          {order.notes && (
-            <p className="rounded-md bg-muted px-3 py-1.5 text-xs">{order.notes}</p>
+          {p0.notas && (
+            <p className="rounded-md bg-muted px-3 py-1.5 text-xs">{p0.notas}</p>
           )}
           {/* ETA */}
           <div className="flex items-center gap-1.5 border-t border-border pt-1.5">
             <Timer className="h-3.5 w-3.5 flex-none text-muted-foreground" />
             <span className="text-xs text-muted-foreground">
-              {order.status === "sin_asignar" || order.status === "asignado"
+              {estado === "sin_asignar" || estado === "asignado"
                 ? "Calculando tiempo estimado…"
-                : order.status === "en_camino"
+                : estado === "en_camino"
                 ? (() => {
-                    const elapsed = order.assignedAt ? Math.round((Date.now() - order.assignedAt) / 60000) : 0;
+                    const elapsed = assignedAt ? Math.round((Date.now() - new Date(assignedAt).getTime()) / 60000) : 0;
                     const eta = Math.max(1, 20 - elapsed);
                     return `ETA: ~${eta} min`;
                   })()
-                : order.status === "entregado" && order.deliveredAt && order.assignedAt
-                ? `Entregado en ${Math.round((order.deliveredAt - order.assignedAt) / 60000)} min`
+                : estado === "entregado" && deliveredAt && assignedAt
+                ? `Entregado en ${Math.round((new Date(deliveredAt).getTime() - new Date(assignedAt).getTime()) / 60000)} min`
                 : "—"}
             </span>
           </div>
@@ -859,23 +895,13 @@ function TarjetaSeguimiento({
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Repartidor
           </p>
-          {driver ? (
+          {driverNombre ? (
             <div className="flex items-center gap-3">
               <span className="grid h-12 w-12 flex-none place-items-center rounded-full bg-accent/15 text-base font-bold text-accent-foreground">
-                {driver.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
+                {driverNombre.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
               </span>
               <div>
-                <p className="font-medium">{driver.name}</p>
-                {driver.phone ? (
-                  <a
-                    href={`tel:${driver.phone}`}
-                    className="flex items-center gap-1 text-xs text-accent-foreground hover:underline"
-                  >
-                    <Phone className="h-3 w-3" /> {driver.phone}
-                  </a>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Sin teléfono registrado</p>
-                )}
+                <p className="font-medium">{driverNombre}</p>
               </div>
             </div>
           ) : (
@@ -888,7 +914,7 @@ function TarjetaSeguimiento({
       </div>
 
       {/* ── Mini-mapa cuando está en camino ─────────────────────────────── */}
-      {order.status === "en_camino" && (
+      {estado === "en_camino" && coords && (
         <div className="overflow-hidden rounded-xl border border-border bg-card mx-1 mb-1">
           <div className="flex items-center gap-2 border-b border-border px-5 py-3">
             <Truck className="h-4 w-4 text-accent" />
@@ -900,8 +926,8 @@ function TarjetaSeguimiento({
           <MapaRuta
             origen={DIR_RESTAURANTE}
             coordsOrigen={COORDS_RESTAURANTE}
-            destino={order.address}
-            coordsDestino={order.coords}
+            destino={address}
+            coordsDestino={coords}
             altura={260}
           />
         </div>
