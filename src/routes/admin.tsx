@@ -1009,12 +1009,15 @@ function SeccionConfiguracion() {
 // SECCIÓN: PEDIDOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+type FiltroEstado = "todos" | "activos" | "completados";
+
 function SeccionPedidos() {
-  const [pedidos,    setPedidos]    = useState<import("@/lib/api").PedidoApi[]>([]);
+  const [pedidos,      setPedidos]      = useState<import("@/lib/api").PedidoApi[]>([]);
   const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
-  const [cargando,   setCargando]   = useState(true);
-  const [abierto,    setAbierto]    = useState(false);
-  const [copiado,    setCopiado]    = useState<number | null>(null);
+  const [cargando,     setCargando]     = useState(true);
+  const [abierto,      setAbierto]      = useState(false);
+  const [copiado,      setCopiado]      = useState<number | null>(null);
+  const [filtro,       setFiltro]       = useState<FiltroEstado>("activos");
 
   const cargar = () => {
     setCargando(true);
@@ -1044,13 +1047,34 @@ function SeccionPedidos() {
 
   const repsActivos = repartidores.filter((r) => r.Activo_Usuario);
 
+  const ESTADOS_ACTIVOS    = ["sin_asignar", "asignado", "en_camino"];
+  const ESTADOS_COMPLETADOS = ["entregado", "cancelado"];
+
+  const pedidosFiltrados = pedidos.filter((p) => {
+    if (filtro === "activos")     return ESTADOS_ACTIVOS.includes(p.Estado);
+    if (filtro === "completados") return ESTADOS_COMPLETADOS.includes(p.Estado);
+    return true;
+  });
+
+  const cntActivos     = pedidos.filter((p) => ESTADOS_ACTIVOS.includes(p.Estado)).length;
+  const cntCompletados = pedidos.filter((p) => ESTADOS_COMPLETADOS.includes(p.Estado)).length;
+
+  const TABS: { key: FiltroEstado; label: string; count: number }[] = [
+    { key: "activos",     label: "Activos",     count: cntActivos },
+    { key: "completados", label: "Completados",  count: cntCompletados },
+    { key: "todos",       label: "Todos",        count: pedidos.length },
+  ];
+
   return (
     <>
+      {/* Encabezado */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Tablero de pedidos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {cargando ? "Cargando…" : `${pedidos.length} pedido${pedidos.length !== 1 ? "s" : ""} registrados.`}
+            {cargando
+              ? "Cargando…"
+              : `${cntActivos} activo${cntActivos !== 1 ? "s" : ""} · ${cntCompletados} completado${cntCompletados !== 1 ? "s" : ""} · ${pedidos.length} total`}
           </p>
         </div>
         <button
@@ -1061,81 +1085,136 @@ function SeccionPedidos() {
         </button>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card">
+      {/* Tabs de filtro */}
+      <div className="mt-5 flex gap-1 rounded-lg border border-border bg-secondary p-1 w-fit">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setFiltro(tab.key)}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              filtro === tab.key
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              filtro === tab.key ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
+            }`}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Tabla */}
+      <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-secondary text-secondary-foreground">
             <tr className="text-left">
-              <Encabezado className="w-12">#</Encabezado>
+              <Encabezado className="w-28">Pedido</Encabezado>
               <Encabezado className="min-w-[9rem]">Cliente</Encabezado>
               <Encabezado className="w-[11rem]">Dirección</Encabezado>
               <Encabezado className="w-[11rem]">Productos</Encabezado>
               <Encabezado className="w-36">Estado</Encabezado>
-              <Encabezado className="w-56">Repartidor</Encabezado>
-              <Encabezado className="w-28">Fecha</Encabezado>
+              <Encabezado className="w-52">Repartidor</Encabezado>
+              <Encabezado className="w-32">Fecha</Encabezado>
               <Encabezado className="w-24">Enlace</Encabezado>
             </tr>
           </thead>
           <tbody>
             {cargando ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                <td colSpan={8} className="px-4 py-12 text-center">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                 </td>
               </tr>
-            ) : pedidos.length === 0 ? (
+            ) : pedidosFiltrados.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                  Aún no hay pedidos — registra el primero.
+                  {filtro === "activos" ? "No hay pedidos activos en este momento." : "No hay pedidos en esta categoría."}
                 </td>
               </tr>
             ) : (
-              pedidos.map((p) => (
-                <tr key={p.Id_Pedido} className="border-t border-border">
-                  <Celda className="w-12 font-mono text-xs text-muted-foreground">#{p.Id_Pedido}</Celda>
-                  <Celda className="min-w-[9rem]">
-                    <div className="font-medium">{p.Nombre_Cliente} {p.Apellido_Cliente}</div>
-                  </Celda>
-                  <Celda className="w-[11rem]">
-                    <div className="max-w-[11rem] truncate text-xs text-muted-foreground" title={p.Direccion_Destino ?? undefined}>{p.Direccion_Destino}</div>
-                  </Celda>
-                  <Celda className="w-[11rem]">
-                    <div className="max-w-[11rem] truncate text-xs" title={p.Productos ?? undefined}>{p.Productos ?? "—"}</div>
-                  </Celda>
-                  <Celda className="w-36">
-                    <SelectEstado
-                      estado={p.Estado}
-                      onChange={(s) => cambiarEstado(p.Id_Pedido, s)}
-                    />
-                  </Celda>
-                  <Celda className="w-56">
-                    <select
-                      value={p.Id_Repartidor ?? ""}
-                      onChange={(e) => asignarRepartidor(p.Id_Pedido, e.target.value ? Number(e.target.value) : null)}
-                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    >
-                      <option value="">Sin asignar</option>
-                      {repsActivos.map((r) => (
-                        <option key={r.Id_Usuario} value={r.Id_Usuario}>
-                          {r.Nombre_Usuario} {r.Apellido_Usuario?.split(" ")[0]}
-                        </option>
-                      ))}
-                    </select>
-                  </Celda>
-                  <Celda className="w-28 whitespace-nowrap text-xs text-muted-foreground">
-                    {p.Creacion_Pedido?.slice(0, 10)}
-                  </Celda>
-                  <Celda>
-                    <button
-                      onClick={() => copiarSeguimiento(p.Id_Pedido)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {copiado === p.Id_Pedido
-                        ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copiado</>
-                        : <><Copy className="h-3.5 w-3.5" /> Copiar</>}
-                    </button>
-                  </Celda>
-                </tr>
-              ))
+              pedidosFiltrados.map((p) => {
+                const completado = ESTADOS_COMPLETADOS.includes(p.Estado);
+                const fechaStr = (() => {
+                  const d = new Date(p.Creacion_Pedido);
+                  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })
+                    + " " + d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+                })();
+                return (
+                  <tr key={p.Id_Pedido} className={`border-t border-border transition-colors ${completado ? "opacity-60" : "hover:bg-muted/30"}`}>
+                    <Celda className="w-28">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        AKA-{String(p.Id_Pedido).padStart(4, "0")}
+                      </span>
+                    </Celda>
+                    <Celda className="min-w-[9rem]">
+                      <div className="font-medium">{p.Nombre_Cliente} {p.Apellido_Cliente}</div>
+                    </Celda>
+                    <Celda className="w-[11rem]">
+                      <div className="max-w-[11rem] truncate text-xs text-muted-foreground" title={p.Direccion_Destino ?? undefined}>
+                        {p.Direccion_Destino}
+                      </div>
+                    </Celda>
+                    <Celda className="w-[11rem]">
+                      <ResumenProductos raw={p.Productos} />
+                    </Celda>
+                    <Celda className="w-36">
+                      {completado ? (
+                        <span className={`inline-block rounded-md px-2.5 py-1 text-xs font-semibold ${
+                          p.Estado === "entregado"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                          {p.Estado === "entregado" ? "Entregado" : "Cancelado"}
+                        </span>
+                      ) : (
+                        <SelectEstado
+                          estado={p.Estado}
+                          onChange={(s) => cambiarEstado(p.Id_Pedido, s)}
+                        />
+                      )}
+                    </Celda>
+                    <Celda className="w-52">
+                      {completado ? (
+                        <span className="text-xs text-muted-foreground">
+                          {p.Nombre_Repartidor
+                            ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim()
+                            : "—"}
+                        </span>
+                      ) : (
+                        <select
+                          value={p.Id_Repartidor ?? ""}
+                          onChange={(e) => asignarRepartidor(p.Id_Pedido, e.target.value ? Number(e.target.value) : null)}
+                          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        >
+                          <option value="">Sin asignar</option>
+                          {repsActivos.map((r) => (
+                            <option key={r.Id_Usuario} value={r.Id_Usuario}>
+                              {r.Nombre_Usuario} {r.Apellido_Usuario?.split(" ")[0]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </Celda>
+                    <Celda className="w-32 whitespace-nowrap text-xs text-muted-foreground">
+                      {fechaStr}
+                    </Celda>
+                    <Celda>
+                      <button
+                        onClick={() => copiarSeguimiento(p.Id_Pedido)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {copiado === p.Id_Pedido
+                          ? <><Check className="h-3.5 w-3.5 text-emerald-600" /> Copiado</>
+                          : <><Copy className="h-3.5 w-3.5" /> Copiar</>}
+                      </button>
+                    </Celda>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -1766,6 +1845,40 @@ function Encabezado({ children, className = "" }: { children: React.ReactNode; c
 }
 function Celda({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-middle ${className}`}>{children}</td>;
+}
+
+function ResumenProductos({ raw }: { raw: string | null | undefined }) {
+  if (!raw) return <span className="text-muted-foreground">—</span>;
+  try {
+    const lista = JSON.parse(raw);
+    const p0 = Array.isArray(lista) ? lista[0] : lista;
+    if (!p0) return <span className="text-muted-foreground">—</span>;
+
+    // Formato cliente: { alitas, salsa, notas }
+    if (p0.alitas) {
+      const texto = `${p0.alitas} alitas${p0.salsa ? ` · ${p0.salsa}` : ""}`;
+      return (
+        <div className="space-y-0.5">
+          <div className="text-xs font-medium">{texto}</div>
+          {p0.notas && <div className="text-[10px] text-muted-foreground truncate max-w-[10rem]">{p0.notas}</div>}
+        </div>
+      );
+    }
+    // Formato admin: { nombre, cliente, notas }
+    if (p0.nombre) {
+      return (
+        <div className="space-y-0.5">
+          <div className="text-xs font-medium truncate max-w-[10rem]">{p0.nombre}</div>
+          {p0.notas && <div className="text-[10px] text-muted-foreground truncate max-w-[10rem]">{p0.notas}</div>}
+        </div>
+      );
+    }
+    // Fallback legible
+    const resumen = Object.entries(p0).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(" · ");
+    return <div className="text-xs truncate max-w-[10rem]" title={resumen}>{resumen || "—"}</div>;
+  } catch {
+    return <span className="text-[10px] text-muted-foreground truncate max-w-[10rem]">{raw}</span>;
+  }
 }
 
 // ─── Helpers de formulario ────────────────────────────────────────────────────

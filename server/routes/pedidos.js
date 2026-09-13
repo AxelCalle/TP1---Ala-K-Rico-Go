@@ -63,10 +63,14 @@ router.get('/', async (req, res) => {
 
 // GET /api/pedidos/:id
 router.get('/:id', async (req, res) => {
+  const idNum = parseInt(req.params.id, 10);
+  if (!idNum || isNaN(idNum)) {
+    return res.status(400).json({ error: 'ID de pedido inválido.' });
+  }
   try {
     const pool = await getPool();
     const result = await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id))
+      .input('id', sql.Int, idNum)
       .query(`
         SELECT p.*,
           c.Nombre_Usuario  AS Nombre_Cliente,

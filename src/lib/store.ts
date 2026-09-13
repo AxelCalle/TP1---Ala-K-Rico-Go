@@ -179,7 +179,7 @@ const valoresIniciales = (): State => ({
   ],
   orders: [
     {
-      id: "WO-0001",
+      id: "AKA-0001",
       customer: "Mario Bros",
       customerId: "C-test-mario",
       phone: "999888777",
@@ -553,10 +553,10 @@ export const store = {
   addOrder(o: Omit<Order, "id" | "createdAt" | "status">) {
     // Calcular el siguiente número secuencial a partir del máximo existente
     const nums = state.orders
-      .map((ord) => parseInt(ord.id.replace("WO-", ""), 10))
+      .map((ord) => parseInt(ord.id.replace("AKA-", ""), 10))
       .filter((n) => !isNaN(n));
     const next = nums.length ? Math.max(...nums) + 1 : 1;
-    const id = `WO-${String(next).padStart(4, "0")}`;
+    const id = `AKA-${String(next).padStart(4, "0")}`;
 
     const order: Order = { ...o, id, createdAt: Date.now(), status: "sin_asignar" };
     state = { ...state, orders: [order, ...state.orders] };

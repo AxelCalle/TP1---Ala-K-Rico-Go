@@ -536,7 +536,7 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
           <BarraProgreso status={activo.Estado} />
           <div className="mt-3 flex items-center justify-between text-sm">
             <span className="font-mono text-xs text-muted-foreground">
-              WO-{String(activo.Id_Pedido).padStart(4, "0")} · {activo.Direccion_Destino}
+              AKA-{String(activo.Id_Pedido).padStart(4, "0")} · {activo.Direccion_Destino}
             </span>
           </div>
         </div>
@@ -558,7 +558,7 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs text-muted-foreground">
-                      WO-{String(o.Id_Pedido).padStart(4, "0")}
+                      AKA-{String(o.Id_Pedido).padStart(4, "0")}
                     </span>
                     {o.Estado !== "entregado" && o.Estado !== "cancelado" && (
                       <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
@@ -642,7 +642,7 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
   const pedidoBuscado = useMemo(
     () => buscado
       ? (allOrders.find(
-          (o) => `WO-${String(o.Id_Pedido).padStart(4, "0")}`.toUpperCase() === buscado.toUpperCase()
+          (o) => `AKA-${String(o.Id_Pedido).padStart(4, "0")}`.toUpperCase() === buscado.toUpperCase()
         ) ?? null)
       : null,
     [allOrders, buscado],
@@ -684,7 +684,7 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
           type="text"
           value={codigo}
           onChange={(e) => { setCodigo(e.target.value); if (!e.target.value) setBuscado(""); }}
-          placeholder="Buscar por código  Ej: WO-0001"
+          placeholder="Buscar por código  Ej: AKA-0001"
           className="flex-1 rounded-md border border-input bg-background px-3 py-2.5 font-mono text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2"
         />
         <button
@@ -758,7 +758,7 @@ function TarjetaSeguimiento({ order }: { order: any }) {
   const p0        = productos[0] ?? {};
   const estado    = order.Estado ?? order.status ?? "";
   const orderId   = order.Id_Pedido
-    ? `WO-${String(order.Id_Pedido).padStart(4, "0")}`
+    ? `AKA-${String(order.Id_Pedido).padStart(4, "0")}`
     : (order.id ?? "");
   const createdAt  = order.Creacion_Pedido ?? order.createdAt;
   const assignedAt = order.Asignacion_Pedido ?? null;
@@ -944,8 +944,12 @@ function TarjetaSeguimiento({ order }: { order: any }) {
 
 // ─── Tab: Mi Perfil ───────────────────────────────────────────────────────────
 
-function TabPerfil({ customerId }: { customerId: string }) {
-  const customer = useStore((s) => s.customers.find((c) => c.id === customerId));
+function TabPerfil({ customerId: _customerId }: { customerId: string }) {
+  const { data: perfil, isLoading: perfilCargando } = useQuery({
+    queryKey: ["perfil"],
+    queryFn: api.perfil.bind(api),
+  });
+
   const [guardado, setGuardado] = useState(false);
   const [passActual,  setPassActual]  = useState("");
   const [passNuevo,   setPassNuevo]   = useState("");
@@ -953,6 +957,21 @@ function TabPerfil({ customerId }: { customerId: string }) {
   const [passError,   setPassError]   = useState("");
   const [passOk,      setPassOk]      = useState(false);
   const [passLoading, setPassLoading] = useState(false);
+
+  const [nombre,    setNombre]    = useState("");
+  const [apellidos, setApellidos] = useState("");
+  const [celular,   setCelular]   = useState("");
+  const [numeroDoc, setNumeroDoc] = useState("");
+  const [tipoDoc,   setTipoDoc]   = useState<TipoDocumento | "">("");
+
+  // Poblar formulario cuando llegan los datos del backend
+  useEffect(() => {
+    if (!perfil) return;
+    setNombre(perfil.Nombre_Usuario ?? "");
+    setApellidos(perfil.Apellido_Usuario ?? "");
+    setCelular(perfil.Telf_Usuario ?? "");
+    setNumeroDoc(perfil.DNI_Usuario ?? "");
+  }, [perfil]);
 
   async function handleCambiarPass(e: FormEvent) {
     e.preventDefault();
@@ -973,13 +992,6 @@ function TabPerfil({ customerId }: { customerId: string }) {
     }
   }
 
-  const [nombre,    setNombre]    = useState(customer?.name           ?? "");
-  const [apellidos, setApellidos] = useState(customer?.apellidos       ?? "");
-  const [celular,   setCelular]   = useState(customer?.phone           ?? "");
-  const [direccion, setDireccion] = useState(customer?.address         ?? "");
-  const [tipoDoc,   setTipoDoc]   = useState<TipoDocumento | "">(customer?.tipoDocumento ?? "");
-  const [numeroDoc, setNumeroDoc] = useState(customer?.numeroDocumento  ?? "");
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
@@ -994,12 +1006,16 @@ function TabPerfil({ customerId }: { customerId: string }) {
     setTimeout(() => setGuardado(false), 2500);
   }
 
+  if (perfilCargando) {
+    return <div className="py-10 text-center text-sm text-muted-foreground">Cargando perfil…</div>;
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Mis datos personales</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Mantén tu dirección actualizada para que tus pedidos lleguen sin problemas.
+          Mantén tus datos actualizados para que tus pedidos lleguen sin problemas.
         </p>
       </div>
 
@@ -1027,7 +1043,7 @@ function TabPerfil({ customerId }: { customerId: string }) {
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Correo electrónico</label>
-            <input type="email" disabled value={customer?.email ?? ""}
+            <input type="email" disabled value={perfil?.Email_Usuario ?? ""}
               className={`${clsInput} cursor-not-allowed opacity-60`} />
           </div>
 
@@ -1045,19 +1061,6 @@ function TabPerfil({ customerId }: { customerId: string }) {
             <input id="p-num-doc" type="text" maxLength={20}
               value={numeroDoc} onChange={(e) => setNumeroDoc(e.target.value)} className={clsInput} placeholder="12345678" />
           </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="p-direccion" className="text-sm font-medium">Dirección habitual de entrega</label>
-          <div className="relative">
-            <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input id="p-direccion" type="text" maxLength={200}
-              value={direccion} onChange={(e) => setDireccion(e.target.value)}
-              className={`${clsInput} pl-9`} placeholder="Av. Los Alisos 1526, Los Olivos, Lima" />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Se usará como dirección predeterminada al hacer nuevos pedidos.
-          </p>
         </div>
 
         <div className="flex items-center justify-between gap-4">

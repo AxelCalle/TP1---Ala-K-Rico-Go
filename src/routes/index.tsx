@@ -33,11 +33,11 @@ export const Route = createFileRoute("/")({
 /* Heurística #1: Visibilidad del estado del sistema —
    el ticker muestra que hay pedidos activos ahora mismo */
 const TICKER_ITEMS = [
-  "WO-1042 · Buffalo · 12 min",
-  "WO-1043 · BBQ · En camino",
-  "WO-1041 · Miel y ajo · Entregado ✓",
-  "WO-1044 · Habanero · 8 min",
-  "WO-1045 · Teriyaki · En camino",
+  "AKA-1042 · Buffalo · 12 min",
+  "AKA-1043 · BBQ · En camino",
+  "AKA-1041 · Miel y ajo · Entregado ✓",
+  "AKA-1044 · Habanero · 8 min",
+  "AKA-1045 · Teriyaki · En camino",
 ];
 
 /* Heurística #6: Reconocimiento sobre recuerdo —
@@ -74,11 +74,11 @@ export function PaginaInicio() {
     const id = codigo.trim().toUpperCase();
     /* Heurística #5: Prevención de errores — valida antes de navegar */
     if (!id) {
-      setError("Ingresá el código de tu pedido. Ejemplo: WO-1042");
+      setError("Ingresá el código de tu pedido. Ejemplo: AKA-1042");
       return;
     }
-    if (!/^WO-\d+$/i.test(id)) {
-      setError("El formato es WO- seguido de números. Ejemplo: WO-1042");
+    if (!/^AKA-\d+$/i.test(id)) {
+      setError("El formato es AKA- seguido de números. Ejemplo: AKA-1042");
       return;
     }
     setError("");
@@ -193,7 +193,7 @@ export function PaginaInicio() {
                       if (error) setError("");
                     }}
                     /* Heurística #5: el placeholder muestra el formato exacto esperado */
-                    placeholder="Ej: WO-1042"
+                    placeholder="Ej: AKA-1042"
                     maxLength={20}
                     aria-label="Código de seguimiento del pedido"
                     className="w-full py-3.5 text-sm outline-none"

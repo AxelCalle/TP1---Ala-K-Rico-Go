@@ -308,10 +308,10 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
 
 function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
   const navigate = useNavigate();
-  const [nombre,   setNombre]   = useState("");
+  const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
-  const [email,    setEmail]    = useState("");
-  const [phone,    setPhone]    = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [verPass, setVerPass] = useState(false);
@@ -342,12 +342,12 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
 
     try {
       await api.registrar({
-        nombre:   nombre.trim(),
+        nombre: nombre.trim(),
         apellido: apellido.trim() || undefined,
-        email:    email.trim(),
+        email: email.trim(),
         password,
         telefono: phone.trim() || undefined,
-        idRole:   3,
+        idRole: 3,
       });
 
       const respuesta = await api.login(email.trim(), password);

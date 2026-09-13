@@ -161,6 +161,15 @@ export type AuditoriaApi = {
   Email_Usuario: string | null;
 };
 
+export type PerfilApi = {
+  Id_Usuario: number;
+  Nombre_Usuario: string;
+  Apellido_Usuario: string;
+  Email_Usuario: string;
+  DNI_Usuario: string | null;
+  Telf_Usuario: string | null;
+};
+
 export type GeocacheResultado = {
   cached: boolean;
   Lat?: number;
@@ -235,8 +244,8 @@ export const api = {
     });
   },
 
-  async perfil(): Promise<Record<string, unknown>> {
-    return solicitar("/api/auth/perfil", { headers: cabeceraAuth() });
+  async perfil(): Promise<PerfilApi> {
+    return solicitar<PerfilApi>("/api/auth/perfil", { headers: cabeceraAuth() });
   },
 
   async actualizarPerfil(datos: {

@@ -64,11 +64,18 @@ const SUBTITLES: Record<StepKey, string> = {
 function PaginaSeguimiento() {
   const { orderId } = Route.useParams();
 
+  // Acepta formato "AKA-1042" (desde la landing) o numérico directo
+  const numericId = parseInt(orderId.replace(/^AKA-0*/i, ""), 10);
+
   const { data: pedido, isLoading, isError } = useQuery({
     queryKey: ["seguimiento", orderId],
-    queryFn: () => api.obtenerPedido(Number(orderId)),
+    queryFn: () => {
+      if (!numericId || isNaN(numericId)) throw new Error("id_invalido");
+      return api.obtenerPedido(numericId);
+    },
     refetchInterval: 10000,
     retry: 1,
+    enabled: !!numericId && !isNaN(numericId),
   });
 
   if (isLoading) {
@@ -115,7 +122,7 @@ function PaginaSeguimiento() {
     ? `${pedido.Nombre_Repartidor} ${pedido.Apellido_Repartidor ?? ""}`.trim()
     : null;
 
-  const woId = `WO-${String(pedido.Id_Pedido).padStart(4, "0")}`;
+  const woId = `AKA-${String(pedido.Id_Pedido).padStart(4, "0")}`;
 
   return (
     <div className="min-h-screen bg-background">

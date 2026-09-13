@@ -50,6 +50,7 @@ function PaginaRepartidor() {
   const [cargando, setCargando] = useState(true);
   const [tspResult, setTspResult] = useState<TSPResult | null>(null);
   const [tspRunning, setTspRunning] = useState(false);
+  const [historialExpandido, setHistorialExpandido] = useState(false);
 
   useEffect(() => { setMontado(true); }, []);
 
@@ -79,10 +80,14 @@ function PaginaRepartidor() {
     navigate({ to: "/" });
   }
 
-  // Solo pedidos activos (no entregados ni cancelados) entran en la optimización
+  // Activos: entran en la optimización de ruta
   const pedidosActivos = pedidos.filter(
     (p) => p.Estado !== "entregado" && p.Estado !== "cancelado",
   );
+  // Historial: entregados y cancelados — sección separada
+  const pedidosHistorial = pedidos.filter(
+    (p) => p.Estado === "entregado" || p.Estado === "cancelado",
+  ).sort((a, b) => b.Id_Pedido - a.Id_Pedido);
 
   function generarRutaOptima() {
     if (pedidosActivos.length === 0) return;
@@ -101,7 +106,7 @@ function PaginaRepartidor() {
             id: String(p.Id_Pedido),
             lat:  p.Lat_Destino,
             lng:  p.Lng_Destino,
-            label: `WO-${String(p.Id_Pedido).padStart(4, "0")}`,
+            label: `AKA-${String(p.Id_Pedido).padStart(4, "0")}`,
           })),
         ];
         setTspResult(ejecutarACO_TSP(stops));
@@ -183,76 +188,195 @@ function PaginaRepartidor() {
             </button>
           </div>
 
-          {/* Tabla de pedidos */}
+          {/* ── Pedidos activos para entregar ── */}
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[420px] text-sm">
+            <div className="border-b border-border px-4 py-3 flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+              </span>
+              <span className="text-sm font-semibold">
+                Pedidos activos
+                {pedidosActivos.length > 0 && (
+                  <span className="ml-2 rounded-full bg-accent/20 px-2 py-0.5 text-xs font-bold text-accent">
+                    {pedidosActivos.length}
+                  </span>
+                )}
+              </span>
+            </div>
+            <table className="w-full min-w-[480px] text-sm">
               <thead className="bg-secondary text-secondary-foreground">
                 <tr className="text-left">
                   <Th>Pedido</Th>
                   <Th>Cliente</Th>
+                  <Th className="hidden sm:table-cell">Producto</Th>
                   <Th className="hidden md:table-cell">Dirección</Th>
                   <Th>Estado</Th>
+                  <Th></Th>
                 </tr>
               </thead>
               <tbody>
-                {[...pedidos]
-                  .sort((a, b) => b.Id_Pedido - a.Id_Pedido)
-                  .map((o) => {
-                    // Posición en la ruta óptima (si existe)
-                    const posEnRuta = tspResult
-                      ? tspResult.orden.findIndex((s) => s.id === String(o.Id_Pedido))
-                      : -1;
-
-                    return (
-                      <tr
-                        key={o.Id_Pedido}
-                        className={`border-t border-border transition-colors ${
-                          posEnRuta > 0 ? "bg-accent/5" : "hover:bg-muted/40"
-                        }`}
-                      >
-                        <Td>
-                          <div className="flex items-center gap-2">
-                            {posEnRuta > 0 && (
-                              <span
-                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                                style={{ background: STOP_COLORS[posEnRuta % STOP_COLORS.length] }}
-                              >
-                                {posEnRuta}
-                              </span>
-                            )}
-                            <span className="font-mono text-xs text-muted-foreground">
-                              WO-{String(o.Id_Pedido).padStart(4, "0")}
-                            </span>
-                          </div>
-                        </Td>
-                        <Td>
-                          <div className="font-medium">
-                            {o.Nombre_Cliente ?? ""} {o.Apellido_Cliente ?? ""}
-                          </div>
-                        </Td>
-                        <Td className="hidden md:table-cell">
-                          <div className="max-w-[180px] truncate text-xs text-muted-foreground">
-                            {o.Direccion_Destino}
-                          </div>
-                        </Td>
-                        <Td>
-                          <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
-                            {STATUS_ES[o.Estado] ?? o.Estado}
-                          </span>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                {!cargando && pedidos.length === 0 && (
+                {cargando ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                      Aún no tenés pedidos asignados.
+                    <td colSpan={6} className="px-4 py-10 text-center">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                     </td>
                   </tr>
+                ) : pedidosActivos.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No tenés pedidos activos por el momento.
+                    </td>
+                  </tr>
+                ) : (
+                  [...pedidosActivos]
+                    .sort((a, b) => a.Id_Pedido - b.Id_Pedido)
+                    .map((o) => {
+                      const posEnRuta = tspResult
+                        ? tspResult.orden.findIndex((s) => s.id === String(o.Id_Pedido))
+                        : -1;
+                      const p0 = parsearProducto(o.Productos);
+                      return (
+                        <tr
+                          key={o.Id_Pedido}
+                          className={`border-t border-border transition-colors ${
+                            posEnRuta > 0 ? "bg-accent/5" : "hover:bg-muted/40"
+                          }`}
+                        >
+                          <Td>
+                            <div className="flex items-center gap-2">
+                              {posEnRuta > 0 && (
+                                <span
+                                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                  style={{ background: STOP_COLORS[posEnRuta % STOP_COLORS.length] }}
+                                >
+                                  {posEnRuta}
+                                </span>
+                              )}
+                              <span className="font-mono text-xs text-muted-foreground">
+                                AKA-{String(o.Id_Pedido).padStart(4, "0")}
+                              </span>
+                            </div>
+                          </Td>
+                          <Td>
+                            <div className="font-medium">
+                              {o.Nombre_Cliente ?? ""} {o.Apellido_Cliente ?? ""}
+                            </div>
+                          </Td>
+                          <Td className="hidden sm:table-cell">
+                            {p0.alitas || p0.salsa ? (
+                              <div className="space-y-0.5">
+                                {p0.alitas && <div className="font-medium">{p0.alitas} alitas</div>}
+                                {p0.salsa && <div className="text-xs text-muted-foreground">{p0.salsa}</div>}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </Td>
+                          <Td className="hidden md:table-cell">
+                            <div className="max-w-[180px] truncate text-xs text-muted-foreground">
+                              {o.Direccion_Destino}
+                            </div>
+                          </Td>
+                          <Td>
+                            <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
+                              {STATUS_ES[o.Estado] ?? o.Estado}
+                            </span>
+                          </Td>
+                          <Td>
+                            <a
+                              href={`/driver/${o.Id_Pedido}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-secondary"
+                            >
+                              Ver <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </Td>
+                        </tr>
+                      );
+                    })
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* ── Historial de entregas ── */}
+          {pedidosHistorial.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
+              <button
+                onClick={() => setHistorialExpandido((v) => !v)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-muted/40"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Historial de entregas
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-bold">
+                    {pedidosHistorial.length}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {historialExpandido ? "Ocultar ▲" : "Ver ▼"}
+                </span>
+              </button>
+
+              {historialExpandido && (
+                <div className="overflow-x-auto border-t border-border">
+                  <table className="w-full min-w-[400px] text-sm">
+                    <thead className="bg-secondary/50 text-secondary-foreground">
+                      <tr className="text-left">
+                        <Th>Pedido</Th>
+                        <Th>Cliente</Th>
+                        <Th className="hidden sm:table-cell">Producto</Th>
+                        <Th className="hidden md:table-cell">Fecha</Th>
+                        <Th>Estado</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pedidosHistorial.map((o) => {
+                        const p0 = parsearProducto(o.Productos);
+                        const fecha = o.Entrega_Pedido ?? o.Cancelacion_Pedido ?? o.Creacion_Pedido;
+                        return (
+                          <tr key={o.Id_Pedido} className="border-t border-border opacity-70">
+                            <Td>
+                              <span className="font-mono text-xs text-muted-foreground">
+                                AKA-{String(o.Id_Pedido).padStart(4, "0")}
+                              </span>
+                            </Td>
+                            <Td>
+                              <div className="text-sm">
+                                {o.Nombre_Cliente ?? ""} {o.Apellido_Cliente ?? ""}
+                              </div>
+                            </Td>
+                            <Td className="hidden sm:table-cell">
+                              {p0.alitas || p0.salsa ? (
+                                <div className="text-xs">
+                                  {p0.alitas && <span>{p0.alitas} alitas</span>}
+                                  {p0.salsa && <span className="text-muted-foreground"> · {p0.salsa}</span>}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </Td>
+                            <Td className="hidden md:table-cell">
+                              <span className="text-xs text-muted-foreground">
+                                {fecha ? new Date(fecha).toLocaleDateString("es-PE", {
+                                  day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+                                }) : "—"}
+                              </span>
+                            </Td>
+                            <Td>
+                              <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
+                                {STATUS_ES[o.Estado] ?? o.Estado}
+                              </span>
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Columna derecha: panel de ruta óptima ── */}
@@ -362,6 +486,20 @@ function PaginaRepartidor() {
       </main>
     </div>
   );
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function parsearProducto(raw: string | null | undefined): { alitas?: number; salsa?: string; notas?: string } {
+  try {
+    const lista = JSON.parse(raw ?? "[]");
+    const p0 = Array.isArray(lista) ? (lista[0] ?? {}) : lista;
+    if (!p0.alitas && !p0.salsa && p0.nombre) {
+      const match = String(p0.nombre).match(/^(\d+)\s*alitas?\s*[-·]?\s*(.*)/i);
+      return { alitas: match?.[1] ? Number(match[1]) : undefined, salsa: match?.[2]?.trim() || undefined, notas: p0.notas };
+    }
+    return p0;
+  } catch { return {}; }
 }
 
 // ─── Componentes de tabla ─────────────────────────────────────────────────────

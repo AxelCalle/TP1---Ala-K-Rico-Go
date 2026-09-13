@@ -231,19 +231,29 @@ function PaginaRuta() {
     );
   }
 
-  const productos = (() => {
+  const p0 = (() => {
     try {
-      return JSON.parse(pedido.Productos ?? "[]");
+      const lista = JSON.parse(pedido.Productos ?? "[]");
+      const raw = Array.isArray(lista) ? (lista[0] ?? {}) : lista;
+      // Normaliza formato admin { nombre: "6 alitas - BBQ" } al mismo shape que el formato cliente
+      if (!raw.alitas && !raw.salsa && raw.nombre) {
+        const match = String(raw.nombre).match(/^(\d+)\s*alitas?\s*[-·]?\s*(.*)/i);
+        return {
+          alitas: match?.[1] ? Number(match[1]) : undefined,
+          salsa:  match?.[2]?.trim() || undefined,
+          notas:  raw.notas,
+        };
+      }
+      return raw;
     } catch {
-      return [];
+      return {};
     }
   })();
-  const p0 = productos[0] ?? {};
   const estado = pedido.Estado;
   const nombreCliente =
     `${pedido.Nombre_Cliente ?? ""} ${pedido.Apellido_Cliente ?? ""}`.trim() || "Cliente";
   const telefonoCliente = pedido.Telf_Cliente ?? "";
-  const woId = `WO-${String(pedido.Id_Pedido).padStart(4, "0")}`;
+  const woId = `AKA-${String(pedido.Id_Pedido).padStart(4, "0")}`;
   const coordsDestino: [number, number] = [pedido.Lat_Destino, pedido.Lng_Destino];
 
   const urlNavegacion = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
