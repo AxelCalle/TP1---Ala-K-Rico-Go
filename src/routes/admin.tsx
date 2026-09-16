@@ -139,7 +139,7 @@ function SeccionDashboard() {
   useEffect(() => {
     Promise.all([
       api.dashboard().then(setDash).catch(() => {}),
-      api.listarPedidosAdmin({ pageSize: 100 }).then((r) => setPedidos(r.items)).catch(() => {}),
+      api.listarPedidosAdmin({ pageSize: 100 }).then((r) => setPedidos(r.items ?? [])).catch(() => {}),
     ]).finally(() => setCargando(false));
   }, []);
 
@@ -437,9 +437,9 @@ function SeccionReportes() {
     Promise.all([
       cargarTiempos(),
       api.reporteRepartidores().then(setRanking).catch(() => {}),
-      api.listarPedidosAdmin({ pageSize: 20 }).then((r) => setPedidos(r.items)).catch(() => {}),
+      api.listarPedidosAdmin({ pageSize: 20 }).then((r) => setPedidos(r.items ?? [])).catch(() => {}),
       api.reportePiloto().then(setPiloto).catch(() => {}),
-      api.listarAuditoria({ pageSize: 50 }).then((r) => setAuditoria(r.items)).catch(() => {}),
+      api.listarAuditoria({ pageSize: 50 }).then((r) => setAuditoria(r.items ?? [])).catch(() => {}),
     ]).finally(() => setCargando(false));
   }, []);
 
@@ -1025,7 +1025,7 @@ function SeccionPedidos() {
       api.listarRepartidores(),
     ])
       .then(([paginado, rs]) => {
-        setPedidos(paginado.items);
+        setPedidos(paginado.items ?? []);
         setTotalItems(paginado.totalItems);
         setTotalPages(paginado.totalPages);
         setRepartidores(rs);

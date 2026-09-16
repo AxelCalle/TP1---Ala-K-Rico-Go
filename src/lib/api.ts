@@ -204,8 +204,9 @@ async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T
   const datos = await res.json().catch(() => ({ error: "respuesta_invalida" }));
 
   if (res.status === 401) {
+    const teníaToken = api.obtenerToken() !== null;
     api.limpiarToken();
-    if (typeof window !== "undefined") window.location.href = "/login";
+    if (teníaToken && typeof window !== "undefined") window.location.href = "/login";
     throw new ErrorApi(401, "sesion_expirada");
   }
 
