@@ -9,7 +9,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 
-import { RESTAURANTE_COORDS } from "@/lib/constants";
+import { RESTAURANTE_COORDS, RADIO_COBERTURA_KM } from "@/lib/constants";
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+    * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse";
 
@@ -35,6 +45,7 @@ export function MapaSelectorUbicacion({
   const [cargando,      setCargando]      = useState(true);
   const [buscandoDir,   setBuscandoDir]   = useState(false);
   const [direccionSel,  setDireccionSel]  = useState<string>("");
+  const [fueraDeZona,   setFueraDeZona]   = useState(false);
 
   // ── Geocodificación inversa ──────────────────────────────────────────────────
   const geocodInverso = useCallback(async (lat: number, lng: number): Promise<string> => {
@@ -80,6 +91,8 @@ export function MapaSelectorUbicacion({
       if (!activoRef.current) return;
       setBuscandoDir(false);
       setDireccionSel(dir);
+      const distKm = haversineKm(RESTAURANTE_COORDS[0], RESTAURANTE_COORDS[1], lat, lng);
+      setFueraDeZona(distKm > RADIO_COBERTURA_KM);
       onSeleccion([lat, lng], dir);
       try {
         marker
@@ -125,6 +138,22 @@ export function MapaSelectorUbicacion({
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(mapa);
+
+      // Zona de cobertura — círculo de 3 km
+      L.circle(RESTAURANTE_COORDS, {
+        radius: RADIO_COBERTURA_KM * 1000,
+        color: "#f59e0b",
+        fillColor: "#f59e0b",
+        fillOpacity: 0.07,
+        weight: 2,
+        dashArray: "6 4",
+      }).addTo(mapa)
+        .bindTooltip(`Zona de cobertura (${RADIO_COBERTURA_KM} km)`, { sticky: true });
+
+      // Marcador fijo del restaurante
+      L.marker(RESTAURANTE_COORDS, { icon: crearIconoRestaurante(L) })
+        .addTo(mapa)
+        .bindPopup("<b style='color:#f59e0b'>🍗 Ala K&apos; Rico GO</b><br><small>Punto de origen</small>")
 
       // Redibujado tras montar en el DOM
       setTimeout(() => {
@@ -197,8 +226,19 @@ export function MapaSelectorUbicacion({
         </div>
       )}
 
+      {/* Advertencia fuera de zona */}
+      {fueraDeZona && !cargando && (
+        <div
+          className="pointer-events-none absolute left-2 right-2 top-2.5 z-[1001] flex items-center gap-1.5 rounded-lg bg-destructive/90 px-3 py-2 text-[11px] font-semibold text-destructive-foreground shadow"
+          style={{ backdropFilter: "blur(4px)" }}
+        >
+          <MapPin className="h-3.5 w-3.5 flex-none" />
+          Fuera de zona de cobertura ({RADIO_COBERTURA_KM} km). Mueve el pin dentro del círculo.
+        </div>
+      )}
+
       {/* Hint superior */}
-      {!cargando && (
+      {!cargando && !fueraDeZona && (
         <div
           className="pointer-events-none absolute left-1/2 top-2.5 z-[1000] -translate-x-1/2 whitespace-nowrap rounded-full bg-card/90 px-3 py-1 text-[11px] font-medium shadow"
           style={{ backdropFilter: "blur(4px)" }}
@@ -231,6 +271,26 @@ export function MapaSelectorUbicacion({
       <div ref={contenedorRef} className="h-full w-full" />
     </div>
   );
+}
+
+// ── Icono restaurante (punto fijo de origen) ──────────────────────────────────
+
+function crearIconoRestaurante(L: any) {
+  return L.divIcon({
+    html: `
+      <div style="
+        width:34px;height:34px;border-radius:50%;
+        background:#f59e0b;border:3px solid #fff;
+        box-shadow:0 2px 8px rgba(0,0,0,0.35);
+        display:flex;align-items:center;justify-content:center;
+        font-size:17px;line-height:1;
+      ">🍗</div>
+    `,
+    className: "",
+    iconSize:   [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -20],
+  });
 }
 
 // ── Icono pin personalizado ────────────────────────────────────────────────────
