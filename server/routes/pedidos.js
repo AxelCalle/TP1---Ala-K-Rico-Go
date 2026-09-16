@@ -147,6 +147,16 @@ router.post('/', async (req, res) => {
   if (!latDestino || !lngDestino || !direccionDestino) {
     return res.status(400).json({ error: 'Ubicación de destino es obligatoria.' });
   }
+  if (!isFinite(latDestino) || Math.abs(latDestino) > 90)
+    return res.status(400).json({ error: 'Latitud de destino inválida.' });
+  if (!isFinite(lngDestino) || Math.abs(lngDestino) > 180)
+    return res.status(400).json({ error: 'Longitud de destino inválida.' });
+  if (latOrigen !== undefined && latOrigen !== null && (!isFinite(latOrigen) || Math.abs(latOrigen) > 90))
+    return res.status(400).json({ error: 'Latitud de origen inválida.' });
+  if (lngOrigen !== undefined && lngOrigen !== null && (!isFinite(lngOrigen) || Math.abs(lngOrigen) > 180))
+    return res.status(400).json({ error: 'Longitud de origen inválida.' });
+  if (total !== undefined && total !== null && (!isFinite(total) || total < 0))
+    return res.status(400).json({ error: 'Total inválido.' });
 
   try {
     const pool = await getPool();
@@ -362,6 +372,19 @@ router.post('/:id/incidencia', async (req, res) => {
 
   try {
     const pool = await getPool();
+
+    // Verificar que el pedido esté asignado a este repartidor
+    const ownership = await pool.request()
+      .input('idPed', sql.Int, idPedInc)
+      .input('idRep', sql.Int, req.usuario.id)
+      .query(`
+        SELECT 1 FROM AKR_Pedidos
+        WHERE Id_Pedido = @idPed AND Id_Repartidor = @idRep
+      `);
+    if (ownership.recordset.length === 0) {
+      return res.status(403).json({ error: 'Acceso denegado.' });
+    }
+
     await pool.request()
       .input('idPed',   sql.Int,          idPedInc)
       .input('idRep',   sql.Int,          req.usuario.id)

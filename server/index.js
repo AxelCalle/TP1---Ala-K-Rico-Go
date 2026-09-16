@@ -32,6 +32,10 @@ if (!_JWT_SECRET || _JWT_SECRET.trim().length < 32) {
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
+// Necesario para que rate-limit y el log de auditoría lean la IP real
+// detrás de Azure App Service / Vercel proxy
+app.set('trust proxy', 1);
+
 // ---------------------------------------------------------------------------
 // Rate limiting — C3 fix
 // ---------------------------------------------------------------------------
@@ -53,9 +57,10 @@ const limiterGeneral = rateLimit({
 // ---------------------------------------------------------------------------
 // Middlewares globales
 // ---------------------------------------------------------------------------
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-}));
+app.use(helmet());
+
+// Permite que el frontend cargue recursos de geocache/mapa desde otro origen
+app.use('/api/geocache', helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:8081',

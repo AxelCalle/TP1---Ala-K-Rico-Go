@@ -141,7 +141,7 @@ router.post('/register', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
 
-    await pool.request()
+    const insertRes = await pool.request()
       .input('idRole',    sql.SmallInt,     idRoleForzado)
       .input('nombre',    sql.NVarChar(100), nombreTrim)
       .input('apellido',  sql.NVarChar(100), apellido ? String(apellido).trim().slice(0, 100) : '')
@@ -154,11 +154,15 @@ router.post('/register', async (req, res) => {
           (Id_Roles, Nombre_Usuario, Apellido_Usuario, Email_Usuario,
            Contraseña_Usuario, DNI_Usuario, Telf_Usuario,
            Activo_Usuario, Creacion_Usuario)
+        OUTPUT INSERTED.Id_Usuario
         VALUES
           (@idRole, @nombre, @apellido, @email,
            @hash, @dni, @telefono,
            1, GETDATE())
       `);
+
+    const nuevoId = insertRes.recordset[0]?.Id_Usuario ?? null;
+    await registrarAuditoria(pool, nuevoId, emailTrim, 'registro_usuario', 'Registro exitoso', req);
 
     return res.status(201).json({ ok: true });
   } catch (err) {
@@ -292,6 +296,19 @@ router.get('/perfil', verificarToken, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.put('/perfil', verificarToken, async (req, res) => {
   const { nombre, apellido, dni, telefono } = req.body;
+
+  if (nombre !== undefined) {
+    const n = String(nombre).trim();
+    if (n.length < 2 || n.length > 100)
+      return res.status(400).json({ error: 'El nombre debe tener entre 2 y 100 caracteres.' });
+  }
+  if (apellido !== undefined && String(apellido).trim().length > 100)
+    return res.status(400).json({ error: 'El apellido no puede superar 100 caracteres.' });
+  if (dni !== undefined && !/^\d{8,9}$/.test(String(dni).trim()))
+    return res.status(400).json({ error: 'El DNI debe tener 8 o 9 dígitos.' });
+  if (telefono !== undefined && !/^\d{7,20}$/.test(String(telefono).trim()))
+    return res.status(400).json({ error: 'El teléfono debe tener entre 7 y 20 dígitos.' });
+
   try {
     const pool = await getPool();
     await pool.request()

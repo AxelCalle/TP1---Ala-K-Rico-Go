@@ -51,10 +51,12 @@ router.patch('/leer-todas', async (req, res) => {
 
 // PATCH /api/notificaciones/:id/leer
 router.patch('/:id/leer', async (req, res) => {
+  const idNotif = parseInt(req.params.id, 10);
+  if (!idNotif || isNaN(idNotif)) return res.status(400).json({ error: 'ID inválido.' });
   try {
     const pool = await getPool();
     await pool.request()
-      .input('id',  sql.Int, parseInt(req.params.id))
+      .input('id',  sql.Int, idNotif)
       .input('uid', sql.Int, req.usuario.id)
       .query(`
         UPDATE AKR_Notificaciones SET Leida = 1

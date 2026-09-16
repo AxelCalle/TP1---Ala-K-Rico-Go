@@ -103,12 +103,14 @@ router.post('/', async (req, res) => {
 // PUT /api/repartidores/:id  — admin edita datos de un repartidor
 router.put('/:id', async (req, res) => {
   if (req.usuario.role !== 'admin') return res.status(403).json({ error: 'Solo admin.' });
+  const idRep = parseInt(req.params.id, 10);
+  if (!idRep || isNaN(idRep)) return res.status(400).json({ error: 'ID inválido.' });
   const { nombre, apellido, email, dni, telefono } = req.body;
   if (!nombre || !email) return res.status(400).json({ error: 'nombre y email son obligatorios.' });
   try {
     const pool = await getPool();
     await pool.request()
-      .input('id',       sql.Int,          parseInt(req.params.id))
+      .input('id',       sql.Int,          idRep)
       .input('nombre',   sql.NVarChar(100), nombre)
       .input('apellido', sql.NVarChar(100), apellido || '')
       .input('email',    sql.NVarChar(150), email)
@@ -131,10 +133,12 @@ router.patch('/:id/toggle', async (req, res) => {
   if (req.usuario.role !== 'admin') {
     return res.status(403).json({ error: 'Solo admin.' });
   }
+  const idToggle = parseInt(req.params.id, 10);
+  if (!idToggle || isNaN(idToggle)) return res.status(400).json({ error: 'ID inválido.' });
   try {
     const pool = await getPool();
     await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id))
+      .input('id', sql.Int, idToggle)
       .query(`
         UPDATE AKR_Usuarios SET
           Activo_Usuario       = CASE WHEN Activo_Usuario = 1 THEN 0 ELSE 1 END,
@@ -193,14 +197,28 @@ router.get('/:id/ubicacion', async (req, res) => {
   if (!idParam || isNaN(idParam)) {
     return res.status(400).json({ error: 'ID inválido.' });
   }
-  if (req.usuario.role === 'cliente') {
-    return res.status(403).json({ error: 'Acceso denegado.' });
-  }
   if (req.usuario.role === 'driver' && req.usuario.id !== idParam) {
     return res.status(403).json({ error: 'Solo puedes consultar tu propia ubicación.' });
   }
   try {
     const pool = await getPool();
+
+    // Cliente solo puede ver GPS del repartidor asignado a uno de sus pedidos activos
+    if (req.usuario.role === 'customer') {
+      const check = await pool.request()
+        .input('idRep', sql.Int, idParam)
+        .input('idCli', sql.Int, req.usuario.id)
+        .query(`
+          SELECT 1 FROM AKR_Pedidos
+          WHERE Id_Repartidor = @idRep
+            AND Id_Cliente    = @idCli
+            AND Estado IN ('asignado','en_camino')
+        `);
+      if (check.recordset.length === 0) {
+        return res.status(403).json({ error: 'Acceso denegado.' });
+      }
+    }
+
     const result = await pool.request()
       .input('id', sql.Int, idParam)
       .query('SELECT Lat, Lng, Actualizado FROM AKR_Ubicaciones WHERE Id_Repartidor = @id');
