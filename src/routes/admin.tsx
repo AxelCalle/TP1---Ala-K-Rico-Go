@@ -1036,6 +1036,7 @@ function SeccionPedidos() {
   const [page,         setPage]         = useState(1);
   const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
   const [cargando,     setCargando]     = useState(true);
+  const [errCarga,     setErrCarga]     = useState<string | null>(null);
   const [abierto,      setAbierto]      = useState(false);
   const [copiado,      setCopiado]      = useState<number | null>(null);
   const [filtro,       setFiltro]       = useState<FiltroEstado>("activos");
@@ -1049,6 +1050,7 @@ function SeccionPedidos() {
 
   const cargar = (p = page) => {
     setCargando(true);
+    setErrCarga(null);
     Promise.allSettled([
       api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE }),
       api.listarRepartidores(),
@@ -1058,6 +1060,9 @@ function SeccionPedidos() {
           setPedidos(pedRes.value.items ?? []);
           setTotalItems(pedRes.value.totalItems);
           setTotalPages(pedRes.value.totalPages);
+        } else {
+          const msg = pedRes.reason instanceof Error ? pedRes.reason.message : String(pedRes.reason);
+          setErrCarga(`Error al cargar pedidos: ${msg}`);
         }
         if (repRes.status === "fulfilled") {
           setRepartidores(repRes.value);
@@ -1144,6 +1149,10 @@ function SeccionPedidos() {
           <Plus className="h-4 w-4" /> Nuevo pedido
         </button>
       </div>
+
+      {errCarga && !cargando && (
+        <p className="rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive">{errCarga}</p>
+      )}
 
       {/* Tabs de filtro */}
       <div className="mt-5 flex gap-1 rounded-lg border border-border bg-secondary p-1 w-fit">

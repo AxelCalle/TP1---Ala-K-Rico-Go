@@ -192,6 +192,7 @@ async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T
   try {
     res = await fetch(`${URL_API}${ruta}`, {
       ...opciones,
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
         ...(opciones.headers ?? {}),
