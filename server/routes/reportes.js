@@ -42,7 +42,7 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
           p.Id_Pedido, p.Estado, p.Creacion_Pedido, p.Total,
           c.Nombre_Usuario AS Nombre_Cliente
         FROM AKR_Pedidos p
-        INNER JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
+        LEFT JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
         ORDER BY p.Creacion_Pedido DESC
       `),
     ]);
@@ -72,6 +72,19 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
 // GET /api/reportes/tiempos  — estadísticas de entrega (CP076-078)
 router.get('/tiempos', soloAdmin, async (req, res) => {
   const { desde, hasta } = req.query;
+
+  const parseDate = (val) => {
+    if (!val) return null;
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    return d;
+  };
+
+  const fechaDesde = desde ? parseDate(desde) : null;
+  const fechaHasta = hasta ? parseDate(hasta) : null;
+  if (desde && !fechaDesde) return res.status(400).json({ error: 'Fecha "desde" inválida.' });
+  if (hasta && !fechaHasta) return res.status(400).json({ error: 'Fecha "hasta" inválida.' });
+
   try {
     const pool = await getPool();
     const req2 = pool.request();
@@ -79,8 +92,8 @@ router.get('/tiempos', soloAdmin, async (req, res) => {
       Entrega_Pedido IS NOT NULL
       AND Asignacion_Pedido IS NOT NULL
     `;
-    if (desde) { req2.input('desde', sql.DateTime, new Date(desde)); where += ' AND Creacion_Pedido >= @desde'; }
-    if (hasta) { req2.input('hasta', sql.DateTime, new Date(hasta)); where += ' AND Creacion_Pedido <= @hasta'; }
+    if (fechaDesde) { req2.input('desde', sql.DateTime, fechaDesde); where += ' AND Creacion_Pedido >= @desde'; }
+    if (fechaHasta) { req2.input('hasta', sql.DateTime, fechaHasta); where += ' AND Creacion_Pedido <= @hasta'; }
 
     const result = await req2.query(`
       SELECT

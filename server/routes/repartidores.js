@@ -187,12 +187,22 @@ router.put('/:id/ubicacion', async (req, res) => {
   }
 });
 
-// GET /api/repartidores/:id/ubicacion  — consulta GPS de un repartidor
+// GET /api/repartidores/:id/ubicacion  — consulta GPS (admin/driver propio; clientes bloqueados)
 router.get('/:id/ubicacion', async (req, res) => {
+  const idParam = parseInt(req.params.id, 10);
+  if (!idParam || isNaN(idParam)) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  if (req.usuario.role === 'cliente') {
+    return res.status(403).json({ error: 'Acceso denegado.' });
+  }
+  if (req.usuario.role === 'driver' && req.usuario.id !== idParam) {
+    return res.status(403).json({ error: 'Solo puedes consultar tu propia ubicación.' });
+  }
   try {
     const pool = await getPool();
     const result = await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id))
+      .input('id', sql.Int, idParam)
       .query('SELECT Lat, Lng, Actualizado FROM AKR_Ubicaciones WHERE Id_Repartidor = @id');
 
     if (!result.recordset[0]) {

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,6 +21,12 @@ import { MapaRuta } from "@/components/MapaRuta";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/driver/$orderId")({
+  beforeLoad: () => {
+    const session = store.get().session;
+    if (!session || !["driver", "admin"].includes(session.role)) {
+      throw redirect({ to: "/login" });
+    }
+  },
   head: ({ params }) => ({
     meta: [{ title: `Ruta ${params.orderId} — Ala K' Rico GO` }],
   }),
@@ -142,6 +148,8 @@ function PaginaRuta() {
   const [incidenciaEnviada, setIncidenciaEnviada] = useState(false);
   const [enviandoIncidencia, setEnviandoIncidencia] = useState(false);
   const [cambioEstadoLoading, setCambioEstadoLoading] = useState(false);
+  const [errorEstado, setErrorEstado] = useState<string | null>(null);
+  const [errorIncidencia, setErrorIncidencia] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -178,13 +186,14 @@ function PaginaRuta() {
 
   async function cambiarEstado(nuevoEstado: string) {
     if (!pedido) return;
+    setErrorEstado(null);
     setCambioEstadoLoading(true);
     try {
       await api.cambiarEstadoPedido(pedido.Id_Pedido, nuevoEstado);
       qc.invalidateQueries({ queryKey: ["pedido", orderId] });
       qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
     } catch {
-      // ignorar silenciosamente — el estado local sigue visible
+      setErrorEstado("No se pudo actualizar el estado. Inténtalo nuevamente.");
     } finally {
       setCambioEstadoLoading(false);
     }
@@ -192,6 +201,7 @@ function PaginaRuta() {
 
   async function enviarIncidencia() {
     if (!pedido) return;
+    setErrorIncidencia(null);
     setEnviandoIncidencia(true);
     try {
       await api.reportarIncidencia(
@@ -202,9 +212,7 @@ function PaginaRuta() {
       setIncidenciaEnviada(true);
       setMostrarIncidencia(false);
     } catch {
-      // El admin no recibió el reporte pero mostramos el feedback visual
-      setIncidenciaEnviada(true);
-      setMostrarIncidencia(false);
+      setErrorIncidencia("No se pudo enviar el reporte. Inténtalo nuevamente.");
     } finally {
       setEnviandoIncidencia(false);
     }
@@ -440,6 +448,11 @@ function PaginaRuta() {
                 </span>
               </div>
 
+              {errorEstado && (
+                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {errorEstado}
+                </p>
+              )}
               <div
                 className={`grid gap-2 ${estado === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}
               >
@@ -508,6 +521,9 @@ function PaginaRuta() {
                       placeholder="Describe el problema…"
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
                     />
+                    {errorIncidencia && (
+                      <p role="alert" className="text-xs text-destructive">{errorIncidencia}</p>
+                    )}
                     <button
                       onClick={enviarIncidencia}
                       disabled={enviandoIncidencia}

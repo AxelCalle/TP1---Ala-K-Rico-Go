@@ -7,53 +7,86 @@ import { registrarAuditoria } from '../middleware/auditoria.js';
 const router = Router();
 router.use(verificarToken);
 
-// GET /api/pedidos  — lista según rol
+// GET /api/pedidos  — lista según rol; admin: paginado con ?page=&pageSize=&estado=
 router.get('/', async (req, res) => {
   try {
     const pool = await getPool();
-    let query;
 
     if (req.usuario.role === 'admin') {
-      query = pool.request().query(`
-        SELECT p.*,
-          c.Nombre_Usuario  AS Nombre_Cliente,
-          c.Apellido_Usuario AS Apellido_Cliente,
-          r.Nombre_Usuario  AS Nombre_Repartidor,
-          r.Apellido_Usuario AS Apellido_Repartidor
-        FROM AKR_Pedidos p
-        INNER JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
-        LEFT  JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
-        ORDER BY p.Creacion_Pedido DESC
-      `);
-    } else if (req.usuario.role === 'driver') {
-      query = pool.request()
+      const page     = Math.max(parseInt(req.query.page,     10) || 1, 1);
+      const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 20, 1), 100);
+      const offset   = (page - 1) * pageSize;
+      const { estado } = req.query;
+
+      const validStates = ['sin_asignar','asignado','en_camino','entregado','cancelado'];
+      const whereClause = estado && validStates.includes(estado)
+        ? 'WHERE p.Estado = @estado'
+        : '';
+
+      const dataReq  = pool.request()
+        .input('offset',   sql.Int, offset)
+        .input('pageSize', sql.Int, pageSize);
+      const countReq = pool.request();
+      if (estado && validStates.includes(estado)) {
+        dataReq.input('estado',  sql.NVarChar(20), estado);
+        countReq.input('estado', sql.NVarChar(20), estado);
+      }
+
+      const [dataRes, countRes] = await Promise.all([
+        dataReq.query(`
+          SELECT p.*,
+            c.Nombre_Usuario   AS Nombre_Cliente,
+            c.Apellido_Usuario AS Apellido_Cliente,
+            r.Nombre_Usuario   AS Nombre_Repartidor,
+            r.Apellido_Usuario AS Apellido_Repartidor
+          FROM AKR_Pedidos p
+          LEFT JOIN AKR_Usuarios c ON p.Id_Cliente    = c.Id_Usuario
+          LEFT JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
+          ${whereClause}
+          ORDER BY p.Creacion_Pedido DESC
+          OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+        `),
+        countReq.query(`SELECT COUNT(*) AS total FROM AKR_Pedidos p ${whereClause}`),
+      ]);
+
+      const totalItems = countRes.recordset[0].total;
+      return res.json({
+        items:      dataRes.recordset,
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      });
+    }
+
+    if (req.usuario.role === 'driver') {
+      const result = await pool.request()
         .input('idRep', sql.Int, req.usuario.id)
         .query(`
           SELECT p.*,
-            c.Nombre_Usuario AS Nombre_Cliente,
+            c.Nombre_Usuario   AS Nombre_Cliente,
             c.Apellido_Usuario AS Apellido_Cliente
           FROM AKR_Pedidos p
-          INNER JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
+          LEFT JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
           WHERE p.Id_Repartidor = @idRep
             AND p.Estado IN ('asignado','en_camino')
           ORDER BY p.Creacion_Pedido DESC
         `);
-    } else {
-      // customer
-      query = pool.request()
-        .input('idCli', sql.Int, req.usuario.id)
-        .query(`
-          SELECT p.*,
-            r.Nombre_Usuario AS Nombre_Repartidor,
-            r.Apellido_Usuario AS Apellido_Repartidor
-          FROM AKR_Pedidos p
-          LEFT JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
-          WHERE p.Id_Cliente = @idCli
-          ORDER BY p.Creacion_Pedido DESC
-        `);
+      return res.json(result.recordset);
     }
 
-    const result = await query;
+    // customer
+    const result = await pool.request()
+      .input('idCli', sql.Int, req.usuario.id)
+      .query(`
+        SELECT p.*,
+          r.Nombre_Usuario   AS Nombre_Repartidor,
+          r.Apellido_Usuario AS Apellido_Repartidor
+        FROM AKR_Pedidos p
+        LEFT JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
+        WHERE p.Id_Cliente = @idCli
+        ORDER BY p.Creacion_Pedido DESC
+      `);
     return res.json(result.recordset);
   } catch (err) {
     console.error('GET /pedidos:', err.message);
@@ -149,9 +182,13 @@ router.post('/', async (req, res) => {
 
 // PATCH /api/pedidos/:id/estado  — cambiar estado
 router.patch('/:id/estado', async (req, res) => {
+  const idNum = parseInt(req.params.id, 10);
+  if (!idNum || isNaN(idNum) || idNum < 1) {
+    return res.status(400).json({ error: 'ID de pedido inválido.' });
+  }
   const { estado } = req.body;
   const validStates = ['sin_asignar','asignado','en_camino','entregado','cancelado'];
-  if (!validStates.includes(estado)) {
+  if (!estado || !validStates.includes(estado)) {
     return res.status(400).json({ error: 'Estado inválido.' });
   }
 
@@ -160,7 +197,7 @@ router.patch('/:id/estado', async (req, res) => {
 
     // Obtener pedido actual
     const cur = await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id))
+      .input('id', sql.Int, idNum)
       .query('SELECT * FROM AKR_Pedidos WHERE Id_Pedido = @id');
     const pedido = cur.recordset[0];
     if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado.' });
@@ -186,7 +223,7 @@ router.patch('/:id/estado', async (req, res) => {
 
     const now = new Date();
     await pool.request()
-      .input('id',       sql.Int,         parseInt(req.params.id))
+      .input('id',       sql.Int,         idNum)
       .input('estado',   sql.NVarChar(20), estado)
       .input('asignado', sql.DateTime,     estado === 'asignado'  ? now : null)
       .input('entrega',  sql.DateTime,     estado === 'entregado' ? now : null)
@@ -201,19 +238,20 @@ router.patch('/:id/estado', async (req, res) => {
       `);
 
     // Crear notificación si corresponde
-    if (['asignado','en_camino','entregado','cancelado'].includes(estado)) {
+    // Notificaciones solo si hay cliente registrado (no pedidos WhatsApp sin cuenta)
+    if (['asignado','en_camino','entregado','cancelado'].includes(estado) && pedido.Id_Cliente) {
       const mensajes = {
-        asignado:   `Tu pedido #${req.params.id} fue asignado a un repartidor.`,
-        en_camino:  `Tu pedido #${req.params.id} está en camino.`,
-        entregado:  `Tu pedido #${req.params.id} fue entregado. ¡Buen provecho!`,
-        cancelado:  `Tu pedido #${req.params.id} fue cancelado.`,
+        asignado:   `Tu pedido #${idNum} fue asignado a un repartidor.`,
+        en_camino:  `Tu pedido #${idNum} está en camino.`,
+        entregado:  `Tu pedido #${idNum} fue entregado. ¡Buen provecho!`,
+        cancelado:  `Tu pedido #${idNum} fue cancelado.`,
       };
       const tipoNotif = estado === 'en_camino' ? 'pedido_en_camino' : estado;
       await pool.request()
         .input('idCli',  sql.Int,          pedido.Id_Cliente)
         .input('tipo',   sql.NVarChar(30),  tipoNotif)
         .input('msg',    sql.NVarChar(300), mensajes[estado])
-        .input('idPed',  sql.Int,           parseInt(req.params.id))
+        .input('idPed',  sql.Int,           idNum)
         .query(`
           INSERT INTO AKR_Notificaciones (Id_Cliente, Tipo, Mensaje, Id_Pedido)
           VALUES (@idCli, @tipo, @msg, @idPed)
@@ -221,7 +259,7 @@ router.patch('/:id/estado', async (req, res) => {
     }
 
     await registrarAuditoria(pool, req.usuario.id, null, 'estado_pedido',
-      `Pedido #${req.params.id} → ${estado}`, req);
+      `Pedido #${idNum} → ${estado}`, req);
 
     return res.json({ ok: true });
   } catch (err) {
@@ -236,6 +274,11 @@ router.patch('/:id/asignar', async (req, res) => {
     return res.status(403).json({ error: 'Solo admin puede asignar.' });
   }
 
+  const idPed = parseInt(req.params.id, 10);
+  if (!idPed || isNaN(idPed) || idPed < 1) {
+    return res.status(400).json({ error: 'ID de pedido inválido.' });
+  }
+
   const { idRepartidor } = req.body;
   const desasignar = idRepartidor === null || idRepartidor === undefined || idRepartidor === '';
 
@@ -244,7 +287,7 @@ router.patch('/:id/asignar', async (req, res) => {
 
     if (desasignar) {
       await pool.request()
-        .input('id', sql.Int, parseInt(req.params.id))
+        .input('id', sql.Int, idPed)
         .query(`
           UPDATE AKR_Pedidos SET
             Id_Repartidor     = NULL,
@@ -254,12 +297,16 @@ router.patch('/:id/asignar', async (req, res) => {
         `);
 
       await registrarAuditoria(pool, req.usuario.id, null, 'pedido_desasignado',
-        `Pedido #${req.params.id} desasignado`, req);
+        `Pedido #${idPed} desasignado`, req);
     } else {
+      const repId = parseInt(idRepartidor, 10);
+      if (!repId || isNaN(repId) || repId < 1) {
+        return res.status(400).json({ error: 'ID de repartidor inválido.' });
+      }
       const now = new Date();
       await pool.request()
-        .input('id',    sql.Int,      parseInt(req.params.id))
-        .input('repId', sql.Int,      idRepartidor)
+        .input('id',    sql.Int,      idPed)
+        .input('repId', sql.Int,      repId)
         .input('now',   sql.DateTime, now)
         .query(`
           UPDATE AKR_Pedidos SET
@@ -270,15 +317,16 @@ router.patch('/:id/asignar', async (req, res) => {
         `);
 
       const cur = await pool.request()
-        .input('id', sql.Int, parseInt(req.params.id))
+        .input('id', sql.Int, idPed)
         .query('SELECT Id_Cliente FROM AKR_Pedidos WHERE Id_Pedido = @id');
       const pedido = cur.recordset[0];
 
-      if (pedido) {
+      // Notificar solo si el pedido tiene cliente registrado
+      if (pedido?.Id_Cliente) {
         await pool.request()
           .input('idCli', sql.Int,          pedido.Id_Cliente)
-          .input('msg',   sql.NVarChar(300), `Tu pedido #${req.params.id} fue asignado a un repartidor.`)
-          .input('idPed', sql.Int,           parseInt(req.params.id))
+          .input('msg',   sql.NVarChar(300), `Tu pedido #${idPed} fue asignado a un repartidor.`)
+          .input('idPed', sql.Int,           idPed)
           .query(`
             INSERT INTO AKR_Notificaciones (Id_Cliente, Tipo, Mensaje, Id_Pedido)
             VALUES (@idCli, 'asignado', @msg, @idPed)
@@ -286,7 +334,7 @@ router.patch('/:id/asignar', async (req, res) => {
       }
 
       await registrarAuditoria(pool, req.usuario.id, null, 'pedido_asignado',
-        `Pedido #${req.params.id} asignado a repartidor ${idRepartidor}`, req);
+        `Pedido #${idPed} asignado a repartidor ${repId}`, req);
     }
 
     return res.json({ ok: true });
@@ -302,13 +350,20 @@ router.post('/:id/incidencia', async (req, res) => {
     return res.status(403).json({ error: 'Solo repartidores pueden reportar incidencias.' });
   }
 
+  const idPedInc = parseInt(req.params.id, 10);
+  if (!idPedInc || isNaN(idPedInc) || idPedInc < 1) {
+    return res.status(400).json({ error: 'ID de pedido inválido.' });
+  }
+
   const { tipo, detalle } = req.body;
-  if (!tipo) return res.status(400).json({ error: 'Tipo de incidencia requerido.' });
+  if (!tipo || String(tipo).trim().length === 0) {
+    return res.status(400).json({ error: 'Tipo de incidencia requerido.' });
+  }
 
   try {
     const pool = await getPool();
     await pool.request()
-      .input('idPed',   sql.Int,          parseInt(req.params.id))
+      .input('idPed',   sql.Int,          idPedInc)
       .input('idRep',   sql.Int,          req.usuario.id)
       .input('tipo',    sql.NVarChar(80),  tipo)
       .input('detalle', sql.NVarChar(500), detalle ?? null)
@@ -318,7 +373,7 @@ router.post('/:id/incidencia', async (req, res) => {
       `);
 
     await registrarAuditoria(pool, req.usuario.id, null, 'incidencia_reportada',
-      `Pedido #${req.params.id}: ${tipo}`, req);
+      `Pedido #${idPedInc}: ${tipo}`, req);
 
     return res.status(201).json({ ok: true });
   } catch (err) {

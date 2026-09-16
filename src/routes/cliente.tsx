@@ -107,7 +107,7 @@ function ClientePage() {
   const noLeidas = misNotifs.filter((n) => !n.Leida).length;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
@@ -219,6 +219,18 @@ function ClientePage() {
           onCreado={() => { setModalPedido(false); setTab("seguimiento"); }}
         />
       )}
+
+      <footer className="mt-auto border-t border-border bg-card">
+        <div className="mx-auto flex max-w-4xl flex-col gap-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex items-center gap-2">
+            <LogoIcon size={16} />
+            <span className="text-xs text-muted-foreground">Ala K' Rico GO</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Delivery · Jr. Áncash 3855, SMP · {new Date().getFullYear()}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -950,7 +962,8 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
     queryFn: api.perfil.bind(api),
   });
 
-  const [guardado, setGuardado] = useState(false);
+  const [guardado,    setGuardado]    = useState(false);
+  const [errorPerfil, setErrorPerfil] = useState<string | null>(null);
   const [passActual,  setPassActual]  = useState("");
   const [passNuevo,   setPassNuevo]   = useState("");
   const [passConfirm, setPassConfirm] = useState("");
@@ -994,6 +1007,7 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setErrorPerfil(null);
     try {
       await api.actualizarPerfil({
         nombre:   nombre.trim()    || undefined,
@@ -1001,9 +1015,11 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
         telefono: celular.trim()   || undefined,
         dni:      numeroDoc.trim() || undefined,
       });
-    } catch { /* ignorar — mostramos éxito visual de todas formas */ }
-    setGuardado(true);
-    setTimeout(() => setGuardado(false), 2500);
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 2500);
+    } catch {
+      setErrorPerfil("No se pudo guardar. Intenta de nuevo.");
+    }
   }
 
   if (perfilCargando) {
@@ -1066,6 +1082,9 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
         <div className="flex items-center justify-between gap-4">
           {guardado && (
             <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">✓ Datos guardados correctamente</span>
+          )}
+          {errorPerfil && (
+            <span className="text-sm font-medium text-destructive" role="alert">{errorPerfil}</span>
           )}
           <button type="submit" className="ml-auto rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105">
             Guardar cambios

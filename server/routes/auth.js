@@ -107,38 +107,48 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/register
 // ---------------------------------------------------------------------------
 router.post('/register', async (req, res) => {
-  const { nombre, apellido, email, password, dni, telefono, idRole } = req.body;
+  const { nombre, apellido, email, password, dni, telefono } = req.body;
 
-  // Validar campos obligatorios
+  // Validación de campos obligatorios y longitudes
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: 'Nombre, email y contraseña son obligatorios.' });
   }
+  const nombreTrim = String(nombre).trim();
+  const emailTrim  = String(email).trim().toLowerCase();
+  if (nombreTrim.length < 2 || nombreTrim.length > 100) {
+    return res.status(400).json({ error: 'El nombre debe tener entre 2 y 100 caracteres.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim) || emailTrim.length > 150) {
+    return res.status(400).json({ error: 'Email inválido.' });
+  }
+  if (password.length < 8 || password.length > 100) {
+    return res.status(400).json({ error: 'La contraseña debe tener entre 8 y 100 caracteres.' });
+  }
+
+  // idRole siempre es 3 (Cliente) — ignorar cualquier valor enviado por el cliente
+  const idRoleForzado = 3;
 
   try {
     const pool = await getPool();
 
-    // Verificar si el email ya está registrado
     const existeEmail = await pool.request()
-      .input('email', sql.NVarChar(150), email)
+      .input('email', sql.NVarChar(150), emailTrim)
       .query('SELECT Id_Usuario FROM AKR_Usuarios WHERE Email_Usuario = @email');
 
     if (existeEmail.recordset.length > 0) {
       return res.status(409).json({ error: 'email_taken' });
     }
 
-    // Hashear contraseña
-    const saltRounds = 10;
-    const hash = await bcrypt.hash(password, saltRounds);
+    const hash = await bcrypt.hash(password, 10);
 
-    // Insertar nuevo usuario
     await pool.request()
-      .input('idRole',    sql.SmallInt,     idRole    || 3)
-      .input('nombre',    sql.NVarChar(100), nombre)
-      .input('apellido',  sql.NVarChar(100), apellido  || '')
-      .input('email',     sql.NVarChar(150), email)
+      .input('idRole',    sql.SmallInt,     idRoleForzado)
+      .input('nombre',    sql.NVarChar(100), nombreTrim)
+      .input('apellido',  sql.NVarChar(100), apellido ? String(apellido).trim().slice(0, 100) : '')
+      .input('email',     sql.NVarChar(150), emailTrim)
       .input('hash',      sql.NVarChar(250), hash)
-      .input('dni',       sql.NVarChar(9),   dni       || '')
-      .input('telefono',  sql.NVarChar(9),   telefono  || '')
+      .input('dni',       sql.NVarChar(9),   dni       ? String(dni).trim().slice(0, 9)   : '')
+      .input('telefono',  sql.NVarChar(20),  telefono  ? String(telefono).trim().slice(0, 20) : '')
       .query(`
         INSERT INTO AKR_Usuarios
           (Id_Roles, Nombre_Usuario, Apellido_Usuario, Email_Usuario,
@@ -165,8 +175,8 @@ router.post('/change-password', verificarToken, async (req, res) => {
   if (!passwordActual || !passwordNuevo) {
     return res.status(400).json({ error: 'Campos incompletos.' });
   }
-  if (passwordNuevo.length < 6) {
-    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+  if (passwordNuevo.length < 8 || passwordNuevo.length > 100) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener entre 8 y 100 caracteres.' });
   }
   try {
     const pool = await getPool();
@@ -191,23 +201,36 @@ router.post('/change-password', verificarToken, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/auth/reset-password  (sin token — flujo "olvidé contraseña")
+// POST /api/auth/reset-password  (sin token — solo habilitado en modo piloto)
+// ADVERTENCIA DE SEGURIDAD: este endpoint no valida identidad mediante OTP ni
+// enlace de correo. En producción real debe deshabilitarse y reemplazarse por
+// un flujo de verificación por email. Dejado activo únicamente para la fase
+// piloto de la tesis con datos controlados.
 // ---------------------------------------------------------------------------
 router.post('/reset-password', async (req, res) => {
+  if (process.env.NODE_ENV === 'production' && process.env.PILOTO_RESET !== 'true') {
+    return res.status(403).json({ error: 'Función no disponible.' });
+  }
+
   const { email, passwordNuevo } = req.body;
   if (!email || !passwordNuevo) {
     return res.status(400).json({ error: 'Campos incompletos.' });
   }
-  if (passwordNuevo.length < 6) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
+  const emailTrim = String(email).trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+    return res.status(400).json({ error: 'Email inválido.' });
   }
+  if (passwordNuevo.length < 8 || passwordNuevo.length > 100) {
+    return res.status(400).json({ error: 'La contraseña debe tener entre 8 y 100 caracteres.' });
+  }
+
   try {
     const pool = await getPool();
     const result = await pool.request()
-      .input('email', sql.NVarChar(150), email)
+      .input('email', sql.NVarChar(150), emailTrim)
       .query('SELECT Id_Usuario FROM AKR_Usuarios WHERE Email_Usuario = @email AND Activo_Usuario = 1');
+    // Respuesta genérica para no revelar si el email existe
     if (result.recordset.length === 0) {
-      // Respuesta genérica para no revelar si el email existe
       return res.status(200).json({ ok: true });
     }
     const id = result.recordset[0].Id_Usuario;
@@ -216,7 +239,7 @@ router.post('/reset-password', async (req, res) => {
       .input('id',   sql.Int,          id)
       .input('hash', sql.NVarChar(250), hash)
       .query('UPDATE AKR_Usuarios SET Contraseña_Usuario = @hash, Modificacion_Usuario = GETDATE() WHERE Id_Usuario = @id');
-    await registrarAuditoria(pool, id, email, 'reset_password', 'Reset sin token (piloto)', req);
+    await registrarAuditoria(pool, id, emailTrim, 'reset_password', 'Reset sin token (piloto)', req);
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Error en /reset-password:', err.message);

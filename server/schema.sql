@@ -51,7 +51,7 @@ CREATE TABLE AKR_Usuarios (
 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'AKR_Pedidos')
 CREATE TABLE AKR_Pedidos (
     Id_Pedido           INT             IDENTITY(1,1) PRIMARY KEY,
-    Id_Cliente          INT             NOT NULL REFERENCES AKR_Usuarios(Id_Usuario),
+    Id_Cliente          INT             NULL REFERENCES AKR_Usuarios(Id_Usuario),
     Id_Repartidor       INT             NULL REFERENCES AKR_Usuarios(Id_Usuario),
     Estado              NVARCHAR(20)    NOT NULL DEFAULT 'sin_asignar'
                             CHECK (Estado IN ('sin_asignar','asignado','en_camino','entregado','cancelado')),

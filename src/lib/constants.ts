@@ -6,4 +6,5 @@ export const ESTADO_PEDIDO_ES: Record<string, string> = {
   asignado:    "Asignado",
   en_camino:   "En camino",
   entregado:   "Entregado",
+  cancelado:   "Cancelado",
 };

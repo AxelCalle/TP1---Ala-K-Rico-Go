@@ -7,8 +7,11 @@ import { registrarAuditoria } from '../middleware/auditoria.js';
 const router = Router();
 router.use(verificarToken);
 
-// GET /api/config/aco
+// GET /api/config/aco  — solo admin
 router.get('/aco', async (req, res) => {
+  if (req.usuario.role !== 'admin') {
+    return res.status(403).json({ error: 'Solo admin.' });
+  }
   try {
     const pool = await getPool();
     const result = await pool.request().query('SELECT Clave, Valor FROM AKR_ConfigACO');
@@ -28,10 +31,34 @@ router.put('/aco', async (req, res) => {
   }
 
   const permitidas = ['alfa','beta','rho','Q','numAnts','iterations','elite','tauMin'];
-  const updates    = Object.entries(req.body).filter(([k]) => permitidas.includes(k));
+  // Rangos válidos por parámetro: [min, max]
+  const rangos = {
+    alfa:       [0.1,  10],
+    beta:       [0.1,  10],
+    rho:        [0.01,  0.99],
+    Q:          [0.1,  10],
+    numAnts:    [5,    100],
+    iterations: [10,   500],
+    elite:      [0,    20],
+    tauMin:     [0.001, 1],
+  };
+
+  const updates = Object.entries(req.body).filter(([k]) => permitidas.includes(k));
 
   if (updates.length === 0) {
     return res.status(400).json({ error: 'No hay parámetros válidos.' });
+  }
+
+  // Validar valores antes de guardar
+  for (const [clave, valor] of updates) {
+    const num = parseFloat(valor);
+    if (!isFinite(num) || isNaN(num)) {
+      return res.status(400).json({ error: `Valor inválido para '${clave}'.` });
+    }
+    const [min, max] = rangos[clave];
+    if (num < min || num > max) {
+      return res.status(400).json({ error: `'${clave}' debe estar entre ${min} y ${max}.` });
+    }
   }
 
   try {

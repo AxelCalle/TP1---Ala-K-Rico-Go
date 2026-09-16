@@ -58,7 +58,7 @@ function PaginaAdmin() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
@@ -109,6 +109,20 @@ function PaginaAdmin() {
         {seccion === "reportes"     && <SeccionReportes />}
         {seccion === "configuracion" && <SeccionConfiguracion />}
       </main>
+
+      <footer className="mt-auto border-t border-border bg-card">
+        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex items-center gap-2">
+            <LogoIcon size={18} />
+            <span className="text-xs font-medium text-muted-foreground">
+              Ala K' Rico GO — Panel Administrativo
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Optimización de rutas ACO · {new Date().getFullYear()}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -118,45 +132,18 @@ function PaginaAdmin() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SeccionDashboard() {
-  const [pedidos, setPedidos]   = useState<import("@/lib/api").PedidoApi[]>([]);
+  const [dash,    setDash]    = useState<import("@/lib/api").DashboardApi | null>(null);
+  const [pedidos, setPedidos] = useState<import("@/lib/api").PedidoApi[]>([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    api.listarPedidos()
-      .then(setPedidos)
-      .catch(() => {})
-      .finally(() => setCargando(false));
+    Promise.all([
+      api.dashboard().then(setDash).catch(() => {}),
+      api.listarPedidosAdmin({ pageSize: 100 }).then((r) => setPedidos(r.items)).catch(() => {}),
+    ]).finally(() => setCargando(false));
   }, []);
 
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  const manana = new Date(hoy); manana.setDate(manana.getDate() + 1);
-
-  const pedidosHoy     = pedidos.filter((p) => { const d = new Date(p.Creacion_Pedido); return d >= hoy && d < manana; });
-  const activosHoy     = pedidosHoy.filter((p) => ["asignado", "en_camino"].includes(p.Estado));
-  const entregadosHoy  = pedidosHoy.filter((p) => p.Estado === "entregado");
-
-  const repsActivos = new Set(
-    pedidos.filter((p) => ["asignado", "en_camino"].includes(p.Estado) && p.Id_Repartidor)
-           .map((p) => p.Id_Repartidor)
-  ).size;
-
-  const tasaCumplimiento = pedidosHoy.length > 0
-    ? Math.round((entregadosHoy.length / pedidosHoy.length) * 100)
-    : 0;
-
-  const tiempoPromedio = (() => {
-    const MAX_MIN = 1440; // descartar outliers (pedidos de prueba con días de diferencia)
-    const conTiempos = pedidos.filter((p) => {
-      if (!p.Entrega_Pedido || !p.Creacion_Pedido) return false;
-      const diff = (new Date(p.Entrega_Pedido).getTime() - new Date(p.Creacion_Pedido).getTime()) / 60000;
-      return diff > 0 && diff <= MAX_MIN;
-    });
-    if (!conTiempos.length) return null;
-    const suma = conTiempos.reduce(
-      (acc, p) => acc + (new Date(p.Entrega_Pedido!).getTime() - new Date(p.Creacion_Pedido).getTime()), 0
-    );
-    return Math.round(suma / conTiempos.length / 60000);
-  })();
+  const kpis = dash?.kpis;
 
   const CHART_COLORS: Record<string, string> = {
     "Sin asignar": "var(--amber)",
@@ -166,21 +153,22 @@ function SeccionDashboard() {
     "Cancelados":  "var(--destructive)",
   };
 
-  const pedidosPorEstado = [
-    { label: "Sin asignar", count: pedidos.filter((p) => p.Estado === "sin_asignar").length, color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
-    { label: "Asignados",   count: pedidos.filter((p) => p.Estado === "asignado").length,    color: "bg-accent/20 text-accent" },
-    { label: "En camino",   count: pedidos.filter((p) => p.Estado === "en_camino").length,   color: "bg-primary/15 text-primary" },
-    { label: "Entregados",  count: pedidos.filter((p) => p.Estado === "entregado").length,   color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-    { label: "Cancelados",  count: pedidos.filter((p) => p.Estado === "cancelado").length,   color: "bg-destructive/15 text-destructive" },
-  ];
+  const pedidosPorEstado = dash?.porEstado
+    ? [
+        { label: "Sin asignar", count: dash.porEstado.find((e) => e.Estado === "sin_asignar")?.cantidad ?? 0, color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" },
+        { label: "Asignados",   count: dash.porEstado.find((e) => e.Estado === "asignado")?.cantidad   ?? 0, color: "bg-accent/20 text-accent" },
+        { label: "En camino",   count: dash.porEstado.find((e) => e.Estado === "en_camino")?.cantidad  ?? 0, color: "bg-primary/15 text-primary" },
+        { label: "Entregados",  count: dash.porEstado.find((e) => e.Estado === "entregado")?.cantidad  ?? 0, color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+        { label: "Cancelados",  count: dash.porEstado.find((e) => e.Estado === "cancelado")?.cantidad  ?? 0, color: "bg-destructive/15 text-destructive" },
+      ]
+    : [];
 
-  const recientes = [...pedidos]
-    .sort((a, b) => new Date(b.Creacion_Pedido).getTime() - new Date(a.Creacion_Pedido).getTime())
-    .slice(0, 10);
+  const recientes = dash?.recientes ?? [];
 
-  const entregadosTotal = pedidos.filter((p) => p.Estado === "entregado").length;
-  const canceladosTotal = pedidos.filter((p) => p.Estado === "cancelado").length;
-  const tasaHistorica   = pedidos.length > 0 ? Math.round((entregadosTotal / pedidos.length) * 100) : 0;
+  const totalSistema   = pedidosPorEstado.reduce((s, e) => s + e.count, 0);
+  const entregadosTotal = pedidosPorEstado.find((e) => e.label === "Entregados")?.count ?? 0;
+  const canceladosTotal = pedidosPorEstado.find((e) => e.label === "Cancelados")?.count ?? 0;
+  const tasaHistorica   = totalSistema > 0 ? Math.round((entregadosTotal / totalSistema) * 100) : 0;
 
   const porSemana = (() => {
     const MAX_MIN = 1440;
@@ -189,7 +177,6 @@ function SeccionDashboard() {
       if (!p.Entrega_Pedido || !p.Creacion_Pedido) return;
       const mins = (new Date(p.Entrega_Pedido).getTime() - new Date(p.Creacion_Pedido).getTime()) / 60000;
       if (mins <= 0 || mins > MAX_MIN) return;
-      // Lunes de la semana del pedido
       const d = new Date(p.Creacion_Pedido);
       d.setHours(0, 0, 0, 0);
       const offset = d.getDay() === 0 ? -6 : 1 - d.getDay();
@@ -236,22 +223,23 @@ function SeccionDashboard() {
         <p className="mt-1 text-sm text-muted-foreground">Resumen operativo en tiempo real.</p>
       </div>
 
+      <div aria-live="polite" aria-busy={cargando} aria-label="Estado del dashboard">
       {cargando ? (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Cargando datos...
+        <div className="flex items-center gap-2 text-muted-foreground" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando datos...
         </div>
       ) : (
         <>
           {/* KPIs principales */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard titulo="Pedidos hoy"          valor={pedidosHoy.length}          sufijo="" highlight />
-            <KpiCard titulo="Activos ahora"         valor={activosHoy.length}          sufijo="" />
-            <KpiCard titulo="Repartidores activos"  valor={repsActivos}                sufijo="" />
-            <KpiCard titulo="Tasa de cumplimiento"  valor={`${tasaCumplimiento}%`}     sufijo="" highlight />
+            <KpiCard titulo="Pedidos hoy"          valor={kpis?.total_hoy ?? 0}   sufijo="" highlight />
+            <KpiCard titulo="Activos ahora"         valor={kpis?.activos ?? 0}     sufijo="" />
+            <KpiCard titulo="Repartidores activos"  valor={kpis?.repartidores_activos ?? 0} sufijo="" />
+            <KpiCard titulo="Entregados hoy"        valor={kpis?.entregados ?? 0}  sufijo="" highlight />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <KpiCard titulo="Tiempo promedio de entrega" valor={tiempoPromedio !== null ? `${tiempoPromedio} min` : "Sin datos"} sufijo="" />
-            <KpiCard titulo="Total pedidos sistema"      valor={pedidos.length}         sufijo="" />
+            <KpiCard titulo="Tiempo promedio de entrega" valor={kpis?.avg_minutos != null ? `${Math.round(kpis.avg_minutos)} min` : "Sin datos"} sufijo="" />
+            <KpiCard titulo="Total pedidos sistema"      valor={totalSistema} sufijo="" />
           </div>
 
           {/* Distribución por estado */}
@@ -405,6 +393,7 @@ function SeccionDashboard() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -448,9 +437,9 @@ function SeccionReportes() {
     Promise.all([
       cargarTiempos(),
       api.reporteRepartidores().then(setRanking).catch(() => {}),
-      api.listarPedidos().then(setPedidos).catch(() => {}),
+      api.listarPedidosAdmin({ pageSize: 20 }).then((r) => setPedidos(r.items)).catch(() => {}),
       api.reportePiloto().then(setPiloto).catch(() => {}),
-      api.listarAuditoria({ limite: 50 }).then(setAuditoria).catch(() => {}),
+      api.listarAuditoria({ pageSize: 50 }).then((r) => setAuditoria(r.items)).catch(() => {}),
     ]).finally(() => setCargando(false));
   }, []);
 
@@ -486,8 +475,8 @@ function SeccionReportes() {
       </div>
 
       {cargando && (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Cargando datos…
+        <div className="flex items-center gap-2 text-muted-foreground" role="status" aria-live="polite">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando datos…
         </div>
       )}
 
@@ -1013,30 +1002,67 @@ type FiltroEstado = "todos" | "activos" | "completados";
 
 function SeccionPedidos() {
   const [pedidos,      setPedidos]      = useState<import("@/lib/api").PedidoApi[]>([]);
+  const [totalItems,   setTotalItems]   = useState(0);
+  const [totalPages,   setTotalPages]   = useState(1);
+  const [page,         setPage]         = useState(1);
   const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
   const [cargando,     setCargando]     = useState(true);
   const [abierto,      setAbierto]      = useState(false);
   const [copiado,      setCopiado]      = useState<number | null>(null);
   const [filtro,       setFiltro]       = useState<FiltroEstado>("activos");
+  const [confirm,      setConfirm]      = useState<{ mensaje: string; detalle?: string; accion: () => void } | null>(null);
 
-  const cargar = () => {
+  const PAGE_SIZE = 20;
+
+  const estadoFiltro = filtro === "activos" ? undefined
+    : filtro === "completados" ? undefined
+    : undefined;
+
+  const cargar = (p = page) => {
     setCargando(true);
-    Promise.all([api.listarPedidos(), api.listarRepartidores()])
-      .then(([ps, rs]) => { setPedidos(ps); setRepartidores(rs); })
+    Promise.all([
+      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE }),
+      api.listarRepartidores(),
+    ])
+      .then(([paginado, rs]) => {
+        setPedidos(paginado.items);
+        setTotalItems(paginado.totalItems);
+        setTotalPages(paginado.totalPages);
+        setRepartidores(rs);
+      })
       .catch(() => {})
       .finally(() => setCargando(false));
   };
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function cambiarEstado(id: number, estado: string) {
+  async function ejecutarCambioEstado(id: number, estado: string) {
     await api.cambiarEstadoPedido(id, estado).catch(() => {});
-    cargar();
+    cargar(page);
   }
 
-  async function asignarRepartidor(idPedido: number, idRepartidor: number | null) {
+  function cambiarEstado(id: number, estadoNuevo: string, estadoActual: string) {
+    const etiquetas: Record<string, string> = {
+      sin_asignar: "Sin asignar", asignado: "Asignado",
+      en_camino: "En camino", entregado: "Entregado", cancelado: "Cancelado",
+    };
+    setConfirm({
+      mensaje: `¿Cambiar pedido AKA-${String(id).padStart(4, "0")} a "${etiquetas[estadoNuevo] ?? estadoNuevo}"?`,
+      detalle: `Estado actual: ${etiquetas[estadoActual] ?? estadoActual}`,
+      accion: () => ejecutarCambioEstado(id, estadoNuevo),
+    });
+  }
+
+  async function ejecutarAsignacion(idPedido: number, idRepartidor: number | null) {
     await api.asignarPedido(idPedido, idRepartidor).catch(() => {});
-    cargar();
+    cargar(page);
+  }
+
+  function asignarRepartidor(idPedido: number, idRepartidor: number | null, nombreRepartidor?: string) {
+    const msg = idRepartidor
+      ? `¿Asignar el pedido AKA-${String(idPedido).padStart(4, "0")} a ${nombreRepartidor ?? "este repartidor"}?`
+      : `¿Quitar la asignación del pedido AKA-${String(idPedido).padStart(4, "0")}?`;
+    setConfirm({ mensaje: msg, accion: () => ejecutarAsignacion(idPedido, idRepartidor) });
   }
 
   function copiarSeguimiento(id: number) {
@@ -1058,6 +1084,8 @@ function SeccionPedidos() {
 
   const cntActivos     = pedidos.filter((p) => ESTADOS_ACTIVOS.includes(p.Estado)).length;
   const cntCompletados = pedidos.filter((p) => ESTADOS_COMPLETADOS.includes(p.Estado)).length;
+
+  void estadoFiltro;
 
   const TABS: { key: FiltroEstado; label: string; count: number }[] = [
     { key: "activos",     label: "Activos",     count: cntActivos },
@@ -1173,7 +1201,7 @@ function SeccionPedidos() {
                       ) : (
                         <SelectEstado
                           estado={p.Estado}
-                          onChange={(s) => cambiarEstado(p.Id_Pedido, s)}
+                          onChange={(s) => cambiarEstado(p.Id_Pedido, s, p.Estado)}
                         />
                       )}
                     </Celda>
@@ -1186,8 +1214,14 @@ function SeccionPedidos() {
                         </span>
                       ) : (
                         <select
+                          aria-label={`Asignar repartidor para pedido ${p.Id_Pedido}`}
                           value={p.Id_Repartidor ?? ""}
-                          onChange={(e) => asignarRepartidor(p.Id_Pedido, e.target.value ? Number(e.target.value) : null)}
+                          onChange={(e) => {
+                            const rid = e.target.value ? Number(e.target.value) : null;
+                            const rep = repsActivos.find((r) => r.Id_Usuario === rid);
+                            const nombre = rep ? `${rep.Nombre_Usuario} ${rep.Apellido_Usuario?.split(" ")[0] ?? ""}`.trim() : undefined;
+                            asignarRepartidor(p.Id_Pedido, rid, nombre);
+                          }}
                           className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                         >
                           <option value="">Sin asignar</option>
@@ -1220,7 +1254,41 @@ function SeccionPedidos() {
         </table>
       </div>
 
-      {abierto && <DialogNuevoPedido onClose={() => { setAbierto(false); cargar(); }} />}
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between gap-4 text-sm text-muted-foreground">
+          <span aria-live="polite" aria-atomic="true">
+            {totalItems} pedido{totalItems !== 1 ? "s" : ""} · página {page} de {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              ← Anterior
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {abierto && <DialogNuevoPedido onClose={() => { setAbierto(false); cargar(1); }} />}
+
+      {confirm && (
+        <ConfirmDialog
+          mensaje={confirm.mensaje}
+          detalle={confirm.detalle}
+          onConfirmar={() => { confirm.accion(); setConfirm(null); }}
+          onCancelar={() => setConfirm(null)}
+        />
+      )}
     </>
   );
 }
@@ -1307,12 +1375,14 @@ function SeccionRepartidores() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setEditando(r)}
+                        aria-label={`Editar repartidor ${nombre}`}
                         className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <Edit2 className="h-3.5 w-3.5" /> Editar
+                        <Edit2 className="h-3.5 w-3.5" aria-hidden="true" /> Editar
                       </button>
                       <button
                         onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
+                        aria-label={activo ? `Desactivar repartidor ${nombre}` : `Activar repartidor ${nombre}`}
                         className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                           activo
                             ? "border border-destructive/40 text-destructive hover:bg-destructive/10"
@@ -1320,8 +1390,8 @@ function SeccionRepartidores() {
                         }`}
                       >
                         {activo
-                          ? <><UserX className="h-3.5 w-3.5" /> Desactivar</>
-                          : <><UserCheck className="h-3.5 w-3.5" /> Activar</>}
+                          ? <><UserX className="h-3.5 w-3.5" aria-hidden="true" /> Desactivar</>
+                          : <><UserCheck className="h-3.5 w-3.5" aria-hidden="true" /> Activar</>}
                       </button>
                     </div>
                   </Celda>
@@ -1733,9 +1803,12 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Contenedor de modal con fondo oscuro */
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Overlay({ children, onClose, titulo }: { children: React.ReactNode; onClose: () => void; titulo?: string }) {
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={titulo}
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 py-8"
       onClick={onClose}
     >
@@ -1746,6 +1819,38 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
         {children}
       </div>
     </div>
+  );
+}
+
+/** Diálogo de confirmación genérico */
+function ConfirmDialog({
+  mensaje, detalle, labelConfirmar = "Confirmar", destructivo = false, onConfirmar, onCancelar,
+}: {
+  mensaje: string;
+  detalle?: string;
+  labelConfirmar?: string;
+  destructivo?: boolean;
+  onConfirmar: () => void;
+  onCancelar: () => void;
+}) {
+  return (
+    <Overlay onClose={onCancelar} titulo="Confirmación">
+      <div className="space-y-4">
+        <p className="text-base font-semibold">{mensaje}</p>
+        {detalle && <p className="text-sm text-muted-foreground">{detalle}</p>}
+        <div className="flex justify-end gap-3 pt-1">
+          <button onClick={onCancelar} className={clsBtnSecundario}>Cancelar</button>
+          <button
+            onClick={onConfirmar}
+            className={destructivo
+              ? "rounded-md bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              : clsBtnAccent}
+          >
+            {labelConfirmar}
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
@@ -1771,12 +1876,15 @@ function Avatar({
 /** Pastilla estado activo/inactivo */
 function PastillaActivo({ activo }: { activo: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
-      activo
-        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-        : "bg-muted text-muted-foreground"
-    }`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${activo ? "bg-emerald-500" : "bg-muted-foreground"}`} />
+    <span
+      aria-label={activo ? "Estado: activo" : "Estado: inactivo"}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
+        activo
+          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+          : "bg-muted text-muted-foreground"
+      }`}
+    >
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${activo ? "bg-emerald-500" : "bg-muted-foreground"}`} />
       {activo ? "Activo" : "Inactivo"}
     </span>
   );
@@ -1807,6 +1915,7 @@ function SelectEstado({
   return (
     <select
       value={estado}
+      aria-label="Cambiar estado del pedido"
       onChange={(e) => onChange(e.target.value as OrderStatus)}
       className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-ring/40 ${
         ESTADO_COLOR[estado] ?? "bg-muted text-muted-foreground border-border"
@@ -1827,6 +1936,7 @@ function NavBtn({
   return (
     <button
       onClick={onClick}
+      aria-current={activo ? "page" : undefined}
       className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         activo
           ? "border-accent text-accent"

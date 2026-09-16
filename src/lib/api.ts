@@ -177,6 +177,14 @@ export type GeocacheResultado = {
   Resultado?: string;
 };
 
+export type PaginatedResponse<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
+
 // ─── Helper de fetch ─────────────────────────────────────────────────────────
 
 async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
@@ -285,6 +293,19 @@ export const api = {
   // ── Pedidos ───────────────────────────────────────────────────────────────
   async listarPedidos(): Promise<PedidoApi[]> {
     return solicitar<PedidoApi[]>("/api/pedidos", { headers: cabeceraAuth() });
+  },
+
+  async listarPedidosAdmin(params?: {
+    page?: number; pageSize?: number; estado?: string;
+  }): Promise<PaginatedResponse<PedidoApi>> {
+    const qs = new URLSearchParams();
+    if (params?.page)     qs.set("page",     String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    if (params?.estado)   qs.set("estado",   params.estado);
+    return solicitar<PaginatedResponse<PedidoApi>>(
+      `/api/pedidos?${qs.toString()}`,
+      { headers: cabeceraAuth() },
+    );
   },
 
   async obtenerPedido(id: number): Promise<PedidoApi> {
@@ -412,14 +433,16 @@ export const api = {
 
   // ── Auditoría ─────────────────────────────────────────────────────────────
   async listarAuditoria(params?: {
-    evento?: string; desde?: string; hasta?: string; limite?: number;
-  }): Promise<AuditoriaApi[]> {
+    evento?: string; desde?: string; hasta?: string;
+    page?: number; pageSize?: number;
+  }): Promise<PaginatedResponse<AuditoriaApi>> {
     const qs = new URLSearchParams();
-    if (params?.evento) qs.set("evento", params.evento);
-    if (params?.desde)  qs.set("desde",  params.desde);
-    if (params?.hasta)  qs.set("hasta",  params.hasta);
-    if (params?.limite) qs.set("limite", String(params.limite));
-    return solicitar<AuditoriaApi[]>(
+    if (params?.evento)    qs.set("evento",    params.evento);
+    if (params?.desde)     qs.set("desde",     params.desde);
+    if (params?.hasta)     qs.set("hasta",     params.hasta);
+    if (params?.page)      qs.set("page",      String(params.page));
+    if (params?.pageSize)  qs.set("pageSize",  String(params.pageSize));
+    return solicitar<PaginatedResponse<AuditoriaApi>>(
       `/api/auditoria?${qs.toString()}`,
       { headers: cabeceraAuth() },
     );

@@ -42,8 +42,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/geocache  — guardar resultado de geocodificación
+// POST /api/geocache  — guardar resultado (solo admin/driver; clientes solo leen)
 router.post('/', async (req, res) => {
+  if (req.usuario.role === 'cliente') {
+    return res.status(403).json({ error: 'Acceso denegado.' });
+  }
   const { query, lat, lng, resultado } = req.body;
   if (!query || lat === undefined || lng === undefined) {
     return res.status(400).json({ error: 'query, lat y lng son obligatorios.' });

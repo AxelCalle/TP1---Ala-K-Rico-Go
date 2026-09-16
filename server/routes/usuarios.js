@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { getPool, sql } from "../db.js";
 import { verificarToken } from "../middleware/verificarToken.js";
+import { registrarAuditoria } from "../middleware/auditoria.js";
 
 const router = Router();
 
@@ -101,9 +102,10 @@ router.put("/:id", async (req, res) => {
   try {
     const pool = await getPool();
 
+    const idNum = parseInt(id, 10);
     await pool
       .request()
-      .input("id", sql.Int, parseInt(id))
+      .input("id", sql.Int, idNum)
       .input("nombre", sql.NVarChar(100), nombre ?? null)
       .input("apellido", sql.NVarChar(100), apellido ?? null)
       .input("dni", sql.NVarChar(9), dni ?? null)
@@ -117,6 +119,9 @@ router.put("/:id", async (req, res) => {
           Modificacion_Usuario  = GETDATE()
         WHERE Id_Usuario = @id
       `);
+
+    await registrarAuditoria(pool, req.usuario.id, null, 'usuario_editado',
+      `Admin ${req.usuario.id} editó usuario ${idNum}`, req);
 
     return res.status(200).json({ ok: true });
   } catch (err) {
@@ -134,13 +139,17 @@ router.patch("/:id/toggle", async (req, res) => {
   try {
     const pool = await getPool();
 
-    await pool.request().input("id", sql.Int, parseInt(id)).query(`
+    const idNum = parseInt(id, 10);
+    await pool.request().input("id", sql.Int, idNum).query(`
         UPDATE AKR_Usuarios
         SET
           Activo_Usuario       = CASE WHEN Activo_Usuario = 1 THEN 0 ELSE 1 END,
           Modificacion_Usuario = GETDATE()
         WHERE Id_Usuario = @id
       `);
+
+    await registrarAuditoria(pool, req.usuario.id, null, 'usuario_toggle',
+      `Admin ${req.usuario.id} cambió estado de usuario ${idNum}`, req);
 
     return res.status(200).json({ ok: true });
   } catch (err) {
