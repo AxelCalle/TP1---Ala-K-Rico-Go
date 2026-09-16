@@ -229,7 +229,7 @@ function SeccionDashboard() {
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando datos...
         </div>
       ) : (
-        <>
+        <div className="space-y-6">
           {/* KPIs principales */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard titulo="Pedidos hoy"          valor={kpis?.total_hoy ?? 0}   sufijo="" highlight />
@@ -259,7 +259,7 @@ function SeccionDashboard() {
           <div>
             <h2 className="mb-3 text-base font-semibold">Totales históricos</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <KpiCard titulo="Total registrados"      valor={pedidos.length}    sufijo="" />
+              <KpiCard titulo="Total en sistema"        valor={totalSistema}      sufijo="" />
               <KpiCard titulo="Total entregados"       valor={entregadosTotal}   sufijo="" />
               <KpiCard titulo="Total cancelados"       valor={canceladosTotal}   sufijo="" />
               <KpiCard titulo="Tasa de éxito histórica" valor={`${tasaHistorica}%`} sufijo="" highlight />
@@ -391,7 +391,7 @@ function SeccionDashboard() {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
       </div>
     </div>
@@ -426,6 +426,7 @@ function SeccionReportes() {
   const [piloto,    setPiloto]    = useState<F[]>([]);
   const [auditoria, setAuditoria] = useState<A[]>([]);
   const [cargando,  setCargando]  = useState(true);
+  const [errCarga,  setErrCarga]  = useState<string | null>(null);
   const [desde,     setDesde]     = useState("");
   const [hasta,     setHasta]     = useState("");
 
@@ -434,12 +435,23 @@ function SeccionReportes() {
 
   useEffect(() => {
     setCargando(true);
+    setErrCarga(null);
     Promise.all([
       cargarTiempos(),
       api.reporteRepartidores().then(setRanking).catch(() => {}),
-      api.listarPedidosAdmin({ pageSize: 20 }).then((r) => setPedidos(r.items ?? [])).catch(() => {}),
+      api.listarPedidosAdmin({ pageSize: 20 })
+        .then((r) => setPedidos(r.items ?? []))
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          setErrCarga((prev) => prev ? prev : `Historial: ${msg}`);
+        }),
       api.reportePiloto().then(setPiloto).catch(() => {}),
-      api.listarAuditoria({ pageSize: 50 }).then((r) => setAuditoria(r.items ?? [])).catch(() => {}),
+      api.listarAuditoria({ pageSize: 50 })
+        .then((r) => setAuditoria(r.items ?? []))
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          setErrCarga((prev) => prev ? `${prev} / Auditoría: ${msg}` : `Auditoría: ${msg}`);
+        }),
     ]).finally(() => setCargando(false));
   }, []);
 
@@ -478,6 +490,12 @@ function SeccionReportes() {
         <div className="flex items-center gap-2 text-muted-foreground" role="status" aria-live="polite">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando datos…
         </div>
+      )}
+
+      {errCarga && !cargando && (
+        <p className="rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+          Error al cargar datos: {errCarga}
+        </p>
       )}
 
       {/* ── Filtro de fechas ───────────────────────────────────────────────── */}
@@ -851,6 +869,7 @@ function SeccionConfiguracion() {
   const [errorApi,     setErrorApi]    = useState<string | null>(null);
   const [guardando,    setGuardando]   = useState(false);
   const [campoActivo,  setCampoActivo] = useState<keyof AcoConfig | null>(null);
+  const [guiaVisible,  setGuiaVisible] = useState(false);
 
   useEffect(() => {
     api.obtenerAcoConfig()
@@ -922,9 +941,19 @@ function SeccionConfiguracion() {
           <span className="text-sm">Cargando configuración desde el servidor…</span>
         </div>
       ) : (
-      <div className="grid gap-6 lg:grid-cols-[1fr_290px] items-start">
+      <div className={`grid gap-6 items-start ${guiaVisible ? "lg:grid-cols-[1fr_290px]" : ""}`}>
         {/* ── Formulario ── */}
         <form onSubmit={handleGuardar} className="rounded-xl border border-border bg-card p-6 space-y-6">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">Haz clic en un campo para ver su descripción.</p>
+            <button
+              type="button"
+              onClick={() => setGuiaVisible((v) => !v)}
+              className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {guiaVisible ? "Ocultar guía" : "Ver guía de parámetros"}
+            </button>
+          </div>
           <div className="grid gap-5 sm:grid-cols-2">
             {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((campo) => {
               const rango = ACO_RANGOS[campo];
@@ -974,7 +1003,7 @@ function SeccionConfiguracion() {
         </form>
 
         {/* ── Guía lateral ── */}
-        <GuiaACO activo={campoActivo} />
+        {guiaVisible && <GuiaACO activo={campoActivo} />}
       </div>
       )}
 
@@ -1020,17 +1049,20 @@ function SeccionPedidos() {
 
   const cargar = (p = page) => {
     setCargando(true);
-    Promise.all([
+    Promise.allSettled([
       api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE }),
       api.listarRepartidores(),
     ])
-      .then(([paginado, rs]) => {
-        setPedidos(paginado.items ?? []);
-        setTotalItems(paginado.totalItems);
-        setTotalPages(paginado.totalPages);
-        setRepartidores(rs);
+      .then(([pedRes, repRes]) => {
+        if (pedRes.status === "fulfilled") {
+          setPedidos(pedRes.value.items ?? []);
+          setTotalItems(pedRes.value.totalItems);
+          setTotalPages(pedRes.value.totalPages);
+        }
+        if (repRes.status === "fulfilled") {
+          setRepartidores(repRes.value);
+        }
       })
-      .catch(() => {})
       .finally(() => setCargando(false));
   };
 
