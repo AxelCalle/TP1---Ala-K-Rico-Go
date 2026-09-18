@@ -1035,6 +1035,7 @@ function SeccionPedidos() {
   const [totalPages,   setTotalPages]   = useState(1);
   const [page,         setPage]         = useState(1);
   const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
+  const [conteoSistema, setConteoSistema] = useState<{ activos: number; completados: number; total: number }>({ activos: 0, completados: 0, total: 0 });
   const [cargando,     setCargando]     = useState(true);
   const [errCarga,     setErrCarga]     = useState<string | null>(null);
   const [abierto,      setAbierto]      = useState(false);
@@ -1071,6 +1072,21 @@ function SeccionPedidos() {
       })
       .finally(() => setCargando(false));
   };
+
+  // Carga los conteos reales del sistema (activos/completados/total) desde el dashboard
+  useEffect(() => {
+    api.dashboard().then((d) => {
+      const porEstado = d.porEstado ?? [];
+      const activos = porEstado
+        .filter((e) => ["sin_asignar", "asignado", "en_camino"].includes(e.Estado))
+        .reduce((s, e) => s + e.cantidad, 0);
+      const completados = porEstado
+        .filter((e) => ["entregado", "cancelado"].includes(e.Estado))
+        .reduce((s, e) => s + e.cantidad, 0);
+      const total = porEstado.reduce((s, e) => s + e.cantidad, 0);
+      setConteoSistema({ activos, completados, total });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { cargar(page, grupoFiltro); }, [page, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1124,9 +1140,9 @@ function SeccionPedidos() {
   const cntCompletados = pedidos.filter((p) => ESTADOS_COMPLETADOS.includes(p.Estado)).length;
 
   const TABS: { key: FiltroEstado; label: string; count: number }[] = [
-    { key: "activos",     label: "Activos",     count: cntActivos },
-    { key: "completados", label: "Completados",  count: cntCompletados },
-    { key: "todos",       label: "Todos",        count: pedidos.length },
+    { key: "activos",     label: "Activos",     count: conteoSistema.activos },
+    { key: "completados", label: "Completados",  count: conteoSistema.completados },
+    { key: "todos",       label: "Todos",        count: conteoSistema.total },
   ];
 
   return (
@@ -1138,7 +1154,7 @@ function SeccionPedidos() {
           <p className="mt-1 text-sm text-muted-foreground">
             {cargando
               ? "Cargando…"
-              : `${cntActivos} activo${cntActivos !== 1 ? "s" : ""} · ${cntCompletados} completado${cntCompletados !== 1 ? "s" : ""} · ${totalItems} total`}
+              : `${conteoSistema.activos} activo${conteoSistema.activos !== 1 ? "s" : ""} · ${conteoSistema.completados} completado${conteoSistema.completados !== 1 ? "s" : ""} · ${conteoSistema.total} total`}
           </p>
         </div>
         <button
