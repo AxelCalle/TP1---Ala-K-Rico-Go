@@ -1,0 +1,421 @@
+<title>AKR — Flujos de Proceso</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Inter:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --border: #e3e6ef;
+  --accent: #d97706;
+  --accent2: #f59e0b;
+  --text: #111827;
+  --text-muted: #6b7280;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f18;
+    --surface: #161924;
+    --border: #262a3a;
+    --accent: #f59e0b;
+    --accent2: #fbbf24;
+    --text: #e8eaf0;
+    --text-muted: #8892a4;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0f18;
+  --surface: #161924;
+  --border: #262a3a;
+  --accent: #f59e0b;
+  --accent2: #fbbf24;
+  --text: #e8eaf0;
+  --text-muted: #8892a4;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+/* ── Header ── */
+.hdr {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.chip {
+  background: var(--accent);
+  color: #fff;
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  letter-spacing: .03em;
+  flex-shrink: 0;
+}
+.hdr-title {
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+}
+.hdr-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Tabs ── */
+.tab-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding-inline: 24px;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 12px 18px;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Panel ── */
+.panel { display: none; padding: 28px 24px; }
+.panel.active { display: block; }
+
+.proc-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.b-cli  { background: #fef3c7; color: #92400e; }
+.b-sys  { background: #dbeafe; color: #1e40af; }
+.b-adm  { background: #fee2e2; color: #991b1b; }
+.b-rep  { background: #dcfce7; color: #166534; }
+
+:root[data-theme="dark"] .b-cli, :root:not([data-theme="light"]) .b-cli { background: #3d2000; color: #fcd34d; }
+:root[data-theme="dark"] .b-sys, :root:not([data-theme="light"]) .b-sys { background: #1a2f52; color: #93c5fd; }
+:root[data-theme="dark"] .b-adm, :root:not([data-theme="light"]) .b-adm { background: #3b1111; color: #fca5a5; }
+:root[data-theme="dark"] .b-rep, :root:not([data-theme="light"]) .b-rep { background: #0d3320; color: #86efac; }
+
+.proc-desc {
+  color: var(--text-muted);
+  line-height: 1.65;
+  max-width: 760px;
+  margin-bottom: 24px;
+}
+.proc-desc code {
+  background: var(--border);
+  color: var(--text);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.diagram-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.legend-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.leg { display: flex; align-items: center; gap: 6px; }
+.leg-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.diagram-body {
+  padding: 20px;
+  overflow-x: auto;
+}
+</style>
+
+<div class="hdr">
+  <span class="chip">🍗 AKR GO</span>
+  <span class="hdr-title">Ala K' Rico GO — Flujos de Proceso</span>
+  <span class="hdr-meta">BPMN 2.0 · Para modelar en Bizagi</span>
+</div>
+
+<div class="tab-bar" role="tablist">
+  <button class="tab-btn active" onclick="show('p1',this)">01 · Ciclo del Pedido</button>
+  <button class="tab-btn" onclick="show('p2',this)">02 · Autenticación</button>
+  <button class="tab-btn" onclick="show('p3',this)">03 · Optimización ACO</button>
+  <button class="tab-btn" onclick="show('p4',this)">04 · Gestión Admin</button>
+</div>
+
+<!-- ══ PANEL 1 ══════════════════════════════════════════════════════════ -->
+<div class="panel active" id="p1">
+  <div class="proc-meta">
+    <span class="badge b-cli">Cliente</span>
+    <span class="badge b-sys">Sistema</span>
+    <span class="badge b-adm">Administrador</span>
+    <span class="badge b-rep">Repartidor</span>
+  </div>
+  <p class="proc-desc">
+    Ciclo de vida completo del pedido. El cliente selecciona productos y fija su ubicación en el mapa interactivo (Leaflet + OSM).
+    El sistema valida que la dirección esté dentro del radio de cobertura de <strong>3 km</strong> usando la fórmula Haversine.
+    El admin asigna un repartidor ejecutando el <strong>algoritmo ACO</strong> para calcular la ruta óptima.
+    Los estados posibles son: <code>sin_asignar → asignado → en_camino → entregado</code> (o <code>cancelado</code>).
+  </p>
+  <div class="diagram-card">
+    <div class="legend-row">
+      <span class="leg"><span class="leg-dot" style="background:#d97706"></span>Cliente</span>
+      <span class="leg"><span class="leg-dot" style="background:#2563eb"></span>Sistema</span>
+      <span class="leg"><span class="leg-dot" style="background:#dc2626"></span>Administrador</span>
+      <span class="leg"><span class="leg-dot" style="background:#16a34a"></span>Repartidor</span>
+      <span class="leg"><span class="leg-dot" style="background:#7c3aed"></span>Decisión</span>
+    </div>
+    <div class="diagram-body">
+<pre class="mermaid">
+flowchart LR
+  classDef cli fill:#fef3c7,stroke:#d97706,color:#7c2d12
+  classDef sys fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef adm fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef rep fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef gw  fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef fin fill:#f3f4f6,stroke:#9ca3af,color:#374151
+
+  SE([▶ Inicio]):::cli --> T1[Seleccionar productos\ny ubicación en mapa]:::cli
+  T1 --> ST1[Validar zona de cobertura\nHaversine — radio 3 km]:::sys
+  ST1 --> GW1{¿En zona?}:::gw
+  GW1 -->|No| EE1([✕ Fuera de cobertura]):::fin
+  GW1 -->|Sí| T2[Confirmar pedido]:::cli
+  T2 --> ST2[Crear pedido en BD\nEstado: sin_asignar]:::sys
+  ST2 --> ST3[Notificar al\nAdministrador]:::sys
+  ST3 --> T3[Revisar pedidos\npendientes]:::adm
+  T3 --> GW2{¿Cancelar\npedido?}:::gw
+  GW2 -->|Sí| ST4[Actualizar estado\ncancelado]:::sys --> EE2([✕ Cancelado]):::fin
+  GW2 -->|No| T4[Seleccionar y\nasignar repartidor]:::adm
+  T4 --> ST5[Ejecutar ACO\nruta óptima]:::sys
+  ST5 --> ST6[Actualizar estado\nasignado]:::sys
+  ST6 --> ST7[Notificar a repartidor\ny cliente]:::sys
+  ST7 --> T5[Recoger pedido en\nrestaurante — Jr. Áncash 3855]:::rep
+  T5 --> ST8[Actualizar estado\nen_camino]:::sys
+  ST8 --> T6[Realizar entrega\nal cliente]:::rep
+  T6 --> T7[Confirmar entrega]:::rep
+  T7 --> ST9[Actualizar estado\nentregado]:::sys
+  ST9 --> ST10[Registrar evento\nen tabla de auditoría]:::sys
+  ST10 --> EE3([✓ Pedido entregado]):::fin
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PANEL 2 ══════════════════════════════════════════════════════════ -->
+<div class="panel" id="p2">
+  <div class="proc-meta">
+    <span class="badge b-cli">Usuario</span>
+    <span class="badge b-sys">Sistema</span>
+  </div>
+  <p class="proc-desc">
+    Dos flujos independientes. <strong>Login:</strong> verificación de estado activo, comparación de contraseña con hash <code>bcryptjs</code>,
+    mapeo de rol (<code>customer / driver / admin</code>) y emisión de JWT HS256 con TTL de 8 horas.
+    <strong>Registro:</strong> validación de campos, unicidad de email y <code>INSERT</code> con <code>idRole = 3</code> (Cliente) forzado en el backend — nunca se acepta el valor enviado por el cliente.
+    Ambos flujos registran eventos en <code>AKR_Auditoria</code>.
+  </p>
+  <div class="diagram-card">
+    <div class="legend-row">
+      <span class="leg"><span class="leg-dot" style="background:#d97706"></span>Usuario</span>
+      <span class="leg"><span class="leg-dot" style="background:#2563eb"></span>Sistema</span>
+      <span class="leg"><span class="leg-dot" style="background:#7c3aed"></span>Decisión</span>
+    </div>
+    <div class="diagram-body">
+<pre class="mermaid">
+flowchart LR
+  classDef usr fill:#fef3c7,stroke:#d97706,color:#7c2d12
+  classDef sys fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef gw  fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef fin fill:#f3f4f6,stroke:#9ca3af,color:#374151
+
+  subgraph LOGIN["🔑 Inicio de Sesión"]
+    direction LR
+    L0([▶ Inicio]):::usr --> L1[Ingresar email\ny contraseña]:::usr
+    L1 --> L2[Buscar usuario activo\npor email en BD]:::sys
+    L2 --> LG1{¿Existe y\nestá activo?}:::gw
+    LG1 -->|No| LE1([✕ Cuenta inactiva]):::fin
+    LG1 -->|Sí| L3[Comparar contraseña\ncon hash bcryptjs]:::sys
+    L3 --> LG2{¿Contraseña\ncorrecta?}:::gw
+    LG2 -->|No| L4[Registrar login_fallido\nen auditoría]:::sys
+    L4 --> L5[Ver mensaje\nde error]:::usr --> L1
+    LG2 -->|Sí| L6["Mapear rol:\ncustomer / driver / admin"]:::sys
+    L6 --> L7[Generar JWT HS256\nid, email, role — 8 h]:::sys
+    L7 --> L8[Registrar login_exitoso\nen auditoría]:::sys
+    L8 --> L9([✓ Sesión iniciada]):::fin
+  end
+
+  subgraph REGISTRO["📝 Registro de Cliente"]
+    direction LR
+    R0([▶ Inicio]):::usr --> R1[Completar formulario:\nnombre, email, contraseña\nDNI, teléfono]:::usr
+    R1 --> R2[Validar: email formato,\npw 8-100 chars,\nnombre 2-100 chars]:::sys
+    R2 --> RG1{¿Datos\nválidos?}:::gw
+    RG1 -->|No| R3[Ver error\nde validación]:::usr --> R1
+    RG1 -->|Sí| R4[Verificar email\núnico en BD]:::sys
+    R4 --> RG2{¿Email\ndisponible?}:::gw
+    RG2 -->|No| R5[Ver error:\nemail en uso]:::usr --> R1
+    RG2 -->|Sí| R6[Hashear contraseña\nbcryptjs, salt = 10]:::sys
+    R6 --> R7["INSERT usuario\nidRole = 3 siempre — Cliente"]:::sys
+    R7 --> R8[Registrar registro_usuario\nen auditoría]:::sys
+    R8 --> R9([✓ Registro exitoso]):::fin
+  end
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PANEL 3 ══════════════════════════════════════════════════════════ -->
+<div class="panel" id="p3">
+  <div class="proc-meta">
+    <span class="badge b-adm">Administrador</span>
+    <span class="badge b-sys">Sistema · Motor ACO</span>
+  </div>
+  <p class="proc-desc">
+    Detalle técnico del <strong>Ant Colony Optimization (ACO)</strong> aplicado a la optimización de rutas de entrega.
+    Los parámetros claves son: α (importancia de feromonas), β (importancia de la heurística), ρ (tasa de evaporación) y Q (constante de depósito).
+    Las distancias entre nodos se calculan con <strong>Haversine</strong> en kilómetros.
+    El ciclo de iteración continúa hasta alcanzar la convergencia o el número máximo de iteraciones.
+  </p>
+  <div class="diagram-card">
+    <div class="legend-row">
+      <span class="leg"><span class="leg-dot" style="background:#dc2626"></span>Administrador</span>
+      <span class="leg"><span class="leg-dot" style="background:#2563eb"></span>Sistema — Motor ACO</span>
+      <span class="leg"><span class="leg-dot" style="background:#d946ef"></span>Iteración ACO</span>
+      <span class="leg"><span class="leg-dot" style="background:#7c3aed"></span>Decisión</span>
+    </div>
+    <div class="diagram-body">
+<pre class="mermaid">
+flowchart LR
+  classDef adm  fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef sys  fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef loop fill:#fdf4ff,stroke:#d946ef,color:#4a044e
+  classDef gw   fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef fin  fill:#f3f4f6,stroke:#9ca3af,color:#374151
+
+  SE([▶ Pedido sin_asignar\ndisponible]):::adm
+  SE --> A1[Revisar pedidos\npendientes en dashboard]:::adm
+  A1 --> A2[Listar repartidores\nactivos y disponibles]:::sys
+  A2 --> A3[Seleccionar repartidor\nde la lista]:::adm
+  A3 --> B1[Inicializar ACO\nparámetros α β ρ Q]:::sys
+  B1 --> B2[Inicializar feromonas τ₀\nuniforme en todos los arcos]:::sys
+  B2 --> B3[Calcular distancias\nHaversine entre nodos km]:::sys
+  B3 --> C1[Construir soluciones:\ncada hormiga elige próximo nodo\ncon regla de transición probabilística]:::loop
+  C1 --> GW1{¿Iteración\nmáxima?}:::gw
+  GW1 -->|No — continuar| C2[Evaporar feromonas\nτ = 1-ρ × τ]:::loop
+  C2 --> C3[Depositar feromonas\nτ += Q / longitud_ruta]:::loop
+  C3 --> C1
+  GW1 -->|Sí — convergió| D1[Retornar ruta con\nmenor longitud total]:::sys
+  D1 --> D2[UPDATE AKR_Pedidos:\nId_Repartidor, Estado = asignado]:::sys
+  D2 --> D3[Confirmar asignación\nen dashboard]:::adm
+  D3 --> D4[Notificar al Repartidor\ny al Cliente]:::sys
+  D4 --> EE([✓ Ruta óptima asignada]):::fin
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PANEL 4 ══════════════════════════════════════════════════════════ -->
+<div class="panel" id="p4">
+  <div class="proc-meta">
+    <span class="badge b-adm">Administrador</span>
+    <span class="badge b-sys">Sistema</span>
+  </div>
+  <p class="proc-desc">
+    Dos flujos administrativos: <strong>Gestión de Repartidores</strong> — crear (<code>POST /api/repartidores</code>),
+    editar (<code>PUT /:id</code>) y activar/desactivar (<code>PATCH /:id/toggle</code>) con validación y auditoría en cada operación;
+    y <strong>Reportes y Auditoría</strong> — consulta de pedidos por período, log de eventos de auditoría y
+    dashboard con KPIs en tiempo real (Recharts).
+  </p>
+  <div class="diagram-card">
+    <div class="legend-row">
+      <span class="leg"><span class="leg-dot" style="background:#dc2626"></span>Administrador</span>
+      <span class="leg"><span class="leg-dot" style="background:#2563eb"></span>Sistema</span>
+      <span class="leg"><span class="leg-dot" style="background:#7c3aed"></span>Decisión</span>
+    </div>
+    <div class="diagram-body">
+<pre class="mermaid">
+flowchart LR
+  classDef adm fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef sys fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef gw  fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef fin fill:#f3f4f6,stroke:#9ca3af,color:#374151
+
+  subgraph REPS["👥 Gestión de Repartidores"]
+    direction LR
+    G0([▶ Módulo\nRepartidores]):::adm --> G1[GET /api/repartidores\nlistar todos]:::sys
+    G1 --> G2[Ver lista con\nestado activo / inactivo]:::adm
+    G2 --> GG1{¿Acción?}:::gw
+    GG1 -->|Crear| G3[Completar formulario\nnuevo repartidor]:::adm
+    GG1 -->|Editar| G4[Editar datos del\nrepartidor seleccionado]:::adm
+    GG1 -->|Toggle| G5[Activar / Desactivar]:::adm
+    G3 --> GV[Validar campos]:::sys
+    G4 --> GV
+    GV --> GG2{¿Válido?}:::gw
+    GG2 -->|No| G3
+    GG2 -->|Sí - Crear| G6[POST /api/repartidores\nINSERT idRole=2]:::sys
+    GG2 -->|Sí - Editar| G7[PUT /api/repartidores/:id\nUPDATE datos]:::sys
+    G5 --> G8[PATCH /:id/toggle\nActivo_Usuario 0-1]:::sys
+    G6 --> GA[Registrar auditoría]:::sys
+    G7 --> GA
+    G8 --> GA
+    GA --> GE([✓ Completado]):::fin
+  end
+
+  subgraph REPORT["📊 Reportes y Auditoría"]
+    direction LR
+    R0([▶ Módulo\nReportes]):::adm --> R1[Seleccionar módulo:\nPedidos · Auditoría · Dashboard]:::adm
+    R1 --> RG1{¿Módulo?}:::gw
+    RG1 -->|Pedidos| R2[Filtrar por\nfecha, estado, cliente]:::adm
+    RG1 -->|Auditoría| R3[Filtrar por\nevento, usuario, fecha]:::adm
+    RG1 -->|Dashboard| R4[Ver KPIs\nen tiempo real]:::adm
+    R2 --> R5[GET /api/reportes/pedidos\nGROUP BY estado y fecha]:::sys
+    R3 --> R6[GET /api/auditoria\nfiltros: evento, idUsuario]:::sys
+    R4 --> R7[GET /api/reportes/dashboard\nKPIs en tiempo real]:::sys
+    R5 --> RJ[Serializar JSON\nRecharts / tabla]:::sys
+    R6 --> RJ
+    R7 --> RJ
+    RJ --> RE([✓ Datos visualizados]):::fin
+  end
+</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+</script>

@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Def_Autenticacion"
+             targetNamespace="http://ala-k-rico-go/bpmn"
+             exporter="Ala K Rico GO"
+             exporterVersion="1.0">
+
+  <!-- ══ PROCESO A: LOGIN ══════════════════════════════════════════════════ -->
+  <process id="Proc_Login" name="Inicio de Sesión" isExecutable="false">
+
+    <laneSet id="LS_Login">
+      <lane id="LL_Usuario" name="Usuario">
+        <flowNodeRef>SE_Login</flowNodeRef>
+        <flowNodeRef>T_IngresarCredenciales</flowNodeRef>
+        <flowNodeRef>T_VerErrorLogin</flowNodeRef>
+        <flowNodeRef>EE_LoginExito</flowNodeRef>
+      </lane>
+      <lane id="LL_Sistema" name="Sistema (Backend)">
+        <flowNodeRef>ST_BuscarUsuario</flowNodeRef>
+        <flowNodeRef>GW_Activo</flowNodeRef>
+        <flowNodeRef>EE_Inactivo</flowNodeRef>
+        <flowNodeRef>ST_VerificarPassword</flowNodeRef>
+        <flowNodeRef>GW_Credenciales</flowNodeRef>
+        <flowNodeRef>ST_RegistrarFallido</flowNodeRef>
+        <flowNodeRef>ST_MapearRol</flowNodeRef>
+        <flowNodeRef>ST_GenerarJWT</flowNodeRef>
+        <flowNodeRef>ST_RegistrarExito</flowNodeRef>
+        <flowNodeRef>ST_RedirigirPorRol</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <startEvent id="SE_Login" name="Acceder a la plataforma"/>
+
+    <userTask id="T_IngresarCredenciales" name="Ingresar email&#10;y contraseña"/>
+
+    <serviceTask id="ST_BuscarUsuario" name="Buscar usuario activo&#10;por email en BD"/>
+
+    <exclusiveGateway id="GW_Activo" name="¿Usuario activo&#10;y existe?"/>
+
+    <endEvent id="EE_Inactivo" name="Acceso denegado&#10;(cuenta inactiva)"/>
+
+    <serviceTask id="ST_VerificarPassword" name="Comparar contraseña&#10;con hash bcryptjs"/>
+
+    <exclusiveGateway id="GW_Credenciales" name="¿Contraseña&#10;correcta?"/>
+
+    <serviceTask id="ST_RegistrarFallido" name="Registrar evento&#10;login_fallido en auditoría"/>
+
+    <userTask id="T_VerErrorLogin" name="Ver mensaje de error&#10;(credentials inválidas)"/>
+
+    <serviceTask id="ST_MapearRol" name="Mapear rol BD →&#10;customer / driver / admin"/>
+
+    <serviceTask id="ST_GenerarJWT" name="Generar JWT HS256&#10;(payload: id, email, role, 8h)"/>
+
+    <serviceTask id="ST_RegistrarExito" name="Registrar evento&#10;login_exitoso en auditoría"/>
+
+    <serviceTask id="ST_RedirigirPorRol" name="Redirigir según rol:&#10;/ cliente | /admin | /repartidor"/>
+
+    <endEvent id="EE_LoginExito" name="Sesión iniciada"/>
+
+    <!-- Flujos -->
+    <sequenceFlow id="LF01" sourceRef="SE_Login" targetRef="T_IngresarCredenciales"/>
+    <sequenceFlow id="LF02" sourceRef="T_IngresarCredenciales" targetRef="ST_BuscarUsuario"/>
+    <sequenceFlow id="LF03" sourceRef="ST_BuscarUsuario" targetRef="GW_Activo"/>
+    <sequenceFlow id="LF04" name="No - Inactivo o no existe" sourceRef="GW_Activo" targetRef="EE_Inactivo"/>
+    <sequenceFlow id="LF05" name="Sí - Activo" sourceRef="GW_Activo" targetRef="ST_VerificarPassword"/>
+    <sequenceFlow id="LF06" sourceRef="ST_VerificarPassword" targetRef="GW_Credenciales"/>
+    <sequenceFlow id="LF07" name="No - Incorrecta" sourceRef="GW_Credenciales" targetRef="ST_RegistrarFallido"/>
+    <sequenceFlow id="LF08" name="Sí - Correcta" sourceRef="GW_Credenciales" targetRef="ST_MapearRol"/>
+    <sequenceFlow id="LF09" sourceRef="ST_RegistrarFallido" targetRef="T_VerErrorLogin"/>
+    <sequenceFlow id="LF10" sourceRef="T_VerErrorLogin" targetRef="T_IngresarCredenciales"/>
+    <sequenceFlow id="LF11" sourceRef="ST_MapearRol" targetRef="ST_GenerarJWT"/>
+    <sequenceFlow id="LF12" sourceRef="ST_GenerarJWT" targetRef="ST_RegistrarExito"/>
+    <sequenceFlow id="LF13" sourceRef="ST_RegistrarExito" targetRef="ST_RedirigirPorRol"/>
+    <sequenceFlow id="LF14" sourceRef="ST_RedirigirPorRol" targetRef="EE_LoginExito"/>
+
+  </process>
+
+  <!-- ══ PROCESO B: REGISTRO ═══════════════════════════════════════════════ -->
+  <process id="Proc_Registro" name="Registro de Usuario (Cliente)" isExecutable="false">
+
+    <laneSet id="LS_Registro">
+      <lane id="LR_Usuario" name="Usuario">
+        <flowNodeRef>SE_Registro</flowNodeRef>
+        <flowNodeRef>T_LlenarFormulario</flowNodeRef>
+        <flowNodeRef>T_VerErrorRegistro</flowNodeRef>
+        <flowNodeRef>EE_RegistroExito</flowNodeRef>
+      </lane>
+      <lane id="LR_Sistema" name="Sistema (Backend)">
+        <flowNodeRef>ST_ValidarCampos</flowNodeRef>
+        <flowNodeRef>GW_ValidFields</flowNodeRef>
+        <flowNodeRef>ST_VerificarEmailUnico</flowNodeRef>
+        <flowNodeRef>GW_EmailUnico</flowNodeRef>
+        <flowNodeRef>ST_HashPassword</flowNodeRef>
+        <flowNodeRef>ST_InsertarUsuario</flowNodeRef>
+        <flowNodeRef>ST_AuditRegistro</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <startEvent id="SE_Registro" name="Iniciar registro"/>
+
+    <userTask id="T_LlenarFormulario" name="Completar formulario:&#10;nombre, email, contraseña,&#10;DNI, teléfono"/>
+
+    <serviceTask id="ST_ValidarCampos" name="Validar campos:&#10;email formato, pw 8-100 chars,&#10;nombre 2-100 chars"/>
+
+    <exclusiveGateway id="GW_ValidFields" name="¿Datos válidos?"/>
+
+    <serviceTask id="ST_VerificarEmailUnico" name="Consultar BD:&#10;¿email ya registrado?"/>
+
+    <exclusiveGateway id="GW_EmailUnico" name="¿Email disponible?"/>
+
+    <userTask id="T_VerErrorRegistro" name="Ver mensaje de error"/>
+
+    <serviceTask id="ST_HashPassword" name="Hashear contraseña&#10;(bcryptjs, salt rounds=10)"/>
+
+    <serviceTask id="ST_InsertarUsuario" name="INSERT usuario con&#10;idRole=3 (Cliente siempre)&#10;OUTPUT INSERTED.Id_Usuario"/>
+
+    <serviceTask id="ST_AuditRegistro" name="Registrar evento&#10;registro_usuario en auditoría"/>
+
+    <endEvent id="EE_RegistroExito" name="Registro exitoso&#10;→ redirigir a login"/>
+
+    <!-- Flujos -->
+    <sequenceFlow id="RF01" sourceRef="SE_Registro" targetRef="T_LlenarFormulario"/>
+    <sequenceFlow id="RF02" sourceRef="T_LlenarFormulario" targetRef="ST_ValidarCampos"/>
+    <sequenceFlow id="RF03" sourceRef="ST_ValidarCampos" targetRef="GW_ValidFields"/>
+    <sequenceFlow id="RF04" name="No - Datos inválidos" sourceRef="GW_ValidFields" targetRef="T_VerErrorRegistro"/>
+    <sequenceFlow id="RF05" name="Sí - Válidos" sourceRef="GW_ValidFields" targetRef="ST_VerificarEmailUnico"/>
+    <sequenceFlow id="RF06" sourceRef="ST_VerificarEmailUnico" targetRef="GW_EmailUnico"/>
+    <sequenceFlow id="RF07" name="No - Email en uso" sourceRef="GW_EmailUnico" targetRef="T_VerErrorRegistro"/>
+    <sequenceFlow id="RF08" name="Sí - Disponible" sourceRef="GW_EmailUnico" targetRef="ST_HashPassword"/>
+    <sequenceFlow id="RF09" sourceRef="T_VerErrorRegistro" targetRef="T_LlenarFormulario"/>
+    <sequenceFlow id="RF10" sourceRef="ST_HashPassword" targetRef="ST_InsertarUsuario"/>
+    <sequenceFlow id="RF11" sourceRef="ST_InsertarUsuario" targetRef="ST_AuditRegistro"/>
+    <sequenceFlow id="RF12" sourceRef="ST_AuditRegistro" targetRef="EE_RegistroExito"/>
+
+  </process>
+
+  <!-- ══════════════ DIAGRAMA LOGIN ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Login">
+    <bpmndi:BPMNPlane id="BPMNPlane_Login" bpmnElement="Proc_Login">
+
+      <bpmndi:BPMNShape id="Proc_Login_di" bpmnElement="Proc_Login" isHorizontal="true">
+        <dc:Bounds x="150" y="40" width="1900" height="380"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LL_Usuario_di" bpmnElement="LL_Usuario" isHorizontal="true">
+        <dc:Bounds x="180" y="40" width="1870" height="190"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LL_Sistema_di" bpmnElement="LL_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="230" width="1870" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Usuario lane -->
+      <bpmndi:BPMNShape id="SE_Login_di" bpmnElement="SE_Login">
+        <dc:Bounds x="232" y="117" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_IngresarCredenciales_di" bpmnElement="T_IngresarCredenciales">
+        <dc:Bounds x="320" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_VerErrorLogin_di" bpmnElement="T_VerErrorLogin">
+        <dc:Bounds x="920" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_LoginExito_di" bpmnElement="EE_LoginExito">
+        <dc:Bounds x="1832" y="117" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane -->
+      <bpmndi:BPMNShape id="ST_BuscarUsuario_di" bpmnElement="ST_BuscarUsuario">
+        <dc:Bounds x="490" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Activo_di" bpmnElement="GW_Activo" isMarkerVisible="true">
+        <dc:Bounds x="665" y="300" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="645" y="357" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_Inactivo_di" bpmnElement="EE_Inactivo">
+        <dc:Bounds x="767" y="307" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="747" y="350" width="76" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_VerificarPassword_di" bpmnElement="ST_VerificarPassword">
+        <dc:Bounds x="760" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Credenciales_di" bpmnElement="GW_Credenciales" isMarkerVisible="true">
+        <dc:Bounds x="935" y="300" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="915" y="357" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RegistrarFallido_di" bpmnElement="ST_RegistrarFallido">
+        <dc:Bounds x="920" y="395" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_MapearRol_di" bpmnElement="ST_MapearRol">
+        <dc:Bounds x="1040" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_GenerarJWT_di" bpmnElement="ST_GenerarJWT">
+        <dc:Bounds x="1210" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RegistrarExito_di" bpmnElement="ST_RegistrarExito">
+        <dc:Bounds x="1380" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RedirigirPorRol_di" bpmnElement="ST_RedirigirPorRol">
+        <dc:Bounds x="1550" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Edges Login -->
+      <bpmndi:BPMNEdge id="LF01_di" bpmnElement="LF01"><di:waypoint x="268" y="135"/><di:waypoint x="320" y="135"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF02_di" bpmnElement="LF02"><di:waypoint x="380" y="175"/><di:waypoint x="380" y="325"/><di:waypoint x="490" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF03_di" bpmnElement="LF03"><di:waypoint x="610" y="325"/><di:waypoint x="665" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF04_di" bpmnElement="LF04"><di:waypoint x="715" y="325"/><di:waypoint x="767" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF05_di" bpmnElement="LF05"><di:waypoint x="690" y="300"/><di:waypoint x="690" y="420"/><di:waypoint x="760" y="420"/><di:waypoint x="760" y="365"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF06_di" bpmnElement="LF06"><di:waypoint x="880" y="325"/><di:waypoint x="935" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF07_di" bpmnElement="LF07"><di:waypoint x="960" y="350"/><di:waypoint x="960" y="395"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF08_di" bpmnElement="LF08"><di:waypoint x="985" y="325"/><di:waypoint x="1040" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF09_di" bpmnElement="LF09"><di:waypoint x="980" y="395"/><di:waypoint x="980" y="175"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF10_di" bpmnElement="LF10"><di:waypoint x="920" y="135"/><di:waypoint x="440" y="135"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF11_di" bpmnElement="LF11"><di:waypoint x="1160" y="325"/><di:waypoint x="1210" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF12_di" bpmnElement="LF12"><di:waypoint x="1330" y="325"/><di:waypoint x="1380" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF13_di" bpmnElement="LF13"><di:waypoint x="1500" y="325"/><di:waypoint x="1550" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="LF14_di" bpmnElement="LF14"><di:waypoint x="1610" y="285"/><di:waypoint x="1610" y="135"/><di:waypoint x="1832" y="135"/></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ══════════════ DIAGRAMA REGISTRO ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Registro">
+    <bpmndi:BPMNPlane id="BPMNPlane_Registro" bpmnElement="Proc_Registro">
+
+      <bpmndi:BPMNShape id="Proc_Registro_di" bpmnElement="Proc_Registro" isHorizontal="true">
+        <dc:Bounds x="150" y="500" width="1700" height="380"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LR_Usuario_di" bpmnElement="LR_Usuario" isHorizontal="true">
+        <dc:Bounds x="180" y="500" width="1670" height="190"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LR_Sistema_di" bpmnElement="LR_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="690" width="1670" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="SE_Registro_di" bpmnElement="SE_Registro">
+        <dc:Bounds x="232" y="577" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_LlenarFormulario_di" bpmnElement="T_LlenarFormulario">
+        <dc:Bounds x="320" y="555" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_VerErrorRegistro_di" bpmnElement="T_VerErrorRegistro">
+        <dc:Bounds x="760" y="555" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_RegistroExito_di" bpmnElement="EE_RegistroExito">
+        <dc:Bounds x="1612" y="577" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="ST_ValidarCampos_di" bpmnElement="ST_ValidarCampos">
+        <dc:Bounds x="490" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_ValidFields_di" bpmnElement="GW_ValidFields" isMarkerVisible="true">
+        <dc:Bounds x="665" y="760" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_VerificarEmailUnico_di" bpmnElement="ST_VerificarEmailUnico">
+        <dc:Bounds x="760" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_EmailUnico_di" bpmnElement="GW_EmailUnico" isMarkerVisible="true">
+        <dc:Bounds x="935" y="760" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_HashPassword_di" bpmnElement="ST_HashPassword">
+        <dc:Bounds x="1040" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_InsertarUsuario_di" bpmnElement="ST_InsertarUsuario">
+        <dc:Bounds x="1210" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_AuditRegistro_di" bpmnElement="ST_AuditRegistro">
+        <dc:Bounds x="1380" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="RF01_di" bpmnElement="RF01"><di:waypoint x="268" y="595"/><di:waypoint x="320" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF02_di" bpmnElement="RF02"><di:waypoint x="380" y="635"/><di:waypoint x="380" y="785"/><di:waypoint x="490" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF03_di" bpmnElement="RF03"><di:waypoint x="610" y="785"/><di:waypoint x="665" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF04_di" bpmnElement="RF04"><di:waypoint x="690" y="760"/><di:waypoint x="690" y="595"/><di:waypoint x="760" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF05_di" bpmnElement="RF05"><di:waypoint x="715" y="785"/><di:waypoint x="760" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF06_di" bpmnElement="RF06"><di:waypoint x="880" y="785"/><di:waypoint x="935" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF07_di" bpmnElement="RF07"><di:waypoint x="960" y="760"/><di:waypoint x="960" y="595"/><di:waypoint x="880" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF08_di" bpmnElement="RF08"><di:waypoint x="985" y="785"/><di:waypoint x="1040" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF09_di" bpmnElement="RF09"><di:waypoint x="820" y="555"/><di:waypoint x="820" y="500"/><di:waypoint x="380" y="500"/><di:waypoint x="380" y="555"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF10_di" bpmnElement="RF10"><di:waypoint x="1160" y="785"/><di:waypoint x="1210" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF11_di" bpmnElement="RF11"><di:waypoint x="1330" y="785"/><di:waypoint x="1380" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RF12_di" bpmnElement="RF12"><di:waypoint x="1440" y="745"/><di:waypoint x="1440" y="595"/><di:waypoint x="1612" y="595"/></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

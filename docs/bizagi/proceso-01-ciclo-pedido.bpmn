@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Def_CicloPedido"
+             targetNamespace="http://ala-k-rico-go/bpmn"
+             exporter="Ala K Rico GO"
+             exporterVersion="1.0">
+
+  <process id="Proc_CicloPedido" name="Ciclo de Vida del Pedido" isExecutable="false">
+
+    <laneSet id="LS_Pedido">
+      <lane id="L_Cliente" name="Cliente">
+        <flowNodeRef>SE_Inicio</flowNodeRef>
+        <flowNodeRef>T_SeleccionarProductos</flowNodeRef>
+        <flowNodeRef>T_VerErrorZona</flowNodeRef>
+        <flowNodeRef>EE_Rechazado</flowNodeRef>
+        <flowNodeRef>T_ConfirmarPedido</flowNodeRef>
+        <flowNodeRef>T_SeguirPedido</flowNodeRef>
+        <flowNodeRef>EE_Entregado</flowNodeRef>
+      </lane>
+      <lane id="L_Sistema" name="Sistema (Backend)">
+        <flowNodeRef>ST_ValidarZona</flowNodeRef>
+        <flowNodeRef>GW_EnZona</flowNodeRef>
+        <flowNodeRef>ST_CrearPedido</flowNodeRef>
+        <flowNodeRef>ST_NotificarAdmin</flowNodeRef>
+        <flowNodeRef>ST_EjecutarACO</flowNodeRef>
+        <flowNodeRef>ST_ActualizarAsignado</flowNodeRef>
+        <flowNodeRef>ST_NotificarPartes</flowNodeRef>
+        <flowNodeRef>ST_ActualizarEnCamino</flowNodeRef>
+        <flowNodeRef>ST_ActualizarCancelado</flowNodeRef>
+        <flowNodeRef>EE_Cancelado</flowNodeRef>
+        <flowNodeRef>ST_ActualizarEntregado</flowNodeRef>
+        <flowNodeRef>ST_RegistrarAuditoria</flowNodeRef>
+      </lane>
+      <lane id="L_Administrador" name="Administrador">
+        <flowNodeRef>T_RevisarPedido</flowNodeRef>
+        <flowNodeRef>GW_Cancelar</flowNodeRef>
+        <flowNodeRef>T_AsignarRepartidor</flowNodeRef>
+      </lane>
+      <lane id="L_Repartidor" name="Repartidor">
+        <flowNodeRef>T_RecibirNotificacion</flowNodeRef>
+        <flowNodeRef>T_RecogerPedido</flowNodeRef>
+        <flowNodeRef>T_EntregarPedido</flowNodeRef>
+        <flowNodeRef>T_ConfirmarEntrega</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- Eventos y tareas -->
+    <startEvent id="SE_Inicio" name="Acceder a la&#10;plataforma"/>
+
+    <userTask id="T_SeleccionarProductos" name="Buscar productos y&#10;fijar ubicación en mapa"/>
+
+    <serviceTask id="ST_ValidarZona" name="Validar zona de cobertura&#10;(Haversine, radio 3 km)"/>
+
+    <exclusiveGateway id="GW_EnZona" name="¿Dirección dentro&#10;de la zona?"/>
+
+    <userTask id="T_VerErrorZona" name="Ver advertencia:&#10;dirección fuera de zona"/>
+    <endEvent id="EE_Rechazado" name="Pedido no creado&#10;(fuera de cobertura)"/>
+
+    <userTask id="T_ConfirmarPedido" name="Revisar resumen y&#10;confirmar pedido"/>
+
+    <serviceTask id="ST_CrearPedido" name="Crear pedido en BD&#10;(Estado: sin_asignar)"/>
+
+    <serviceTask id="ST_NotificarAdmin" name="Notificar al&#10;Administrador"/>
+
+    <userTask id="T_RevisarPedido" name="Revisar pedidos&#10;pendientes en dashboard"/>
+
+    <exclusiveGateway id="GW_Cancelar" name="¿Cancelar&#10;el pedido?"/>
+
+    <serviceTask id="ST_ActualizarCancelado" name="Actualizar estado&#10;→ cancelado"/>
+    <endEvent id="EE_Cancelado" name="Pedido cancelado"/>
+
+    <userTask id="T_AsignarRepartidor" name="Seleccionar repartidor&#10;disponible y asignar"/>
+
+    <serviceTask id="ST_EjecutarACO" name="Ejecutar algoritmo ACO&#10;(calcular ruta óptima)"/>
+
+    <serviceTask id="ST_ActualizarAsignado" name="Actualizar estado&#10;→ asignado"/>
+
+    <serviceTask id="ST_NotificarPartes" name="Notificar a Repartidor&#10;y Cliente"/>
+
+    <userTask id="T_RecibirNotificacion" name="Recibir notificación&#10;de pedido asignado"/>
+
+    <userTask id="T_RecogerPedido" name="Recoger pedido en&#10;restaurante (Jr. Áncash 3855)"/>
+
+    <serviceTask id="ST_ActualizarEnCamino" name="Actualizar estado&#10;→ en_camino"/>
+
+    <userTask id="T_SeguirPedido" name="Seguir pedido&#10;en mapa (tiempo real)"/>
+
+    <userTask id="T_EntregarPedido" name="Realizar entrega&#10;al cliente"/>
+
+    <userTask id="T_ConfirmarEntrega" name="Confirmar entrega&#10;completada"/>
+
+    <serviceTask id="ST_ActualizarEntregado" name="Actualizar estado&#10;→ entregado"/>
+
+    <serviceTask id="ST_RegistrarAuditoria" name="Registrar evento&#10;en tabla de auditoría"/>
+
+    <endEvent id="EE_Entregado" name="Pedido entregado&#10;exitosamente"/>
+
+    <!-- Flujos de secuencia -->
+    <sequenceFlow id="F01" sourceRef="SE_Inicio" targetRef="T_SeleccionarProductos"/>
+    <sequenceFlow id="F02" sourceRef="T_SeleccionarProductos" targetRef="ST_ValidarZona"/>
+    <sequenceFlow id="F03" sourceRef="ST_ValidarZona" targetRef="GW_EnZona"/>
+    <sequenceFlow id="F04" name="No - Fuera de zona" sourceRef="GW_EnZona" targetRef="T_VerErrorZona"/>
+    <sequenceFlow id="F05" name="Sí - Dentro de zona" sourceRef="GW_EnZona" targetRef="T_ConfirmarPedido"/>
+    <sequenceFlow id="F06" sourceRef="T_VerErrorZona" targetRef="EE_Rechazado"/>
+    <sequenceFlow id="F07" sourceRef="T_ConfirmarPedido" targetRef="ST_CrearPedido"/>
+    <sequenceFlow id="F08" sourceRef="ST_CrearPedido" targetRef="ST_NotificarAdmin"/>
+    <sequenceFlow id="F09" sourceRef="ST_NotificarAdmin" targetRef="T_RevisarPedido"/>
+    <sequenceFlow id="F10" sourceRef="T_RevisarPedido" targetRef="GW_Cancelar"/>
+    <sequenceFlow id="F11" name="Sí - Cancelar" sourceRef="GW_Cancelar" targetRef="ST_ActualizarCancelado"/>
+    <sequenceFlow id="F12" name="No - Asignar" sourceRef="GW_Cancelar" targetRef="T_AsignarRepartidor"/>
+    <sequenceFlow id="F13" sourceRef="ST_ActualizarCancelado" targetRef="EE_Cancelado"/>
+    <sequenceFlow id="F14" sourceRef="T_AsignarRepartidor" targetRef="ST_EjecutarACO"/>
+    <sequenceFlow id="F15" sourceRef="ST_EjecutarACO" targetRef="ST_ActualizarAsignado"/>
+    <sequenceFlow id="F16" sourceRef="ST_ActualizarAsignado" targetRef="ST_NotificarPartes"/>
+    <sequenceFlow id="F17" sourceRef="ST_NotificarPartes" targetRef="T_RecibirNotificacion"/>
+    <sequenceFlow id="F18" sourceRef="ST_NotificarPartes" targetRef="T_SeguirPedido"/>
+    <sequenceFlow id="F19" sourceRef="T_RecibirNotificacion" targetRef="T_RecogerPedido"/>
+    <sequenceFlow id="F20" sourceRef="T_RecogerPedido" targetRef="ST_ActualizarEnCamino"/>
+    <sequenceFlow id="F21" sourceRef="ST_ActualizarEnCamino" targetRef="T_EntregarPedido"/>
+    <sequenceFlow id="F22" sourceRef="T_EntregarPedido" targetRef="T_ConfirmarEntrega"/>
+    <sequenceFlow id="F23" sourceRef="T_ConfirmarEntrega" targetRef="ST_ActualizarEntregado"/>
+    <sequenceFlow id="F24" sourceRef="ST_ActualizarEntregado" targetRef="ST_RegistrarAuditoria"/>
+    <sequenceFlow id="F25" sourceRef="ST_RegistrarAuditoria" targetRef="EE_Entregado"/>
+
+  </process>
+
+  <!-- ══════════════ DIAGRAMA ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Proc_CicloPedido">
+
+      <!-- Pool (proceso completo) -->
+      <bpmndi:BPMNShape id="Proc_CicloPedido_di" bpmnElement="Proc_CicloPedido" isHorizontal="true">
+        <dc:Bounds x="150" y="40" width="2800" height="680"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Lanes -->
+      <bpmndi:BPMNShape id="L_Cliente_di" bpmnElement="L_Cliente" isHorizontal="true">
+        <dc:Bounds x="180" y="40" width="2770" height="170"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Sistema_di" bpmnElement="L_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="210" width="2770" height="170"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Administrador_di" bpmnElement="L_Administrador" isHorizontal="true">
+        <dc:Bounds x="180" y="380" width="2770" height="170"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Repartidor_di" bpmnElement="L_Repartidor" isHorizontal="true">
+        <dc:Bounds x="180" y="550" width="2770" height="170"/>
+      </bpmndi:BPMNShape>
+
+      <!-- CLIENTE -->
+      <bpmndi:BPMNShape id="SE_Inicio_di" bpmnElement="SE_Inicio">
+        <dc:Bounds x="232" y="107" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_SeleccionarProductos_di" bpmnElement="T_SeleccionarProductos">
+        <dc:Bounds x="320" y="85" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_VerErrorZona_di" bpmnElement="T_VerErrorZona">
+        <dc:Bounds x="620" y="85" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_Rechazado_di" bpmnElement="EE_Rechazado">
+        <dc:Bounds x="802" y="107" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="782" y="150" width="76" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_ConfirmarPedido_di" bpmnElement="T_ConfirmarPedido">
+        <dc:Bounds x="800" y="85" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_SeguirPedido_di" bpmnElement="T_SeguirPedido">
+        <dc:Bounds x="1960" y="85" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_Entregado_di" bpmnElement="EE_Entregado">
+        <dc:Bounds x="2732" y="107" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2712" y="150" width="76" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <!-- SISTEMA -->
+      <bpmndi:BPMNShape id="ST_ValidarZona_di" bpmnElement="ST_ValidarZona">
+        <dc:Bounds x="490" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_EnZona_di" bpmnElement="GW_EnZona" isMarkerVisible="true">
+        <dc:Bounds x="665" y="270" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="645" y="327" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_CrearPedido_di" bpmnElement="ST_CrearPedido">
+        <dc:Bounds x="970" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificarAdmin_di" bpmnElement="ST_NotificarAdmin">
+        <dc:Bounds x="1140" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ActualizarCancelado_di" bpmnElement="ST_ActualizarCancelado">
+        <dc:Bounds x="1620" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_Cancelado_di" bpmnElement="EE_Cancelado">
+        <dc:Bounds x="1802" y="277" width="36" height="36"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1784" y="320" width="72" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_EjecutarACO_di" bpmnElement="ST_EjecutarACO">
+        <dc:Bounds x="1620" y="425" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ActualizarAsignado_di" bpmnElement="ST_ActualizarAsignado">
+        <dc:Bounds x="1790" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificarPartes_di" bpmnElement="ST_NotificarPartes">
+        <dc:Bounds x="1960" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ActualizarEnCamino_di" bpmnElement="ST_ActualizarEnCamino">
+        <dc:Bounds x="2300" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ActualizarEntregado_di" bpmnElement="ST_ActualizarEntregado">
+        <dc:Bounds x="2470" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RegistrarAuditoria_di" bpmnElement="ST_RegistrarAuditoria">
+        <dc:Bounds x="2640" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- ADMINISTRADOR -->
+      <bpmndi:BPMNShape id="T_RevisarPedido_di" bpmnElement="T_RevisarPedido">
+        <dc:Bounds x="1310" y="425" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Cancelar_di" bpmnElement="GW_Cancelar" isMarkerVisible="true">
+        <dc:Bounds x="1480" y="440" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1460" y="497" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_AsignarRepartidor_di" bpmnElement="T_AsignarRepartidor">
+        <dc:Bounds x="1460" y="595" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- REPARTIDOR -->
+      <bpmndi:BPMNShape id="T_RecibirNotificacion_di" bpmnElement="T_RecibirNotificacion">
+        <dc:Bounds x="1960" y="595" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_RecogerPedido_di" bpmnElement="T_RecogerPedido">
+        <dc:Bounds x="2130" y="595" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_EntregarPedido_di" bpmnElement="T_EntregarPedido">
+        <dc:Bounds x="2300" y="595" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_ConfirmarEntrega_di" bpmnElement="T_ConfirmarEntrega">
+        <dc:Bounds x="2470" y="595" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- EDGES -->
+      <bpmndi:BPMNEdge id="F01_di" bpmnElement="F01">
+        <di:waypoint x="268" y="125"/>
+        <di:waypoint x="320" y="125"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F02_di" bpmnElement="F02">
+        <di:waypoint x="380" y="165"/>
+        <di:waypoint x="380" y="295"/>
+        <di:waypoint x="490" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F03_di" bpmnElement="F03">
+        <di:waypoint x="610" y="295"/>
+        <di:waypoint x="665" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F04_di" bpmnElement="F04">
+        <di:waypoint x="690" y="270"/>
+        <di:waypoint x="690" y="125"/>
+        <di:waypoint x="620" y="125"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F05_di" bpmnElement="F05">
+        <di:waypoint x="715" y="295"/>
+        <di:waypoint x="860" y="295"/>
+        <di:waypoint x="860" y="165"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F06_di" bpmnElement="F06">
+        <di:waypoint x="740" y="125"/>
+        <di:waypoint x="802" y="125"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F07_di" bpmnElement="F07">
+        <di:waypoint x="860" y="165"/>
+        <di:waypoint x="860" y="295"/>
+        <di:waypoint x="970" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F08_di" bpmnElement="F08">
+        <di:waypoint x="1090" y="295"/>
+        <di:waypoint x="1140" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F09_di" bpmnElement="F09">
+        <di:waypoint x="1200" y="335"/>
+        <di:waypoint x="1200" y="465"/>
+        <di:waypoint x="1310" y="465"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F10_di" bpmnElement="F10">
+        <di:waypoint x="1430" y="465"/>
+        <di:waypoint x="1480" y="465"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F11_di" bpmnElement="F11">
+        <di:waypoint x="1505" y="440"/>
+        <di:waypoint x="1505" y="295"/>
+        <di:waypoint x="1620" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F12_di" bpmnElement="F12">
+        <di:waypoint x="1505" y="490"/>
+        <di:waypoint x="1505" y="635"/>
+        <di:waypoint x="1460" y="635"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F13_di" bpmnElement="F13">
+        <di:waypoint x="1740" y="295"/>
+        <di:waypoint x="1802" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F14_di" bpmnElement="F14">
+        <di:waypoint x="1520" y="635"/>
+        <di:waypoint x="1680" y="635"/>
+        <di:waypoint x="1680" y="505"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F15_di" bpmnElement="F15">
+        <di:waypoint x="1680" y="425"/>
+        <di:waypoint x="1680" y="295"/>
+        <di:waypoint x="1790" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F16_di" bpmnElement="F16">
+        <di:waypoint x="1910" y="295"/>
+        <di:waypoint x="1960" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F17_di" bpmnElement="F17">
+        <di:waypoint x="2020" y="335"/>
+        <di:waypoint x="2020" y="635"/>
+        <di:waypoint x="1960" y="635"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F18_di" bpmnElement="F18">
+        <di:waypoint x="2020" y="255"/>
+        <di:waypoint x="2020" y="165"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F19_di" bpmnElement="F19">
+        <di:waypoint x="2080" y="635"/>
+        <di:waypoint x="2130" y="635"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F20_di" bpmnElement="F20">
+        <di:waypoint x="2190" y="635"/>
+        <di:waypoint x="2360" y="635"/>
+        <di:waypoint x="2360" y="335"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F21_di" bpmnElement="F21">
+        <di:waypoint x="2360" y="335"/>
+        <di:waypoint x="2360" y="595"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F22_di" bpmnElement="F22">
+        <di:waypoint x="2420" y="635"/>
+        <di:waypoint x="2470" y="635"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F23_di" bpmnElement="F23">
+        <di:waypoint x="2530" y="635"/>
+        <di:waypoint x="2530" y="335"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F24_di" bpmnElement="F24">
+        <di:waypoint x="2590" y="295"/>
+        <di:waypoint x="2640" y="295"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F25_di" bpmnElement="F25">
+        <di:waypoint x="2700" y="255"/>
+        <di:waypoint x="2700" y="125"/>
+        <di:waypoint x="2732" y="125"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

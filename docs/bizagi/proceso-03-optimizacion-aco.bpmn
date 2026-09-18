@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Def_OptimizacionACO"
+             targetNamespace="http://ala-k-rico-go/bpmn"
+             exporter="Ala K Rico GO"
+             exporterVersion="1.0">
+
+  <process id="Proc_ACO" name="Optimización de Ruta — Algoritmo ACO" isExecutable="false">
+
+    <laneSet id="LS_ACO">
+      <lane id="LA_Admin" name="Administrador">
+        <flowNodeRef>SE_ACO</flowNodeRef>
+        <flowNodeRef>T_SeleccionarPedido</flowNodeRef>
+        <flowNodeRef>T_SeleccionarRepartidor</flowNodeRef>
+        <flowNodeRef>T_ConfirmarAsignacion</flowNodeRef>
+      </lane>
+      <lane id="LA_Sistema" name="Sistema — Motor ACO">
+        <flowNodeRef>ST_ListarRepartidores</flowNodeRef>
+        <flowNodeRef>ST_InicializarACO</flowNodeRef>
+        <flowNodeRef>ST_InicializarFeromonas</flowNodeRef>
+        <flowNodeRef>ST_CalcularDistanciaHaversine</flowNodeRef>
+        <flowNodeRef>ST_IterarHormigas</flowNodeRef>
+        <flowNodeRef>GW_IterMax</flowNodeRef>
+        <flowNodeRef>ST_EvaporarFeromonas</flowNodeRef>
+        <flowNodeRef>ST_DepositarFeromonas</flowNodeRef>
+        <flowNodeRef>ST_RetornarRutaOptima</flowNodeRef>
+        <flowNodeRef>ST_ActualizarBD</flowNodeRef>
+        <flowNodeRef>ST_NotificarResultado</flowNodeRef>
+        <flowNodeRef>EE_ACO</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <startEvent id="SE_ACO" name="Pedido sin_asignar&#10;disponible"/>
+
+    <userTask id="T_SeleccionarPedido" name="Revisar pedidos pendientes&#10;y seleccionar pedido"/>
+
+    <serviceTask id="ST_ListarRepartidores" name="Consultar repartidores&#10;activos y disponibles"/>
+
+    <userTask id="T_SeleccionarRepartidor" name="Seleccionar repartidor&#10;de la lista"/>
+
+    <serviceTask id="ST_InicializarACO" name="Inicializar ACO:&#10;parámetros α, β, ρ, Q"/>
+
+    <serviceTask id="ST_InicializarFeromonas" name="Inicializar feromonas τ(i,j)&#10;con valor uniforme τ₀"/>
+
+    <serviceTask id="ST_CalcularDistanciaHaversine" name="Calcular distancias entre nodos&#10;con fórmula Haversine (km)"/>
+
+    <serviceTask id="ST_IterarHormigas" name="Construir soluciones:&#10;cada hormiga elige próximo nodo&#10;por regla de transición probabilística"/>
+
+    <exclusiveGateway id="GW_IterMax" name="¿Iteración máxima&#10;alcanzada?"/>
+
+    <serviceTask id="ST_EvaporarFeromonas" name="Aplicar evaporación:&#10;τ(i,j) = (1-ρ) × τ(i,j)"/>
+
+    <serviceTask id="ST_DepositarFeromonas" name="Depositar feromonas:&#10;τ(i,j) += Q / longitud_ruta"/>
+
+    <serviceTask id="ST_RetornarRutaOptima" name="Retornar ruta con&#10;menor longitud total"/>
+
+    <serviceTask id="ST_ActualizarBD" name="UPDATE AKR_Pedidos:&#10;Id_Repartidor, Estado=asignado,&#10;coordenadas de ruta"/>
+
+    <userTask id="T_ConfirmarAsignacion" name="Confirmar asignación&#10;en dashboard"/>
+
+    <serviceTask id="ST_NotificarResultado" name="Notificar a Repartidor (push)&#10;y a Cliente (estado)"/>
+
+    <endEvent id="EE_ACO" name="Ruta óptima asignada&#10;— Repartidor en camino"/>
+
+    <!-- Flujos -->
+    <sequenceFlow id="AF01" sourceRef="SE_ACO" targetRef="T_SeleccionarPedido"/>
+    <sequenceFlow id="AF02" sourceRef="T_SeleccionarPedido" targetRef="ST_ListarRepartidores"/>
+    <sequenceFlow id="AF03" sourceRef="ST_ListarRepartidores" targetRef="T_SeleccionarRepartidor"/>
+    <sequenceFlow id="AF04" sourceRef="T_SeleccionarRepartidor" targetRef="ST_InicializarACO"/>
+    <sequenceFlow id="AF05" sourceRef="ST_InicializarACO" targetRef="ST_InicializarFeromonas"/>
+    <sequenceFlow id="AF06" sourceRef="ST_InicializarFeromonas" targetRef="ST_CalcularDistanciaHaversine"/>
+    <sequenceFlow id="AF07" sourceRef="ST_CalcularDistanciaHaversine" targetRef="ST_IterarHormigas"/>
+    <sequenceFlow id="AF08" sourceRef="ST_IterarHormigas" targetRef="GW_IterMax"/>
+    <sequenceFlow id="AF09" name="No - Continuar" sourceRef="GW_IterMax" targetRef="ST_EvaporarFeromonas"/>
+    <sequenceFlow id="AF10" name="Sí - Convergió" sourceRef="GW_IterMax" targetRef="ST_RetornarRutaOptima"/>
+    <sequenceFlow id="AF11" sourceRef="ST_EvaporarFeromonas" targetRef="ST_DepositarFeromonas"/>
+    <sequenceFlow id="AF12" sourceRef="ST_DepositarFeromonas" targetRef="ST_IterarHormigas"/>
+    <sequenceFlow id="AF13" sourceRef="ST_RetornarRutaOptima" targetRef="ST_ActualizarBD"/>
+    <sequenceFlow id="AF14" sourceRef="ST_ActualizarBD" targetRef="T_ConfirmarAsignacion"/>
+    <sequenceFlow id="AF15" sourceRef="T_ConfirmarAsignacion" targetRef="ST_NotificarResultado"/>
+    <sequenceFlow id="AF16" sourceRef="ST_NotificarResultado" targetRef="EE_ACO"/>
+
+  </process>
+
+  <!-- ══════════════ DIAGRAMA ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ACO">
+    <bpmndi:BPMNPlane id="BPMNPlane_ACO" bpmnElement="Proc_ACO">
+
+      <bpmndi:BPMNShape id="Proc_ACO_di" bpmnElement="Proc_ACO" isHorizontal="true">
+        <dc:Bounds x="150" y="40" width="2300" height="380"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LA_Admin_di" bpmnElement="LA_Admin" isHorizontal="true">
+        <dc:Bounds x="180" y="40" width="2270" height="190"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LA_Sistema_di" bpmnElement="LA_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="230" width="2270" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Admin lane -->
+      <bpmndi:BPMNShape id="SE_ACO_di" bpmnElement="SE_ACO">
+        <dc:Bounds x="232" y="117" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_SeleccionarPedido_di" bpmnElement="T_SeleccionarPedido">
+        <dc:Bounds x="320" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_SeleccionarRepartidor_di" bpmnElement="T_SeleccionarRepartidor">
+        <dc:Bounds x="660" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_ConfirmarAsignacion_di" bpmnElement="T_ConfirmarAsignacion">
+        <dc:Bounds x="1900" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Sistema lane -->
+      <bpmndi:BPMNShape id="ST_ListarRepartidores_di" bpmnElement="ST_ListarRepartidores">
+        <dc:Bounds x="490" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_InicializarACO_di" bpmnElement="ST_InicializarACO">
+        <dc:Bounds x="830" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_InicializarFeromonas_di" bpmnElement="ST_InicializarFeromonas">
+        <dc:Bounds x="1000" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_CalcularDistanciaHaversine_di" bpmnElement="ST_CalcularDistanciaHaversine">
+        <dc:Bounds x="1170" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_IterarHormigas_di" bpmnElement="ST_IterarHormigas">
+        <dc:Bounds x="1340" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_IterMax_di" bpmnElement="GW_IterMax" isMarkerVisible="true">
+        <dc:Bounds x="1515" y="300" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1495" y="357" width="90" height="27"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_EvaporarFeromonas_di" bpmnElement="ST_EvaporarFeromonas">
+        <dc:Bounds x="1340" y="380" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_DepositarFeromonas_di" bpmnElement="ST_DepositarFeromonas">
+        <dc:Bounds x="1170" y="380" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_RetornarRutaOptima_di" bpmnElement="ST_RetornarRutaOptima">
+        <dc:Bounds x="1620" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ActualizarBD_di" bpmnElement="ST_ActualizarBD">
+        <dc:Bounds x="1790" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_NotificarResultado_di" bpmnElement="ST_NotificarResultado">
+        <dc:Bounds x="2080" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_ACO_di" bpmnElement="EE_ACO">
+        <dc:Bounds x="2262" y="307" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Edges -->
+      <bpmndi:BPMNEdge id="AF01_di" bpmnElement="AF01"><di:waypoint x="268" y="135"/><di:waypoint x="320" y="135"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF02_di" bpmnElement="AF02"><di:waypoint x="380" y="175"/><di:waypoint x="380" y="325"/><di:waypoint x="490" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF03_di" bpmnElement="AF03"><di:waypoint x="610" y="325"/><di:waypoint x="720" y="325"/><di:waypoint x="720" y="175"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF04_di" bpmnElement="AF04"><di:waypoint x="720" y="175"/><di:waypoint x="720" y="325"/><di:waypoint x="830" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF05_di" bpmnElement="AF05"><di:waypoint x="950" y="325"/><di:waypoint x="1000" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF06_di" bpmnElement="AF06"><di:waypoint x="1120" y="325"/><di:waypoint x="1170" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF07_di" bpmnElement="AF07"><di:waypoint x="1290" y="325"/><di:waypoint x="1340" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF08_di" bpmnElement="AF08"><di:waypoint x="1460" y="325"/><di:waypoint x="1515" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF09_di" bpmnElement="AF09"><di:waypoint x="1540" y="350"/><di:waypoint x="1540" y="420"/><di:waypoint x="1460" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF10_di" bpmnElement="AF10"><di:waypoint x="1565" y="325"/><di:waypoint x="1620" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF11_di" bpmnElement="AF11"><di:waypoint x="1340" y="420"/><di:waypoint x="1290" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF12_di" bpmnElement="AF12"><di:waypoint x="1230" y="380"/><di:waypoint x="1230" y="325"/><di:waypoint x="1340" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF13_di" bpmnElement="AF13"><di:waypoint x="1740" y="325"/><di:waypoint x="1790" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF14_di" bpmnElement="AF14"><di:waypoint x="1850" y="285"/><di:waypoint x="1850" y="135"/><di:waypoint x="1900" y="135"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF15_di" bpmnElement="AF15"><di:waypoint x="1960" y="175"/><di:waypoint x="1960" y="325"/><di:waypoint x="2080" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="AF16_di" bpmnElement="AF16"><di:waypoint x="2200" y="325"/><di:waypoint x="2262" y="325"/></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Def_GestionAdmin"
+             targetNamespace="http://ala-k-rico-go/bpmn"
+             exporter="Ala K Rico GO"
+             exporterVersion="1.0">
+
+  <!-- ══ PROCESO A: GESTIÓN DE REPARTIDORES ═══════════════════════════════ -->
+  <process id="Proc_GestionRepartidores" name="Gestión de Repartidores (Admin)" isExecutable="false">
+
+    <laneSet id="LS_GestRep">
+      <lane id="LGR_Admin" name="Administrador">
+        <flowNodeRef>SE_GestRep</flowNodeRef>
+        <flowNodeRef>T_VerListaRep</flowNodeRef>
+        <flowNodeRef>GW_AccionRep</flowNodeRef>
+        <flowNodeRef>T_LlenarFormNuevo</flowNodeRef>
+        <flowNodeRef>T_EditarDatos</flowNodeRef>
+        <flowNodeRef>T_ToggleEstado</flowNodeRef>
+        <flowNodeRef>EE_GestRep</flowNodeRef>
+      </lane>
+      <lane id="LGR_Sistema" name="Sistema (Backend)">
+        <flowNodeRef>ST_ConsultarReps</flowNodeRef>
+        <flowNodeRef>ST_ValidarRepDatos</flowNodeRef>
+        <flowNodeRef>GW_DatosRepOk</flowNodeRef>
+        <flowNodeRef>ST_InsertRep</flowNodeRef>
+        <flowNodeRef>ST_UpdateRep</flowNodeRef>
+        <flowNodeRef>ST_ToggleActivo</flowNodeRef>
+        <flowNodeRef>ST_AuditRep</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <startEvent id="SE_GestRep" name="Acceder a módulo&#10;Repartidores"/>
+    <serviceTask id="ST_ConsultarReps" name="GET /api/repartidores&#10;(listar todos)"/>
+    <userTask id="T_VerListaRep" name="Ver lista de repartidores&#10;con estado activo/inactivo"/>
+    <exclusiveGateway id="GW_AccionRep" name="¿Qué acción?"/>
+    <userTask id="T_LlenarFormNuevo" name="Completar formulario&#10;nuevo repartidor&#10;(nombre, email, zona)"/>
+    <userTask id="T_EditarDatos" name="Editar datos del&#10;repartidor seleccionado"/>
+    <userTask id="T_ToggleEstado" name="Activar / Desactivar&#10;repartidor"/>
+    <serviceTask id="ST_ValidarRepDatos" name="Validar campos&#10;requeridos y formatos"/>
+    <exclusiveGateway id="GW_DatosRepOk" name="¿Datos válidos?"/>
+    <serviceTask id="ST_InsertRep" name="POST /api/repartidores&#10;INSERT AKR_Usuarios (idRole=2)"/>
+    <serviceTask id="ST_UpdateRep" name="PUT /api/repartidores/:id&#10;UPDATE AKR_Usuarios"/>
+    <serviceTask id="ST_ToggleActivo" name="PATCH /api/repartidores/:id/toggle&#10;Activo_Usuario = 1/0"/>
+    <serviceTask id="ST_AuditRep" name="Registrar evento&#10;en tabla de auditoría"/>
+    <endEvent id="EE_GestRep" name="Operación completada"/>
+
+    <sequenceFlow id="GR01" sourceRef="SE_GestRep" targetRef="ST_ConsultarReps"/>
+    <sequenceFlow id="GR02" sourceRef="ST_ConsultarReps" targetRef="T_VerListaRep"/>
+    <sequenceFlow id="GR03" sourceRef="T_VerListaRep" targetRef="GW_AccionRep"/>
+    <sequenceFlow id="GR04" name="Crear" sourceRef="GW_AccionRep" targetRef="T_LlenarFormNuevo"/>
+    <sequenceFlow id="GR05" name="Editar" sourceRef="GW_AccionRep" targetRef="T_EditarDatos"/>
+    <sequenceFlow id="GR06" name="Toggle activo" sourceRef="GW_AccionRep" targetRef="T_ToggleEstado"/>
+    <sequenceFlow id="GR07" sourceRef="T_LlenarFormNuevo" targetRef="ST_ValidarRepDatos"/>
+    <sequenceFlow id="GR08" sourceRef="T_EditarDatos" targetRef="ST_ValidarRepDatos"/>
+    <sequenceFlow id="GR09" sourceRef="ST_ValidarRepDatos" targetRef="GW_DatosRepOk"/>
+    <sequenceFlow id="GR10" name="No" sourceRef="GW_DatosRepOk" targetRef="T_LlenarFormNuevo"/>
+    <sequenceFlow id="GR11" name="Sí - Crear" sourceRef="GW_DatosRepOk" targetRef="ST_InsertRep"/>
+    <sequenceFlow id="GR12" name="Sí - Editar" sourceRef="GW_DatosRepOk" targetRef="ST_UpdateRep"/>
+    <sequenceFlow id="GR13" sourceRef="T_ToggleEstado" targetRef="ST_ToggleActivo"/>
+    <sequenceFlow id="GR14" sourceRef="ST_InsertRep" targetRef="ST_AuditRep"/>
+    <sequenceFlow id="GR15" sourceRef="ST_UpdateRep" targetRef="ST_AuditRep"/>
+    <sequenceFlow id="GR16" sourceRef="ST_ToggleActivo" targetRef="ST_AuditRep"/>
+    <sequenceFlow id="GR17" sourceRef="ST_AuditRep" targetRef="EE_GestRep"/>
+
+  </process>
+
+  <!-- ══ PROCESO B: REPORTES Y AUDITORÍA ══════════════════════════════════ -->
+  <process id="Proc_Reportes" name="Reportes y Auditoría (Admin)" isExecutable="false">
+
+    <laneSet id="LS_Reportes">
+      <lane id="LRP_Admin" name="Administrador">
+        <flowNodeRef>SE_Reportes</flowNodeRef>
+        <flowNodeRef>T_SeleccionarModulo</flowNodeRef>
+        <flowNodeRef>GW_ModuloReporte</flowNodeRef>
+        <flowNodeRef>T_FiltrarPedidos</flowNodeRef>
+        <flowNodeRef>T_FiltrarAuditoria</flowNodeRef>
+        <flowNodeRef>T_VerDashboard</flowNodeRef>
+        <flowNodeRef>EE_Reportes</flowNodeRef>
+      </lane>
+      <lane id="LRP_Sistema" name="Sistema (Backend)">
+        <flowNodeRef>ST_QueryPedidos</flowNodeRef>
+        <flowNodeRef>ST_QueryAuditoria</flowNodeRef>
+        <flowNodeRef>ST_QueryDashboard</flowNodeRef>
+        <flowNodeRef>ST_DevolverDatos</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <startEvent id="SE_Reportes" name="Abrir módulo&#10;Reportes / Auditoría"/>
+    <userTask id="T_SeleccionarModulo" name="Seleccionar módulo:&#10;Pedidos | Auditoría | Dashboard"/>
+    <exclusiveGateway id="GW_ModuloReporte" name="¿Módulo seleccionado?"/>
+    <userTask id="T_FiltrarPedidos" name="Aplicar filtros:&#10;fecha, estado, cliente"/>
+    <userTask id="T_FiltrarAuditoria" name="Aplicar filtros:&#10;evento, usuario, fecha"/>
+    <userTask id="T_VerDashboard" name="Ver métricas:&#10;pedidos/día, repartidores activos,&#10;tiempos de entrega"/>
+    <serviceTask id="ST_QueryPedidos" name="GET /api/reportes/pedidos&#10;(GROUP BY estado, fecha)"/>
+    <serviceTask id="ST_QueryAuditoria" name="GET /api/auditoria&#10;(filtros: evento, idUsuario)"/>
+    <serviceTask id="ST_QueryDashboard" name="GET /api/reportes/dashboard&#10;(KPIs en tiempo real)"/>
+    <serviceTask id="ST_DevolverDatos" name="Serializar datos → JSON&#10;(Recharts / tabla)"/>
+    <endEvent id="EE_Reportes" name="Datos visualizados"/>
+
+    <sequenceFlow id="RP01" sourceRef="SE_Reportes" targetRef="T_SeleccionarModulo"/>
+    <sequenceFlow id="RP02" sourceRef="T_SeleccionarModulo" targetRef="GW_ModuloReporte"/>
+    <sequenceFlow id="RP03" name="Pedidos" sourceRef="GW_ModuloReporte" targetRef="T_FiltrarPedidos"/>
+    <sequenceFlow id="RP04" name="Auditoría" sourceRef="GW_ModuloReporte" targetRef="T_FiltrarAuditoria"/>
+    <sequenceFlow id="RP05" name="Dashboard" sourceRef="GW_ModuloReporte" targetRef="T_VerDashboard"/>
+    <sequenceFlow id="RP06" sourceRef="T_FiltrarPedidos" targetRef="ST_QueryPedidos"/>
+    <sequenceFlow id="RP07" sourceRef="T_FiltrarAuditoria" targetRef="ST_QueryAuditoria"/>
+    <sequenceFlow id="RP08" sourceRef="T_VerDashboard" targetRef="ST_QueryDashboard"/>
+    <sequenceFlow id="RP09" sourceRef="ST_QueryPedidos" targetRef="ST_DevolverDatos"/>
+    <sequenceFlow id="RP10" sourceRef="ST_QueryAuditoria" targetRef="ST_DevolverDatos"/>
+    <sequenceFlow id="RP11" sourceRef="ST_QueryDashboard" targetRef="ST_DevolverDatos"/>
+    <sequenceFlow id="RP12" sourceRef="ST_DevolverDatos" targetRef="EE_Reportes"/>
+
+  </process>
+
+  <!-- ══════════════ DIAGRAMA GESTIÓN REPARTIDORES ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_GestRep">
+    <bpmndi:BPMNPlane id="BPMNPlane_GestRep" bpmnElement="Proc_GestionRepartidores">
+
+      <bpmndi:BPMNShape id="Proc_GestRep_di" bpmnElement="Proc_GestionRepartidores" isHorizontal="true">
+        <dc:Bounds x="150" y="40" width="2000" height="380"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LGR_Admin_di" bpmnElement="LGR_Admin" isHorizontal="true">
+        <dc:Bounds x="180" y="40" width="1970" height="190"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LGR_Sistema_di" bpmnElement="LGR_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="230" width="1970" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="SE_GestRep_di" bpmnElement="SE_GestRep">
+        <dc:Bounds x="232" y="117" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_VerListaRep_di" bpmnElement="T_VerListaRep">
+        <dc:Bounds x="490" y="95" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_AccionRep_di" bpmnElement="GW_AccionRep" isMarkerVisible="true">
+        <dc:Bounds x="665" y="110" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_LlenarFormNuevo_di" bpmnElement="T_LlenarFormNuevo">
+        <dc:Bounds x="770" y="55" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_EditarDatos_di" bpmnElement="T_EditarDatos">
+        <dc:Bounds x="770" y="150" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_ToggleEstado_di" bpmnElement="T_ToggleEstado">
+        <dc:Bounds x="770" y="55" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_GestRep_di" bpmnElement="EE_GestRep">
+        <dc:Bounds x="1882" y="307" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="ST_ConsultarReps_di" bpmnElement="ST_ConsultarReps">
+        <dc:Bounds x="320" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ValidarRepDatos_di" bpmnElement="ST_ValidarRepDatos">
+        <dc:Bounds x="960" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_DatosRepOk_di" bpmnElement="GW_DatosRepOk" isMarkerVisible="true">
+        <dc:Bounds x="1135" y="300" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_InsertRep_di" bpmnElement="ST_InsertRep">
+        <dc:Bounds x="1240" y="255" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_UpdateRep_di" bpmnElement="ST_UpdateRep">
+        <dc:Bounds x="1240" y="355" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_ToggleActivo_di" bpmnElement="ST_ToggleActivo">
+        <dc:Bounds x="960" y="380" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_AuditRep_di" bpmnElement="ST_AuditRep">
+        <dc:Bounds x="1580" y="285" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="GR01_di" bpmnElement="GR01"><di:waypoint x="268" y="135"/><di:waypoint x="320" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR02_di" bpmnElement="GR02"><di:waypoint x="440" y="325"/><di:waypoint x="550" y="325"/><di:waypoint x="550" y="175"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR03_di" bpmnElement="GR03"><di:waypoint x="610" y="135"/><di:waypoint x="665" y="135"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR04_di" bpmnElement="GR04"><di:waypoint x="690" y="110"/><di:waypoint x="690" y="95"/><di:waypoint x="770" y="95"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR05_di" bpmnElement="GR05"><di:waypoint x="690" y="160"/><di:waypoint x="690" y="190"/><di:waypoint x="770" y="190"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR06_di" bpmnElement="GR06"><di:waypoint x="715" y="135"/><di:waypoint x="1020" y="135"/><di:waypoint x="1020" y="380"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR07_di" bpmnElement="GR07"><di:waypoint x="830" y="135"/><di:waypoint x="960" y="135"/><di:waypoint x="960" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR08_di" bpmnElement="GR08"><di:waypoint x="830" y="190"/><di:waypoint x="920" y="190"/><di:waypoint x="920" y="325"/><di:waypoint x="960" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR09_di" bpmnElement="GR09"><di:waypoint x="1080" y="325"/><di:waypoint x="1135" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR10_di" bpmnElement="GR10"><di:waypoint x="1160" y="300"/><di:waypoint x="1160" y="95"/><di:waypoint x="770" y="95"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR11_di" bpmnElement="GR11"><di:waypoint x="1185" y="315"/><di:waypoint x="1240" y="295"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR12_di" bpmnElement="GR12"><di:waypoint x="1185" y="340"/><di:waypoint x="1240" y="395"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR13_di" bpmnElement="GR13"><di:waypoint x="1020" y="380"/><di:waypoint x="1080" y="420"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR14_di" bpmnElement="GR14"><di:waypoint x="1360" y="295"/><di:waypoint x="1580" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR15_di" bpmnElement="GR15"><di:waypoint x="1360" y="395"/><di:waypoint x="1580" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR16_di" bpmnElement="GR16"><di:waypoint x="1080" y="420"/><di:waypoint x="1580" y="325"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="GR17_di" bpmnElement="GR17"><di:waypoint x="1700" y="325"/><di:waypoint x="1882" y="325"/></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+  <!-- ══════════════ DIAGRAMA REPORTES ══════════════ -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Reportes">
+    <bpmndi:BPMNPlane id="BPMNPlane_Reportes" bpmnElement="Proc_Reportes">
+
+      <bpmndi:BPMNShape id="Proc_Reportes_di" bpmnElement="Proc_Reportes" isHorizontal="true">
+        <dc:Bounds x="150" y="500" width="1900" height="380"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LRP_Admin_di" bpmnElement="LRP_Admin" isHorizontal="true">
+        <dc:Bounds x="180" y="500" width="1870" height="190"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="LRP_Sistema_di" bpmnElement="LRP_Sistema" isHorizontal="true">
+        <dc:Bounds x="180" y="690" width="1870" height="190"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="SE_Reportes_di" bpmnElement="SE_Reportes">
+        <dc:Bounds x="232" y="577" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_SeleccionarModulo_di" bpmnElement="T_SeleccionarModulo">
+        <dc:Bounds x="320" y="555" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_ModuloReporte_di" bpmnElement="GW_ModuloReporte" isMarkerVisible="true">
+        <dc:Bounds x="495" y="570" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_FiltrarPedidos_di" bpmnElement="T_FiltrarPedidos">
+        <dc:Bounds x="600" y="520" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_FiltrarAuditoria_di" bpmnElement="T_FiltrarAuditoria">
+        <dc:Bounds x="600" y="555" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_VerDashboard_di" bpmnElement="T_VerDashboard">
+        <dc:Bounds x="600" y="635" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EE_Reportes_di" bpmnElement="EE_Reportes">
+        <dc:Bounds x="1832" y="767" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="ST_QueryPedidos_di" bpmnElement="ST_QueryPedidos">
+        <dc:Bounds x="790" y="715" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_QueryAuditoria_di" bpmnElement="ST_QueryAuditoria">
+        <dc:Bounds x="790" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_QueryDashboard_di" bpmnElement="ST_QueryDashboard">
+        <dc:Bounds x="790" y="805" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ST_DevolverDatos_di" bpmnElement="ST_DevolverDatos">
+        <dc:Bounds x="1580" y="745" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="RP01_di" bpmnElement="RP01"><di:waypoint x="268" y="595"/><di:waypoint x="320" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP02_di" bpmnElement="RP02"><di:waypoint x="440" y="595"/><di:waypoint x="495" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP03_di" bpmnElement="RP03"><di:waypoint x="520" y="570"/><di:waypoint x="520" y="560"/><di:waypoint x="600" y="560"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP04_di" bpmnElement="RP04"><di:waypoint x="545" y="595"/><di:waypoint x="600" y="595"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP05_di" bpmnElement="RP05"><di:waypoint x="520" y="620"/><di:waypoint x="520" y="675"/><di:waypoint x="600" y="675"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP06_di" bpmnElement="RP06"><di:waypoint x="660" y="600"/><di:waypoint x="660" y="755"/><di:waypoint x="790" y="755"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP07_di" bpmnElement="RP07"><di:waypoint x="660" y="635"/><di:waypoint x="660" y="785"/><di:waypoint x="790" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP08_di" bpmnElement="RP08"><di:waypoint x="660" y="715"/><di:waypoint x="660" y="845"/><di:waypoint x="790" y="845"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP09_di" bpmnElement="RP09"><di:waypoint x="910" y="755"/><di:waypoint x="1580" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP10_di" bpmnElement="RP10"><di:waypoint x="910" y="785"/><di:waypoint x="1580" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP11_di" bpmnElement="RP11"><di:waypoint x="910" y="845"/><di:waypoint x="1580" y="785"/></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="RP12_di" bpmnElement="RP12"><di:waypoint x="1700" y="785"/><di:waypoint x="1832" y="785"/></bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>
