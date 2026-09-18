@@ -31,12 +31,20 @@ router.get('/', async (req, res) => {
       const page     = Math.max(parseInt(req.query.page,     10) || 1, 1);
       const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 20, 1), 100);
       const offset   = (page - 1) * pageSize;
-      const { estado } = req.query;
+      const { estado, grupo } = req.query;
 
       const validStates = ['sin_asignar','asignado','en_camino','entregado','cancelado'];
-      const whereClause = estado && validStates.includes(estado)
-        ? 'WHERE p.Estado = @estado'
-        : '';
+      const GRUPOS = {
+        activos:     "p.Estado IN ('sin_asignar','asignado','en_camino')",
+        completados: "p.Estado IN ('entregado','cancelado')",
+      };
+
+      let whereClause = '';
+      if (estado && validStates.includes(estado)) {
+        whereClause = 'WHERE p.Estado = @estado';
+      } else if (grupo && GRUPOS[grupo]) {
+        whereClause = `WHERE ${GRUPOS[grupo]}`;
+      }
 
       const dataReq  = pool.request()
         .input('offset',   sql.Int, offset)

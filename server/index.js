@@ -70,6 +70,12 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(limiterGeneral);
 
+// Prevenir caché en todas las respuestas de la API
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // ---------------------------------------------------------------------------
 // Log de accesos no autorizados — CP006 / CP018
 // Intercepta 401 después de que el middleware verificarToken responda.

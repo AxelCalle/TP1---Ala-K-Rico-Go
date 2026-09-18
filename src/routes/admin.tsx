@@ -1039,20 +1039,21 @@ function SeccionPedidos() {
   const [errCarga,     setErrCarga]     = useState<string | null>(null);
   const [abierto,      setAbierto]      = useState(false);
   const [copiado,      setCopiado]      = useState<number | null>(null);
-  const [filtro,       setFiltro]       = useState<FiltroEstado>("activos");
+  const [filtro,       setFiltro]       = useState<FiltroEstado>("todos");
   const [confirm,      setConfirm]      = useState<{ mensaje: string; detalle?: string; accion: () => void } | null>(null);
 
   const PAGE_SIZE = 20;
 
-  const estadoFiltro = filtro === "activos" ? undefined
-    : filtro === "completados" ? undefined
+  const grupoFiltro: "activos" | "completados" | undefined =
+    filtro === "activos"     ? "activos"
+    : filtro === "completados" ? "completados"
     : undefined;
 
-  const cargar = (p = page) => {
+  const cargar = (p = page, g = grupoFiltro) => {
     setCargando(true);
     setErrCarga(null);
     Promise.allSettled([
-      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE }),
+      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE, grupo: g }),
       api.listarRepartidores(),
     ])
       .then(([pedRes, repRes]) => {
@@ -1071,7 +1072,7 @@ function SeccionPedidos() {
       .finally(() => setCargando(false));
   };
 
-  useEffect(() => { cargar(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(page, grupoFiltro); }, [page, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function ejecutarCambioEstado(id: number, estado: string) {
     await api.cambiarEstadoPedido(id, estado).catch(() => {});
@@ -1122,8 +1123,6 @@ function SeccionPedidos() {
   const cntActivos     = pedidos.filter((p) => ESTADOS_ACTIVOS.includes(p.Estado)).length;
   const cntCompletados = pedidos.filter((p) => ESTADOS_COMPLETADOS.includes(p.Estado)).length;
 
-  void estadoFiltro;
-
   const TABS: { key: FiltroEstado; label: string; count: number }[] = [
     { key: "activos",     label: "Activos",     count: cntActivos },
     { key: "completados", label: "Completados",  count: cntCompletados },
@@ -1139,7 +1138,7 @@ function SeccionPedidos() {
           <p className="mt-1 text-sm text-muted-foreground">
             {cargando
               ? "Cargando…"
-              : `${cntActivos} activo${cntActivos !== 1 ? "s" : ""} · ${cntCompletados} completado${cntCompletados !== 1 ? "s" : ""} · ${pedidos.length} total`}
+              : `${cntActivos} activo${cntActivos !== 1 ? "s" : ""} · ${cntCompletados} completado${cntCompletados !== 1 ? "s" : ""} · ${totalItems} total`}
           </p>
         </div>
         <button
@@ -1159,7 +1158,7 @@ function SeccionPedidos() {
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setFiltro(tab.key)}
+            onClick={() => { setFiltro(tab.key); setPage(1); }}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               filtro === tab.key
                 ? "bg-card text-foreground shadow-sm"

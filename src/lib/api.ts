@@ -298,16 +298,21 @@ export const api = {
   },
 
   async listarPedidosAdmin(params?: {
-    page?: number; pageSize?: number; estado?: string;
+    page?: number; pageSize?: number; estado?: string; grupo?: "activos" | "completados";
   }): Promise<PaginatedResponse<PedidoApi>> {
     const qs = new URLSearchParams();
     if (params?.page)     qs.set("page",     String(params.page));
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     if (params?.estado)   qs.set("estado",   params.estado);
-    return solicitar<PaginatedResponse<PedidoApi>>(
+    if (params?.grupo)    qs.set("grupo",    params.grupo);
+    const raw = await solicitar<PaginatedResponse<PedidoApi> | PedidoApi[]>(
       `/api/pedidos?${qs.toString()}`,
       { headers: cabeceraAuth() },
     );
+    if (Array.isArray(raw)) {
+      return { items: raw, page: 1, pageSize: raw.length, totalItems: raw.length, totalPages: 1 };
+    }
+    return raw;
   },
 
   async obtenerPedido(id: number): Promise<PedidoApi> {

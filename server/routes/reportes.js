@@ -18,12 +18,11 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
   try {
     const pool = await getPool();
 
-    const [kpis, porEstado, recientes] = await Promise.all([
+    const [kpisHoy, activosAhora, repsActivos, porEstado, recientes] = await Promise.all([
+      // KPIs filtrados por HOY (pedidos creados hoy)
       pool.request().query(`
         SELECT
           COUNT(*)                                                AS total_hoy,
-          SUM(CASE WHEN Estado NOT IN ('entregado','cancelado')
-                   THEN 1 ELSE 0 END)                           AS activos,
           SUM(CASE WHEN Estado = 'entregado' THEN 1 ELSE 0 END) AS entregados,
           SUM(CASE WHEN Estado = 'cancelado' THEN 1 ELSE 0 END) AS cancelados,
           AVG(CASE WHEN Entrega_Pedido IS NOT NULL AND Asignacion_Pedido IS NOT NULL
@@ -31,6 +30,19 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
                    ELSE NULL END)                               AS avg_minutos
         FROM AKR_Pedidos
         WHERE CAST(Creacion_Pedido AS DATE) = CAST(GETDATE() AS DATE)
+      `),
+      // Pedidos activos AHORA (independiente de cuándo fueron creados)
+      pool.request().query(`
+        SELECT COUNT(*) AS activos
+        FROM AKR_Pedidos
+        WHERE Estado IN ('sin_asignar', 'asignado', 'en_camino')
+      `),
+      // Repartidores con pedido activo AHORA
+      pool.request().query(`
+        SELECT COUNT(DISTINCT Id_Repartidor) AS repartidores_activos
+        FROM AKR_Pedidos
+        WHERE Estado IN ('asignado', 'en_camino')
+          AND Id_Repartidor IS NOT NULL
       `),
       pool.request().query(`
         SELECT Estado, COUNT(*) AS cantidad
@@ -47,17 +59,13 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
       `),
     ]);
 
-    // Repartidores activos (con pedido en_camino o asignado hoy)
-    const repsActivos = await pool.request().query(`
-      SELECT COUNT(DISTINCT Id_Repartidor) AS repartidores_activos
-      FROM AKR_Pedidos
-      WHERE Estado IN ('asignado','en_camino')
-        AND CAST(Creacion_Pedido AS DATE) = CAST(GETDATE() AS DATE)
-    `);
-
     return res.json({
       kpis: {
-        ...kpis.recordset[0],
+        total_hoy:           kpisHoy.recordset[0].total_hoy,
+        activos:             activosAhora.recordset[0].activos,
+        entregados:          kpisHoy.recordset[0].entregados,
+        cancelados:          kpisHoy.recordset[0].cancelados,
+        avg_minutos:         kpisHoy.recordset[0].avg_minutos,
         repartidores_activos: repsActivos.recordset[0].repartidores_activos,
       },
       porEstado: porEstado.recordset,
