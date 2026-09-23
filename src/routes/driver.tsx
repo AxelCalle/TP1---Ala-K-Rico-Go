@@ -64,7 +64,10 @@ function PaginaRepartidor() {
     if (!montado || !session) return;
     setCargando(true);
     api.listarPedidos()
-      .then(setPedidos)
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : ((data as any).items ?? []);
+        setPedidos(arr);
+      })
       .catch(() => setPedidos([]))
       .finally(() => setCargando(false));
   }, [montado, session]);
