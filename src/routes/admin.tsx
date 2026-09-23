@@ -34,6 +34,15 @@ type SeccionAdmin = "dashboard" | "pedidos" | "repartidores" | "reportes" | "con
 
 const ESTADO_PEDIDO = ESTADO_PEDIDO_ES;
 
+function fmtMin(min: number | null | undefined): string {
+  if (min == null) return "—";
+  const m = Math.round(min);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h ${rem}min`;
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 function PaginaAdmin() {
@@ -238,7 +247,17 @@ function SeccionDashboard() {
             <KpiCard titulo="Entregados hoy"        valor={kpis?.entregados ?? 0}  sufijo="" highlight />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <KpiCard titulo="Tiempo promedio de entrega" valor={kpis?.avg_minutos != null ? `${Math.round(kpis.avg_minutos)} min` : "Sin datos"} sufijo="" />
+            <KpiCard
+              titulo={kpis?.avg_minutos != null ? "Tiempo promedio hoy" : "Tiempo promedio histórico"}
+              valor={
+                kpis?.avg_minutos != null
+                  ? fmtMin(kpis.avg_minutos)
+                  : kpis?.avg_historico != null
+                    ? fmtMin(kpis.avg_historico)
+                    : "Sin datos"
+              }
+              sufijo=""
+            />
             <KpiCard titulo="Total pedidos sistema"      valor={totalSistema} sufijo="" />
           </div>
 
@@ -417,13 +436,12 @@ function SeccionReportes() {
   type T = import("@/lib/api").ReporteTiemposApi;
   type R = import("@/lib/api").RankingRepartidorApi;
   type P = import("@/lib/api").PedidoApi;
-  type F = import("@/lib/api").PilotoFaseApi;
   type A = import("@/lib/api").AuditoriaApi;
 
   const [tiempos,   setTiempos]   = useState<T | null>(null);
   const [ranking,   setRanking]   = useState<R[]>([]);
   const [pedidos,   setPedidos]   = useState<P[]>([]);
-  const [piloto,    setPiloto]    = useState<F[]>([]);
+  const [piloto,    setPiloto]    = useState<import("@/lib/api").PilotoApi | null>(null);
   const [auditoria, setAuditoria] = useState<A[]>([]);
   const [cargando,  setCargando]  = useState(true);
   const [errCarga,  setErrCarga]  = useState<string | null>(null);
@@ -456,18 +474,6 @@ function SeccionReportes() {
   }, []);
 
   const promGlobal = tiempos?.promedio ?? 0;
-
-  // Agrupar piloto por fase para resumen
-  const faseSummary = ["FIFO", "ACO"].map((f) => {
-    const rows = piloto.filter((r) => r.fase === f);
-    if (!rows.length) return null;
-    const totalN   = rows.reduce((s, r) => s + r.n, 0);
-    const tpeProm  = totalN ? rows.reduce((s, r) => s + r.tpe_promedio * r.n, 0) / totalN : 0;
-    const pct45    = totalN ? rows.reduce((s, r) => s + (r.pct_45min * r.n) / 100, 0) / totalN * 100 : 0;
-    const tpeMin   = Math.min(...rows.map((r) => r.tpe_min));
-    const tpeMax   = Math.max(...rows.map((r) => r.tpe_max));
-    return { fase: f, n: totalN, tpeProm: tpeProm.toFixed(1), tpeMin, tpeMax, pct45: pct45.toFixed(1) };
-  }).filter(Boolean);
 
   const EVENTO_COLOR: Record<string, string> = {
     login_ok:          "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -533,10 +539,10 @@ function SeccionReportes() {
           <div className="grid gap-4 sm:grid-cols-5">
             {[
               { label: "Total entregas",  val: tiempos.total,                             color: "" },
-              { label: "Promedio",        val: tiempos.promedio != null ? `${tiempos.promedio} min` : "—",   color: "text-accent" },
-              { label: "Mínimo",          val: tiempos.minimo   != null ? `${tiempos.minimo} min`   : "—",   color: "text-emerald-600" },
-              { label: "Máximo",          val: tiempos.maximo   != null ? `${tiempos.maximo} min`   : "—",   color: "text-primary" },
-              { label: "Desv. estándar",  val: tiempos.desviacion != null ? `${Math.round(tiempos.desviacion)} min` : "—", color: "" },
+              { label: "Promedio",        val: fmtMin(tiempos.promedio),                     color: "text-accent" },
+              { label: "Mínimo",          val: fmtMin(tiempos.minimo),                       color: "text-emerald-600" },
+              { label: "Máximo",          val: fmtMin(tiempos.maximo),                       color: "text-primary" },
+              { label: "Desv. estándar",  val: tiempos.desviacion != null ? fmtMin(tiempos.desviacion) : "—", color: "" },
             ].map((c) => (
               <div key={c.label} className="rounded-xl border border-border bg-muted/30 p-4 text-center">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">{c.label}</p>
@@ -548,59 +554,74 @@ function SeccionReportes() {
       </div>
 
       {/* ── Comparativa FIFO vs ACO (tesis) ───────────────────────────────── */}
-      {faseSummary.length > 0 && (
+      {piloto && (
         <div className="rounded-xl border border-border bg-card p-6">
           <h2 className="mb-1 text-base font-semibold">Comparativa piloto — FIFO vs ACO</h2>
-          <p className="mb-4 text-xs text-muted-foreground">Datos del experimento de la tesis (Tabla A.1)</p>
+          <p className="mb-4 text-xs text-muted-foreground">
+            FIFO: referencia histórica del proceso manual previo a la app ·
+            ACO: métricas reales del sistema actual
+          </p>
+
+          {/* Tarjetas FIFO / ACO */}
           <div className="grid gap-4 sm:grid-cols-2">
-            {faseSummary.map((f) => f && (
+            {([piloto.fifo, piloto.aco] as const).map((f) => (
               <div key={f.fase} className={`rounded-xl border p-5 ${f.fase === "ACO" ? "border-accent/40 bg-accent/5" : "border-border bg-muted/20"}`}>
                 <div className="flex items-center justify-between mb-3">
-                  <span className={`rounded-md px-2.5 py-0.5 text-sm font-bold ${f.fase === "ACO" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}>
-                    {f.fase}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{f.n} pedidos</span>
+                  <div>
+                    <span className={`rounded-md px-2.5 py-0.5 text-sm font-bold ${f.fase === "ACO" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}>
+                      {f.fase}
+                    </span>
+                    <p className="mt-1.5 text-xs text-muted-foreground">{f.descripcion}</p>
+                  </div>
+                  <span className="text-sm text-muted-foreground shrink-0">{f.n} pedidos</span>
                 </div>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">TPE promedio</span><span className="font-bold">{f.tpeProm} min</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">TPE mínimo</span><span>{f.tpeMin} min</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">TPE máximo</span><span>{f.tpeMax} min</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Entregas ≤ 45 min</span>
-                    <span className={`font-semibold ${parseFloat(f.pct45) >= 80 ? "text-emerald-600" : "text-destructive"}`}>{f.pct45}%</span>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">TPE promedio</span>
+                    <span className="font-bold">{f.tpe_promedio != null ? fmtMin(f.tpe_promedio) : "—"}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">TPE mínimo</span>
+                    <span>{f.tpe_min != null ? fmtMin(f.tpe_min) : "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">TPE máximo</span>
+                    <span>{f.tpe_max != null ? fmtMin(f.tpe_max) : "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Entregas ≤ 45 min</span>
+                    <span className={`font-semibold ${(f.pct_45min ?? 0) >= 50 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                      {f.pct_45min != null ? `${f.pct_45min}%` : "—"}
+                    </span>
+                  </div>
+                  {f.pedidos_por_ruta != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Pedidos por ruta</span>
+                      <span>{f.pedidos_por_ruta}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
-          {/* Tabla por jornada */}
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-secondary text-secondary-foreground">
-                <tr className="text-left">
-                  <Encabezado>Jornada</Encabezado>
-                  <Encabezado>Fase</Encabezado>
-                  <Encabezado>Pedidos</Encabezado>
-                  <Encabezado>TPE promedio</Encabezado>
-                  <Encabezado>TPE min</Encabezado>
-                  <Encabezado>TPE max</Encabezado>
-                  <Encabezado>≤ 45 min</Encabezado>
-                </tr>
-              </thead>
-              <tbody>
-                {piloto.map((r) => (
-                  <tr key={`${r.fase}-${r.jornada}`} className="border-t border-border">
-                    <Celda className="font-mono">{r.jornada}</Celda>
-                    <Celda><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${r.fase === "ACO" ? "bg-accent/15 text-accent" : "bg-secondary"}`}>{r.fase}</span></Celda>
-                    <Celda>{r.n}</Celda>
-                    <Celda className="font-medium">{r.tpe_promedio} min</Celda>
-                    <Celda>{r.tpe_min} min</Celda>
-                    <Celda>{r.tpe_max} min</Celda>
-                    <Celda className={parseFloat(String(r.pct_45min)) >= 80 ? "text-emerald-600 font-semibold" : "text-destructive"}>{r.pct_45min}%</Celda>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {/* Resumen de mejora */}
+          {piloto.mejora && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl bg-accent/5 border border-accent/20 p-4">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Reducción TPE</p>
+                <p className="mt-0.5 text-2xl font-bold text-accent">−{piloto.mejora.reduccion_min} min</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Mejora relativa</p>
+                <p className="mt-0.5 text-2xl font-bold text-accent">−{piloto.mejora.reduccion_pct}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Más entregas ≤ 45 min</p>
+                <p className="mt-0.5 text-2xl font-bold text-emerald-600 dark:text-emerald-400">+{piloto.mejora.mejora_pct_45}pp</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -633,7 +654,7 @@ function SeccionReportes() {
                     <Celda><span className="font-semibold text-emerald-700 dark:text-emerald-400">{r.entregados}</span></Celda>
                     <Celda>
                       {r.avg_minutos != null
-                        ? <span className={bajDesempeno ? "text-destructive font-semibold" : ""}>{Math.round(r.avg_minutos)} min</span>
+                        ? <span className={bajDesempeno ? "text-destructive font-semibold" : ""}>{fmtMin(r.avg_minutos)}</span>
                         : <span className="text-muted-foreground">—</span>}
                     </Celda>
                     <Celda>
@@ -685,7 +706,7 @@ function SeccionReportes() {
                         {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
                       </span>
                     </Celda>
-                    <Celda>{tpe != null ? `${tpe} min` : <span className="text-muted-foreground">—</span>}</Celda>
+                    <Celda>{tpe != null ? fmtMin(tpe) : <span className="text-muted-foreground">—</span>}</Celda>
                     <Celda className="text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(p.Creacion_Pedido).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
                     </Celda>
@@ -1037,6 +1058,8 @@ function SeccionPedidos() {
   const [repartidores, setRepartidores] = useState<import("@/lib/api").RepartidorApi[]>([]);
   const [conteoSistema, setConteoSistema] = useState<{ activos: number; completados: number; total: number }>({ activos: 0, completados: 0, total: 0 });
   const [cargando,     setCargando]     = useState(true);
+  const [sortBy,       setSortBy]       = useState<"id" | "fecha" | "estado">("fecha");
+  const [sortDir,      setSortDir]      = useState<"asc" | "desc">("desc");
   const [errCarga,     setErrCarga]     = useState<string | null>(null);
   const [abierto,      setAbierto]      = useState(false);
   const [copiado,      setCopiado]      = useState<number | null>(null);
@@ -1050,11 +1073,11 @@ function SeccionPedidos() {
     : filtro === "completados" ? "completados"
     : undefined;
 
-  const cargar = (p = page, g = grupoFiltro) => {
+  const cargar = (p = page, g = grupoFiltro, sb = sortBy, sd = sortDir) => {
     setCargando(true);
     setErrCarga(null);
     Promise.allSettled([
-      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE, grupo: g }),
+      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE, grupo: g, sortBy: sb, sortDir: sd }),
       api.listarRepartidores(),
     ])
       .then(([pedRes, repRes]) => {
@@ -1088,7 +1111,36 @@ function SeccionPedidos() {
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { cargar(page, grupoFiltro); }, [page, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(page, grupoFiltro, sortBy, sortDir); }, [page, filtro, sortBy, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function ejecutarLimpiarAtascados() {
+    try {
+      const r = await api.limpiarAtascados();
+      setPage(1);
+      cargar(1, grupoFiltro, sortBy, sortDir);
+      // Refrescar conteos del dashboard
+      api.dashboard().then((d) => {
+        const porEstado = d.porEstado ?? [];
+        const activos = porEstado.filter((e) => ["sin_asignar","asignado","en_camino"].includes(e.Estado)).reduce((s,e)=>s+e.cantidad,0);
+        const completados = porEstado.filter((e) => ["entregado","cancelado"].includes(e.Estado)).reduce((s,e)=>s+e.cantidad,0);
+        const total = porEstado.reduce((s,e)=>s+e.cantidad,0);
+        setConteoSistema({ activos, completados, total });
+      }).catch(() => {});
+      alert(`${r.cancelados} pedido${r.cancelados !== 1 ? "s" : ""} cancelado${r.cancelados !== 1 ? "s" : ""}.`);
+    } catch {
+      alert("Error al cancelar pedidos.");
+    }
+  }
+
+  function confirmarLimpiarAtascados() {
+    const activos = conteoSistema.activos;
+    if (activos === 0) { alert("No hay pedidos activos para cancelar."); return; }
+    setConfirm({
+      mensaje: `¿Cancelar todos los pedidos activos (${activos})?`,
+      detalle: "Esto incluye pedidos sin asignar, asignados y en camino. No se puede deshacer.",
+      accion: ejecutarLimpiarAtascados,
+    });
+  }
 
   async function ejecutarCambioEstado(id: number, estado: string) {
     await api.cambiarEstadoPedido(id, estado).catch(() => {});
@@ -1127,17 +1179,21 @@ function SeccionPedidos() {
 
   const repsActivos = repartidores.filter((r) => r.Activo_Usuario);
 
+  function toggleSort(col: "id" | "fecha" | "estado") {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(col);
+      setSortDir("desc");
+    }
+    setPage(1);
+  }
+
   const ESTADOS_ACTIVOS    = ["sin_asignar", "asignado", "en_camino"];
   const ESTADOS_COMPLETADOS = ["entregado", "cancelado"];
 
-  const pedidosFiltrados = pedidos.filter((p) => {
-    if (filtro === "activos")     return ESTADOS_ACTIVOS.includes(p.Estado);
-    if (filtro === "completados") return ESTADOS_COMPLETADOS.includes(p.Estado);
-    return true;
-  });
-
-  const cntActivos     = pedidos.filter((p) => ESTADOS_ACTIVOS.includes(p.Estado)).length;
-  const cntCompletados = pedidos.filter((p) => ESTADOS_COMPLETADOS.includes(p.Estado)).length;
+  // El servidor ya filtra por grupo — no re-filtramos para no ocultar filas
+  const pedidosFiltrados = pedidos;
 
   const TABS: { key: FiltroEstado; label: string; count: number }[] = [
     { key: "activos",     label: "Activos",     count: conteoSistema.activos },
@@ -1157,12 +1213,27 @@ function SeccionPedidos() {
               : `${conteoSistema.activos} activo${conteoSistema.activos !== 1 ? "s" : ""} · ${conteoSistema.completados} completado${conteoSistema.completados !== 1 ? "s" : ""} · ${conteoSistema.total} total`}
           </p>
         </div>
-        <button
-          onClick={() => setAbierto(true)}
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Plus className="h-4 w-4" /> Nuevo pedido
-        </button>
+        <div className="flex items-center gap-2">
+          {conteoSistema.activos > 0 && (
+            <button
+              onClick={confirmarLimpiarAtascados}
+              className="inline-flex items-center gap-2 rounded-md border border-destructive/40 px-4 py-2.5 text-sm font-semibold text-destructive transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title="Cancela todos los pedidos activos (limpieza de pruebas)"
+            >
+              <ShieldOff className="h-4 w-4" />
+              <span className="hidden sm:inline">Cancelar activos</span>
+              <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                {conteoSistema.activos}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => setAbierto(true)}
+            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Plus className="h-4 w-4" /> Nuevo pedido
+          </button>
+        </div>
       </div>
 
       {errCarga && !cargando && (
@@ -1196,31 +1267,38 @@ function SeccionPedidos() {
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-secondary text-secondary-foreground">
             <tr className="text-left">
+              <Encabezado className="w-10"
+                onClick={() => toggleSort("id")}
+                sorted={sortBy === "id" ? sortDir : null}>#</Encabezado>
               <Encabezado className="w-28">Pedido</Encabezado>
               <Encabezado className="min-w-[9rem]">Cliente</Encabezado>
               <Encabezado className="w-[11rem]">Dirección</Encabezado>
               <Encabezado className="w-[11rem]">Productos</Encabezado>
-              <Encabezado className="w-36">Estado</Encabezado>
+              <Encabezado className="w-36"
+                onClick={() => toggleSort("estado")}
+                sorted={sortBy === "estado" ? sortDir : null}>Estado</Encabezado>
               <Encabezado className="w-52">Repartidor</Encabezado>
-              <Encabezado className="w-32">Fecha</Encabezado>
+              <Encabezado className="w-32"
+                onClick={() => toggleSort("fecha")}
+                sorted={sortBy === "fecha" ? sortDir : null}>Fecha</Encabezado>
               <Encabezado className="w-24">Enlace</Encabezado>
             </tr>
           </thead>
           <tbody>
             {cargando ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center">
+                <td colSpan={9} className="px-4 py-12 text-center">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                 </td>
               </tr>
             ) : pedidosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   {filtro === "activos" ? "No hay pedidos activos en este momento." : "No hay pedidos en esta categoría."}
                 </td>
               </tr>
             ) : (
-              pedidosFiltrados.map((p) => {
+              pedidosFiltrados.map((p, idx) => {
                 const completado = ESTADOS_COMPLETADOS.includes(p.Estado);
                 const fechaStr = (() => {
                   const d = new Date(p.Creacion_Pedido);
@@ -1229,6 +1307,11 @@ function SeccionPedidos() {
                 })();
                 return (
                   <tr key={p.Id_Pedido} className={`border-t border-border transition-colors ${completado ? "opacity-60" : "hover:bg-muted/30"}`}>
+                    <Celda className="w-10 text-center">
+                      <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                        {(page - 1) * PAGE_SIZE + idx + 1}
+                      </span>
+                    </Celda>
                     <Celda className="w-28">
                       <span className="font-mono text-xs text-muted-foreground">
                         AKA-{String(p.Id_Pedido).padStart(4, "0")}
@@ -2006,7 +2089,25 @@ function NavBtn({
 
 // ─── Helpers de tabla ─────────────────────────────────────────────────────────
 
-function Encabezado({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Encabezado({ children, className = "", onClick, sorted }: {
+  children: React.ReactNode; className?: string;
+  onClick?: () => void; sorted?: "asc" | "desc" | null;
+}) {
+  if (onClick) {
+    return (
+      <th
+        className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-foreground ${className}`}
+        onClick={onClick}
+      >
+        <span className="inline-flex items-center gap-1">
+          {children}
+          <span className="text-[10px] leading-none text-muted-foreground/70">
+            {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}
+          </span>
+        </span>
+      </th>
+    );
+  }
   return <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className}`}>{children}</th>;
 }
 function Celda({ children, className = "" }: { children: React.ReactNode; className?: string }) {

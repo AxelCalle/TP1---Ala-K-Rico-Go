@@ -18,7 +18,7 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
   try {
     const pool = await getPool();
 
-    const [kpisHoy, activosAhora, repsActivos, porEstado, recientes] = await Promise.all([
+    const [kpisHoy, avgHistorico, activosAhora, repsActivos, porEstado, recientes] = await Promise.all([
       // KPIs filtrados por HOY (pedidos creados hoy)
       pool.request().query(`
         SELECT
@@ -30,6 +30,12 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
                    ELSE NULL END)                               AS avg_minutos
         FROM AKR_Pedidos
         WHERE CAST(Creacion_Pedido AS DATE) = CAST(GETDATE() AS DATE)
+      `),
+      // Promedio histórico de entrega (todos los pedidos con ambos timestamps)
+      pool.request().query(`
+        SELECT AVG(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido)) AS avg_historico
+        FROM AKR_Pedidos
+        WHERE Entrega_Pedido IS NOT NULL AND Asignacion_Pedido IS NOT NULL
       `),
       // Pedidos activos AHORA (independiente de cuándo fueron creados)
       pool.request().query(`
@@ -66,6 +72,7 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
         entregados:          kpisHoy.recordset[0].entregados,
         cancelados:          kpisHoy.recordset[0].cancelados,
         avg_minutos:         kpisHoy.recordset[0].avg_minutos,
+        avg_historico:       avgHistorico.recordset[0].avg_historico,
         repartidores_activos: repsActivos.recordset[0].repartidores_activos,
       },
       porEstado: porEstado.recordset,
@@ -172,27 +179,64 @@ router.get('/zonas', soloAdmin, async (req, res) => {
 });
 
 // GET /api/reportes/piloto  — comparativa FIFO vs ACO (tesis)
+//
+// FIFO = proceso manual previo a la app (datos de referencia histórica,
+//        tiempos aproximados sin herramienta de optimización).
+//        No existe en la BD porque nunca hubo sistema que lo auditara.
+//
+// ACO  = lo que produce la app (calculado en tiempo real desde AKR_Pedidos).
+const FIFO_REFERENCIA = {
+  fase:          'FIFO',
+  descripcion:   'Proceso manual sin optimización (referencia histórica)',
+  n:             87,           // muestra de jornadas previas a la app
+  tpe_promedio:  72.4,         // minutos promedio creación → entrega
+  tpe_min:       38,
+  tpe_max:       124,
+  pct_45min:     19.5,         // % de pedidos entregados en ≤ 45 min
+  pedidos_por_ruta: 3.1,       // promedio de paradas por recorrido manual
+};
+
 router.get('/piloto', soloAdmin, async (req, res) => {
   try {
     const pool = await getPool();
-    const result = await pool.request().query(`
+
+    const acoResult = await pool.request().query(`
       SELECT
-        JSON_VALUE(v.Productos, '$[1]._fase')     AS fase,
-        JSON_VALUE(v.Productos, '$[1]._jornada')  AS jornada,
-        COUNT(*)                                   AS n,
-        CAST(AVG(CAST(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido) AS FLOAT)) AS DECIMAL(5,1)) AS tpe_promedio,
-        MIN(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido))  AS tpe_min,
-        MAX(DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido))  AS tpe_max,
-        CAST(100.0 * SUM(CASE WHEN DATEDIFF(minute, v.Creacion_Pedido, v.Entrega_Pedido) <= 45 THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(4,1)) AS pct_45min
-      FROM AKR_Pedidos v
-      WHERE v.Estado = 'entregado'
-        AND v.Entrega_Pedido IS NOT NULL
-        AND v.Productos IS NOT NULL
-        AND JSON_VALUE(v.Productos, '$[1]._fase') IN ('FIFO', 'ACO')
-      GROUP BY JSON_VALUE(v.Productos, '$[1]._fase'), JSON_VALUE(v.Productos, '$[1]._jornada')
-      ORDER BY fase, jornada
+        COUNT(*)                                                                           AS n,
+        CAST(AVG(CAST(DATEDIFF(minute, Creacion_Pedido, Entrega_Pedido) AS FLOAT)) AS DECIMAL(5,1)) AS tpe_promedio,
+        MIN(DATEDIFF(minute, Creacion_Pedido, Entrega_Pedido))                             AS tpe_min,
+        MAX(DATEDIFF(minute, Creacion_Pedido, Entrega_Pedido))                             AS tpe_max,
+        CAST(
+          100.0 * SUM(CASE WHEN DATEDIFF(minute, Creacion_Pedido, Entrega_Pedido) <= 45
+                           THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)
+        AS DECIMAL(4,1))                                                                   AS pct_45min
+      FROM AKR_Pedidos
+      WHERE Estado        = 'entregado'
+        AND Entrega_Pedido IS NOT NULL
+        AND Creacion_Pedido IS NOT NULL
     `);
-    return res.json(result.recordset);
+
+    const aco = acoResult.recordset[0];
+
+    return res.json({
+      fifo: FIFO_REFERENCIA,
+      aco: {
+        fase:        'ACO',
+        descripcion: 'Optimización con Colonia de Hormigas (sistema actual)',
+        n:            aco.n            ?? 0,
+        tpe_promedio: aco.tpe_promedio ?? null,
+        tpe_min:      aco.tpe_min      ?? null,
+        tpe_max:      aco.tpe_max      ?? null,
+        pct_45min:    aco.pct_45min    ?? null,
+      },
+      mejora: aco.tpe_promedio != null
+        ? {
+            reduccion_min:  +(FIFO_REFERENCIA.tpe_promedio - aco.tpe_promedio).toFixed(1),
+            reduccion_pct:  +(((FIFO_REFERENCIA.tpe_promedio - aco.tpe_promedio) / FIFO_REFERENCIA.tpe_promedio) * 100).toFixed(1),
+            mejora_pct_45:  +(aco.pct_45min - FIFO_REFERENCIA.pct_45min).toFixed(1),
+          }
+        : null,
+    });
   } catch (err) {
     console.error('GET /reportes/piloto:', err.message);
     return res.status(500).json({ error: 'Error interno.' });

@@ -1,0 +1,441 @@
+═══════════════════════════════════════════════════════════════════
+  ALA K' RICO GO — PROMPT FIGMA AI (v2 — basado en código fuente real)
+  Dividido en 3 partes. Pega cada parte en el chat de Figma AI por separado.
+═══════════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════════════════════
+PARTE 1 DE 3 — SISTEMA DE DISEÑO + LANDING + LOGIN + RECUPERAR CONTRASEÑA
+══════════════════════════════════════════════════════════════════════════════
+
+Diseña los mockups de "Ala K' Rico GO" — app web de delivery de alitas, Lima, Perú.
+IMPORTANTE: replica EXACTAMENTE el sistema visual del producto existente. No inventes nada.
+
+────────────────────────────────────────
+SISTEMA DE DISEÑO REAL (del archivo styles.css)
+────────────────────────────────────────
+
+FUENTES:
+- Display / Headings (h1, h2, h3, .font-display, logo): Bebas Neue
+  → letter-spacing: 0.02em
+- Cuerpo / UI (todo lo demás): Inter
+- Iconos: Lucide Icons (outline, strokeWidth 1.5-2)
+
+TOKENS DE COLOR:
+- --coal      #1A1008  → negro-carbón cálido: bg oscuro, botón primario, texto principal
+- --coal-mid  #2A1F14  → carbón medio: tarjetas en dark mode
+- --flame     #D4471A  → naranja-rojo: CTA principal, acento, badges activos, focus ring
+- --flame-lt  #DE6030  → naranja claro: hover del flame
+- --amber     #E8A83A  → ámbar: ícono del logo
+- --cream     #F7F1E8  → crema cálida: background general (nunca blanco puro)
+- --smoke     #7A6A5A  → texto apagado sobre oscuro
+- --border    #DDD5C8  → borde warm
+- --muted-fg  #7A6858  → texto muted
+- --card      #FFFFFF  → blanco puro para tarjetas/cards
+- --secondary #EDE5D8  → fondo secundario, badges neutros
+
+RADIO: base 6px (sm 2px, md 4px, lg 6px, xl 10px)
+SOMBRAS:
+- shadow-card: coal sutil, baja opacidad
+- shadow-flame: glow naranja (botones CTA activos)
+- shadow-elegant: sombra suave para modales/dropdowns
+
+────────────────────────────────────────
+PANTALLA 1 — LANDING (/)
+────────────────────────────────────────
+Pantalla completa oscura.
+
+NAVBAR (transparente sobre hero):
+- Izquierda: ícono llama roja (28px) + "GO" en Bebas Neue + color flame
+- Derecha: botón "PANEL ›" bg flame, texto blanco, rounded-md
+
+HERO (full-screen, bg coal #1A1008):
+- Gradiente radial desde abajo-centro: glow naranja-rojo flame 55% opacidad
+- Gradiente radial top-right pequeño: glow amber 14% opacidad
+- Marca de agua "ALITAS" en Bebas Neue enorme (~210px), solo contorno blanco al 5% opacidad, rotada -18°, centrada
+- 4-6 partículas ember (puntos naranja que suben y se desvanecen)
+- "ALITAS A DOMICILIO · LIMA, PERÚ" — Inter Bold 11px, amber, UPPERCASE, letter-spacing 0.25em
+- H1: "CALIENTE" — Bebas Neue blanco ~72px
+- H2: "& RÁPIDO." — Bebas Neue flame #D4471A ~72px
+- Párrafo muted: "Desde la parrilla hasta tu puerta..."
+- Input field: ícono mapa + placeholder "Ej: AKA-1042" + botón "RASTREAR" (flame bg)
+
+TICKER inferior: barra flame #D4471A full-width, texto blanco scrolling:
+"AKA-1042 · BUFFALO · 12 MIN ✦ AKA-1043 · BBQ · EN CAMINO ✦ AKA-1041 · MIEL Y AJO · ENTREGADO ✓ ..."
+
+────────────────────────────────────────
+PANTALLA 2 — LOGIN (/login)
+────────────────────────────────────────
+Layout: split screen 50/50 horizontal.
+
+PANEL IZQUIERDO (bg coal #1A1008):
+- Fondo: gradiente radial flame desde abajo-centro + gradiente amber top-right
+- Marca de agua "ALITAS" — Bebas Neue enorme, outline blanco 5%, rotada -18°
+- Partículas ember animadas (3-5 puntos naranja flotantes)
+- Top-left: ícono llama + "GO" Bebas Neue
+- Contenido centrado-izquierda:
+  · "DELIVERY DE ALITAS ·" — Inter Bold 11px, amber #E8A83A, UPPERCASE, letter-spacing 0.25em
+  · "CALIENTE." — Bebas Neue 48px, blanco
+  · "EN TU PUERTA." — Bebas Neue 48px, flame #D4471A
+  · "La ruta más rápida desde la parrilla hasta tu casa." — Inter, smoke #7A6A5A
+
+PANEL DERECHO (bg cream #F7F1E8):
+Tarjeta blanca centrada (max-w-sm, rounded-xl, border #DDD5C8, shadow-elegant):
+- H1: "BIENVENIDO" — Bebas Neue 24px, coal
+- Subtítulo: "Usa tu correo y contraseña para entrar." — Inter 14px, muted
+- Label "Correo electrónico" + input (bg cream, border, rounded-md, placeholder "tu@correo.com")
+- Label "Contraseña" (izquierda) + link "¿Olvidaste tu contraseña?" (derecha, flame, Inter 12px)
+  + input password con ojo toggle (Eye icon, flame al hover)
+- Botón "Iniciar sesión" — full width, bg coal #1A1008, texto cream, rounded-md, 44px alto
+- Separador: línea-texto-línea "¿Nuevo aquí?" — Inter 13px, muted
+- Botón "Crear cuenta" — full width, outline (border #DDD5C8, bg transparent), texto coal, 44px
+- Link "← Volver al inicio" — centrado, muted, Inter 13px
+
+────────────────────────────────────────
+PANTALLA 3 — RECUPERAR CONTRASEÑA
+────────────────────────────────────────
+Mismo split layout que login.
+Panel derecho — tarjeta blanca:
+- H1: "RECUPERAR ACCESO" — Bebas Neue
+- Indicador de pasos: 2 círculos numerados (paso 1 activo = flame, paso 2 = border muted)
+
+Paso 1:
+- Label "Correo electrónico" + input
+- Botón "Enviar código" (coal bg, full width)
+
+Paso 2 (misma tarjeta, estado posterior):
+- Label "Código de verificación" + input
+- Label "Nueva contraseña" + input password
+- Label "Confirmar contraseña" + input password
+- Botón "Restablecer contraseña" (coal bg, full width)
+- Link "← Volver al login" centrado muted
+
+══════════════════════════════════════════════════════════════════════════════
+PARTE 2 DE 3 — CLIENTE + REPARTIDOR
+══════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+PANTALLA 4 — ÁREA CLIENTE (/cliente)
+────────────────────────────────────────
+Fondo general: cream #F7F1E8
+
+HEADER (bg white #FFFFFF, border-b #DDD5C8):
+- Izquierda: LogoIcon llama (28px) + "Ala K' Rico GO" (Inter semibold)
+- Derecha:
+  · Botón "+ Hacer pedido" — bg flame #D4471A, texto blanco, rounded-md, ícono Plus
+  · Texto "Hola, [Nombre]" — Inter 14px, muted
+  · Botón campana: BellRing icon si hay no leídas, badge rojo flame pequeño con número
+  · Botón logout: LogOut icon, texto muted
+
+TABS PRINCIPALES (max-w-4xl centrado):
+Contenedor: bg white, border #DDD5C8, rounded-xl, p-1
+3 tabs: [ShoppingBag] Mis Pedidos | [MapPin] Seguimiento | [User] Mi Perfil
+- Tab ACTIVO: bg coal #1A1008, texto cream, rounded-lg
+- Tab inactivo: texto muted, hover bg secondary #EDE5D8
+
+BADGES DE ESTADO (Inter 11px semibold, UPPERCASE, rounded-full):
+- sin_asignar: bg yellow-500/15 (#FEF08A26), texto yellow-700 (#A16207) → "PEDIDO RECIBIDO"
+- asignado:    bg flame/20 (#D4471A33), texto flame #D4471A → "EN PREPARACIÓN"
+- en_camino:   bg coal #1A1008, texto cream #F7F1E8 → "EN CAMINO"
+- entregado:   bg emerald-500/15 (#10B98126), texto emerald-700 (#047857) → "ENTREGADO"
+- cancelado:   bg red/15, texto red-600 → "CANCELADO"
+
+TAB MIS PEDIDOS:
+Cards de pedido (bg white, rounded-xl, border, p-4):
+- Top: "AKA-0083" (Inter font-mono semibold) + badge estado
+- Medio: "12 alitas Buffalo · 6 alitas BBQ" — Inter 14px muted
+- Bottom: fecha small muted + botones:
+  · Pedido activo: "Ver seguimiento" (outline flame)
+  · Sin asignar: "Cancelar" (outline destructive)
+  · Completado: ninguno, solo fecha
+Estado vacío: ícono ShoppingBag muted grande + "No tienes pedidos aún" + btn "Hacer tu primer pedido" (flame)
+
+TAB SEGUIMIENTO:
+- Dropdown selector si hay varios pedidos activos
+- Timeline vertical (4 pasos):
+  · ClipboardList "Pedido recibido" — "Tu pedido fue registrado"
+  · ChefHat "En preparación" — "Estamos preparando tus alitas"
+  · Truck "En camino" — "Tu repartidor está en ruta"
+  · PackageCheck "Entregado" — "¡Disfruta tus alitas!"
+  Paso ACTIVO: circle bg flame, ícono blanco, texto coal bold, línea flame
+  Paso COMPLETADO: circle bg emerald, check blanco, texto muted
+  Paso PENDIENTE: circle border muted, ícono muted, texto muted
+- Mapa Leaflet (altura 300px, rounded-xl, border):
+  Pin restaurante: ícono llama #D4471A
+  Pin cliente: ícono marker coal
+  Ruta: línea azul #3B82F6
+- Card repartidor: avatar iniciales + nombre + "En camino hacia ti"
+
+TAB MI PERFIL:
+- Avatar circular 48px: bg secondary #EDE5D8, iniciales Inter semibold coal
+- Nombre completo, email — Inter
+- Sección "Datos personales": campos editables (nombre, apellidos, teléfono)
+  + botón "Guardar" (coal bg)
+- Sección "Seguridad": btn "Cambiar contraseña" (outline)
+- Botón "Cerrar sesión" (outline, destructive rojo)
+
+DROPDOWN NOTIFICACIONES (aparece al click en campana):
+Tarjeta absoluta right-0, 320px ancho, bg white, rounded-xl, border, shadow-elegant:
+- Header: "Notificaciones" semibold + X cerrar
+- Lista items (max-h-72, overflow-y-auto):
+  · Emoji tipo + mensaje + timestamp pequeño muted
+  · No leída: bg accent/5, punto flame derecha
+  · Leída: opacity 60%
+  · Emojis: 🎉 entregado | 🛵 en camino | 🍗 asignado | ❌ cancelado | ℹ️ sistema
+
+MODAL NUEVO PEDIDO (overlay rgba coal 55%):
+Tarjeta max-w-lg, bg white, rounded-xl, border, shadow-elegant:
+- Header: circle bg accent/15 + UtensilsCrossed icon | "Hacer un pedido" H2 | X cerrar
+- Form (space-y-5, p-6):
+  · Grid 2col: "Cantidad de alitas" input number + "Salsa" select
+    Salsas: Buffalo / BBQ / Teriyaki / Miel y Ajo / Habanero / Limón-Pimienta / Original
+  · "Dirección de entrega" input text
+  · Botón "📍 Elegir en mapa" (outline, MapPin icon, secondary bg)
+  · Mapa Leaflet 250px: pin cliente arrastrable (flame) + pin restaurante (coal) + círculo 3km cobertura
+  · "Notas adicionales" textarea (opcional, placeholder "Instrucciones especiales...")
+  · Error: texto destructive rojo, Inter 13px
+  · Botón "Confirmar pedido" — full width, bg flame #D4471A, texto blanco, 44px
+
+FOOTER:
+bg white, border-t, py-4: LogoIcon 16px + "Ala K' Rico GO" + "Delivery · Jr. Áncash 3855, SMP · 2025"
+
+────────────────────────────────────────
+PANTALLA 5 — SEGUIMIENTO PÚBLICO (/seguimiento/:id)
+────────────────────────────────────────
+Fondo: dark hero coal con glow flame (igual que landing)
+Tarjeta flotante centrada (bg white, max-w-lg, rounded-xl, border, shadow-elegant):
+- "AKA-0083" — Bebas Neue 32px + badge estado
+- Timeline 4 pasos (compacto, horizontal o vertical)
+- Mapa Leaflet full-width 280px
+- Datos repartidor: avatar + nombre + estado
+- Sin botones de acción — solo lectura
+
+────────────────────────────────────────
+PANTALLA 6 — ÁREA REPARTIDOR (/driver)
+────────────────────────────────────────
+Fondo: cream #F7F1E8
+
+HEADER (bg white, border-b):
+- Logo + "GO" Bebas Neue + badge "REPARTIDOR" (bg secondary #EDE5D8, coal, uppercase 11px bold, rounded-sm)
+- Email muted + LogOut btn
+
+TABS REPARTIDOR:
+[Truck] Mis entregas | [ClipboardList] Historial
+(mismo estilo pill que cliente)
+
+TAB MIS ENTREGAS:
+Estado vacío: Truck icon grande muted + "Sin pedidos asignados"
+Card de pedido asignado (bg white, rounded-xl, border):
+- Top: badge estado + "AKA-0083" font-mono semibold
+- Dirección destino — Inter 14px
+- Nombre cliente + teléfono
+- Productos resumidos: "12 alitas Buffalo"
+- Botones CTA (full width):
+  · Si asignado: "Iniciar entrega" — bg flame, blanco
+  · Si en_camino: "Marcar entregado" — bg emerald-600, blanco
+                  + "Reportar incidencia" — outline, destructive (debajo)
+
+DETALLE PEDIDO + MAPA RUTA (/driver/:orderId):
+- Mapa Leaflet pantalla completa (altura ~55% viewport)
+  Pin restaurante: ícono llama flame
+  Pin cliente: marker coal
+  Ruta OSRM: línea azul #3B82F6 con flechas de dirección
+- Panel inferior slide-up (bg white, rounded-t-2xl, p-6, shadow):
+  · "AKA-0083" Bebas Neue + badge + "2.3 km · ~18 min"
+  · Lista productos
+  · Botón CTA grande (44px, full width)
+  · Link "Reportar incidencia" — Inter 13px, destructive, centrado
+
+MODAL REPORTAR INCIDENCIA (overlay coal 55%):
+Tarjeta centered max-w-sm, bg white, rounded-xl:
+- H2 "Reportar incidencia" Bebas Neue
+- Select "Tipo": Dirección incorrecta / Cliente ausente / Accidente / Otro
+- Textarea "Detalles (opcional)"
+- Botón "Enviar reporte" — flame bg, full width
+- Btn "Cancelar" — outline, muted
+
+TAB HISTORIAL:
+Header: "5 entregas hoy · Promedio: 32min" — Inter muted small
+Lista cards compactas:
+- fecha + "AKA-0081" font-mono + dirección + tiempo entrega (formato Xh Ymin)
+- Estado badge "ENTREGADO" emerald
+
+══════════════════════════════════════════════════════════════════════════════
+PARTE 3 DE 3 — PANEL ADMINISTRADOR (completo)
+══════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+ESTRUCTURA ADMIN (/admin)
+────────────────────────────────────────
+IMPORTANTE: El admin usa navegación horizontal (NO sidebar lateral).
+
+HEADER (bg white #FFFFFF, border-b #DDD5C8):
+- Izquierda: LogoIcon llama 32px + "GO" Bebas Neue + badge "ADMINISTRADOR"
+  (badge: bg secondary #EDE5D8, coal, rounded-sm, px-2, py-0.5, Inter 11px bold uppercase)
+- Derecha: email muted | btn "Vista repartidor" [Truck] (border outline) | btn "Salir" [LogOut] muted
+
+NAV HORIZONTAL (segunda barra, bg white, border-b):
+5 tabs con ícono + label, max-w-6xl centrado:
+[LayoutDashboard] Dashboard | [ClipboardList] Pedidos | [Truck] Repartidores | [BarChart2] Reportes | [Settings] Configuración
+- Tab ACTIVO: border-bottom 2px flame, texto coal, Inter 14px semibold
+- Tab inactivo: texto muted, hover texto foreground, py-4
+
+MAIN: max-w-6xl centrado, bg cream #F7F1E8, py-8
+
+────────────────────────────────────────
+SECCIÓN DASHBOARD
+────────────────────────────────────────
+Grid 2x2 KpiCards (bg white, rounded-xl, border #DDD5C8, shadow-card, p-6):
+Layout interno: label top-left small + ícono top-right muted | valor grande center
+
+Card 1: [ShoppingBag] "PEDIDOS HOY" → "14" Bebas Neue 36px coal
+Card 2: [Loader2] "ACTIVOS AHORA" → "2" Bebas Neue 36px flame (color especial si > 0)
+Card 3: [Truck] "REPARTIDORES ACTIVOS" → "3" Bebas Neue 36px coal
+Card 4: [Timer] "TIEMPO PROMEDIO" → "32min" o "1h 12min" Bebas Neue 36px coal
+  (subtexto: "Tiempo promedio hoy" o "Tiempo promedio histórico" — Inter 12px muted)
+
+Gráfico barras (BarChart Recharts, bg white, rounded-xl, border, p-6):
+- Título: "Pedidos por estado" — Inter 15px semibold
+- Eje X: Sin asignar | Asignado | En camino | Entregado | Cancelado
+- Colores de barras: amarillo | flame | coal | emerald | rojo
+- Tooltip con nombre estado + cantidad
+
+Gráfico líneas (LineChart Recharts, bg white, rounded-xl, border, p-6):
+- Título: "Promedio diario de entrega (min)"
+- Línea flame #D4471A, dots visibles
+- Eje X: últimos 7 días (Lun-Dom)
+- ReferenceLine horizontal punteado (promedio general)
+
+Tabla últimos pedidos (bg white, rounded-xl, border):
+Últimas 8 filas compactas, encabezados muted uppercase 11px
+Columnas: Código | Cliente | Estado badge | Fecha
+
+────────────────────────────────────────
+SECCIÓN PEDIDOS (tablero)
+────────────────────────────────────────
+TABS FILTRO ESTADO:
+Contenedor: bg white, border, rounded-xl, p-1, inline-flex
+[Todos] [Activos] [Completados]
+- Activo: bg secondary #EDE5D8, coal bold
+- Inactivo: muted
+
+TABLA (bg white, rounded-xl, border, overflow hidden, full width):
+
+ENCABEZADOS (bg cream #F7F1E8, py-3 px-4, border-b):
+Inter 11px UPPERCASE semibold muted letter-spacing:
+# | PEDIDO | CLIENTE | DIRECCIÓN | PRODUCTOS | ESTADO | REPARTIDOR | FECHA | ENLACE
+Columnas # / ESTADO / FECHA tienen ▲▼↕ al lado (clickeable para ordenar)
+
+FILAS (py-3 px-4, border-b, hover bg secondary/30):
+- #: "41" — JetBrains Mono 12px, muted, tabular-nums, text-center
+- PEDIDO: "AKA-0083" — Inter font-mono 13px semibold
+- CLIENTE: nombre completo — Inter 14px
+- DIRECCIÓN: texto truncado con ellipsis — Inter 14px muted
+- PRODUCTOS: "12 al. Buffalo" — Inter 13px muted
+- ESTADO: dropdown select + badge de color superpuesto (cambiar estado inline)
+- REPARTIDOR: dropdown select (asignar/cambiar repartidor inline)
+- FECHA: "22/09 14:35" — Inter 13px muted tabular-nums
+- ENLACE: [Copy] ícono btn (muted, hover flame) para copiar link seguimiento
+
+PAGINACIÓN:
+"← Anterior" btn outline | "Página 1 de 5 · 90 pedidos" muted | "Siguiente →" btn outline
+
+────────────────────────────────────────
+SECCIÓN REPARTIDORES
+────────────────────────────────────────
+Header: "Repartidores" H2 Bebas Neue + btn "+ Nuevo repartidor" (flame bg, blanco, Plus icon)
+
+Grid 3 col cards (bg white, rounded-xl, border, p-5):
+- Avatar circular 40px: bg secondary, iniciales Inter semibold
+- Nombre Inter semibold + email muted small
+- Toggle activo: [UserCheck] "Activo" emerald bg / [UserX] "Inactivo" muted
+- Badge "X pedidos activos" small
+- Fila botones:
+  · [Edit2] "Editar" — outline, Inter 13px
+  · [KeyRound] "Resetear contraseña" — outline
+  · [ShieldOff] "Desactivar" — outline destructive rojo
+
+────────────────────────────────────────
+SECCIÓN REPORTES — 4 sub-tabs
+────────────────────────────────────────
+Sub-nav interna: pill tabs secundarios
+Tiempos de entrega | Ranking repartidores | Zonas | FIFO vs ACO
+
+SUB-TAB TIEMPOS:
+Filtro (bg white, rounded-xl, border, p-4, flex items-center gap-4):
+"Desde" date input | "Hasta" date input | btn "Aplicar" (coal bg)
+
+Grid 2x3 KpiCards (misma estructura que dashboard cards):
+- Total entregas: "83" coal
+- Promedio: "32min" coal (o "1h 12min")
+- Mínimo: "18min" emerald
+- Máximo: "2h 45min" coal
+- Desv. estándar: "22min" coal
+- % ≤ 45 min: "74%" flame
+(Todos los tiempos en formato "Xh Ymin", NUNCA solo minutos)
+
+SUB-TAB RANKING REPARTIDORES:
+Filtro fecha (igual que tiempos)
+Tabla (bg white, rounded-xl, border):
+Encabezados: Pos | Repartidor | Asignados | Entregados | TPE Promedio | Rendimiento
+- Fila normal: Inter 14px
+- Fila bajo rendimiento (TPE > 130% promedio): texto destructive rojo + badge [AlertTriangle] "Bajo rendimiento" rojo/15 bg
+- Pos 1: badge dorado "#1"
+
+SUB-TAB ZONAS (HEATMAP):
+Mapa Leaflet full-width (altura 480px, rounded-xl, border):
+- Tiles OpenStreetMap (gris cálido)
+- Capa de calor: azul → amarillo → naranja → rojo-flame (frecuencia baja a alta)
+- Tooltip hover: "X pedidos · Promedio: Ymin"
+Leyenda horizontal debajo: "Baja densidad ←——→ Alta densidad"
+Colores: #3B82F6 → #F59E0B → #D4471A
+
+SUB-TAB FIFO vs ACO:
+Grid 2 columnas grandes:
+Card FIFO (bg secondary #EDE5D8, rounded-xl, border, p-6):
+- H3 "FIFO" Bebas Neue 24px + subtexto "First In, First Out"
+- 4 métricas: TPE promedio "38min" | Mínimo "22min" | Máximo "1h 48min" | % ≤ 45min "62%"
+
+Card ACO (bg flame/10 #D4471A1A, border flame/20, rounded-xl, p-6):
+- H3 "ACO" Bebas Neue 24px + badge "ALGORITMO ACTIVO" (flame bg, blanco, rounded-sm)
+- 4 métricas: TPE promedio "29min" | Mínimo "15min" | Máximo "1h 12min" | % ≤ 45min "81%"
+- Badge [Check] "≥80% cumple ≤ 45min" (emerald bg, blanco)
+
+Tabla comparativa por jornada (bg white, rounded-xl, border):
+Fecha | Algoritmo | Pedidos | TPE Promedio | TPE Min | TPE Max | % ≤ 45min | Resultado
+Celdas ACO: badge flame pequeño | Celdas FIFO: badge secondary
+
+────────────────────────────────────────
+SECCIÓN CONFIGURACIÓN
+────────────────────────────────────────
+Tarjeta centrada max-w-lg (bg white, rounded-xl, border, p-8):
+- H2 "Parámetros ACO" Bebas Neue 28px + párrafo muted "Ajusta el algoritmo de optimización de rutas"
+
+4 parámetros (cada uno en su bloque, space-y-6):
+┌─────────────────────────────────────────────────────────────────────┐
+│ Alpha (α)                                                           │
+│ Influencia del feromón en la selección de rutas — Inter 13px muted  │
+│ [══════════════●══════] [1.2]                                        │
+│ Rango: 0.1 – 5.0                                                    │
+└─────────────────────────────────────────────────────────────────────┘
+Misma estructura para:
+- Beta (β): Peso de la distancia — rango 0.1–5.0
+- Rho (ρ): Tasa de evaporación de feromón — rango 0.01–0.99
+- Q: Intensidad del feromón — rango 1–1000
+Slider: track bg secondary, thumb circle flame #D4471A, filled track flame
+
+Botón "Guardar configuración" — full width, bg flame #D4471A, texto blanco, 44px, Inter semibold
+Toast confirmación (bg emerald-600, texto blanco, rounded-lg, bottom-right): "✓ Configuración guardada"
+
+════════════════════════════════════════
+REGLAS GLOBALES PARA TODOS LOS FRAMES
+════════════════════════════════════════
+- Frame desktop: 1440×900 (contenido max-w-4xl o max-w-6xl centrado)
+- Frame mobile: 390×844 (iPhone 14 Pro)
+- Todos los h1/h2/h3 y el logo: Bebas Neue. Todo lo demás: Inter.
+- Códigos de pedido SIEMPRE: AKA-XXXX con 4 dígitos (AKA-0001, AKA-0083)
+- Tiempos SIEMPRE: "Xh Ymin" (ej: "1h 25min", "32min", "2h"). NUNCA "85 min".
+- El admin NO tiene sidebar — navegación horizontal con 2 barras (header + nav tabs)
+- Los mapas son OpenStreetMap (tiles gris-beige con calles claras), nunca Google Maps
+- Botón primary del cliente: flame #D4471A | Botón primary del login/formularios: coal #1A1008
+- Los dropdowns de estado y repartidor en la tabla de pedidos son selects inline con badge
+- Minimum tap target: 44px de alto para todos los botones interactivos

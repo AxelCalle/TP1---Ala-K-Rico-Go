@@ -46,6 +46,15 @@ router.get('/', async (req, res) => {
         whereClause = `WHERE ${GRUPOS[grupo]}`;
       }
 
+      const SORT_FIELDS = { id: 'p.Id_Pedido', fecha: 'p.Creacion_Pedido', estado: 'p.Estado' };
+      const sortField = SORT_FIELDS[req.query.sortBy] ?? 'p.Creacion_Pedido';
+      const sortDir   = req.query.sortDir === 'asc' ? 'ASC' : 'DESC';
+
+      // En vista "todos" (sin grupo), los pedidos activos flotan siempre al tope
+      const orderBy = (!grupo || !GRUPOS[grupo]) && !estado
+        ? `CASE WHEN p.Estado IN ('sin_asignar','asignado','en_camino') THEN 0 ELSE 1 END, ${sortField} ${sortDir}`
+        : `${sortField} ${sortDir}`;
+
       const dataReq  = pool.request()
         .input('offset',   sql.Int, offset)
         .input('pageSize', sql.Int, pageSize);
@@ -66,7 +75,7 @@ router.get('/', async (req, res) => {
           LEFT JOIN AKR_Usuarios c ON p.Id_Cliente    = c.Id_Usuario
           LEFT JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
           ${whereClause}
-          ORDER BY p.Creacion_Pedido DESC
+          ORDER BY ${orderBy}
           OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
         `),
         countReq.query(`SELECT COUNT(*) AS total FROM AKR_Pedidos p ${whereClause}`),
@@ -381,6 +390,33 @@ router.patch('/:id/asignar', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('PATCH /pedidos/:id/asignar:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
+// POST /api/pedidos/limpiar-atascados — admin: cancela todos los pedidos activos (limpieza)
+router.post('/limpiar-atascados', async (req, res) => {
+  if (req.usuario.role !== 'admin') {
+    return res.status(403).json({ error: 'Solo admin puede hacer esto.' });
+  }
+  try {
+    const pool = await getPool();
+    const now  = new Date();
+    const result = await pool.request()
+      .input('cancel', sql.DateTime, now)
+      .query(`
+        UPDATE AKR_Pedidos SET
+          Estado             = 'cancelado',
+          Cancelacion_Pedido = @cancel
+        OUTPUT INSERTED.Id_Pedido
+        WHERE Estado IN ('en_camino','asignado','sin_asignar')
+      `);
+    const cancelados = result.recordset.length;
+    await registrarAuditoria(pool, req.usuario.id, null, 'limpiar_atascados',
+      `${cancelados} pedidos activos cancelados por admin ${req.usuario.id}`, req);
+    return res.json({ ok: true, cancelados });
+  } catch (err) {
+    console.error('POST /pedidos/limpiar-atascados:', err.message);
     return res.status(500).json({ error: 'Error interno.' });
   }
 });

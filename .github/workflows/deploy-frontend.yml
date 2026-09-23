@@ -1,0 +1,26 @@
+# ─── Deploy Frontend → Vercel ─────────────────────────────────────────────────
+# Vercel se conecta directamente a GitHub y despliega automáticamente.
+# Este workflow existe solo como documentación del proceso.
+#
+# Vercel usa vercel.json en la raíz del proyecto:
+#   buildCommand:    npm run build
+#   outputDirectory: dist
+#   rewrites:        /* → /index.html  (SPA routing)
+#
+# Para conectar Vercel a GitHub:
+#   1. vercel.com → New Project → Import Git Repository
+#   2. Selecciona el repo → Framework: Vite → Deploy
+#   3. Desde ese momento cada push a main despliega automáticamente.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Frontend — Vercel (referencia)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vercel se encarga del deploy automáticamente
+        run: echo "Vercel detecta el push y despliega. No se necesita workflow manual."

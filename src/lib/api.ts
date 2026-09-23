@@ -117,6 +117,7 @@ export type DashboardApi = {
     entregados: number;
     cancelados: number;
     avg_minutos: number | null;
+    avg_historico: number | null;
     repartidores_activos: number;
   };
   porEstado: { Estado: string; cantidad: number }[];
@@ -139,15 +140,29 @@ export type RankingRepartidorApi = {
   avg_minutos: number | null;
 };
 
-export type PilotoFaseApi = {
+export type PilotoFaseData = {
   fase: "FIFO" | "ACO";
-  jornada: string;
+  descripcion: string;
   n: number;
-  tpe_promedio: number;
-  tpe_min: number;
-  tpe_max: number;
-  pct_45min: number;
+  tpe_promedio: number | null;
+  tpe_min: number | null;
+  tpe_max: number | null;
+  pct_45min: number | null;
+  pedidos_por_ruta?: number;
 };
+
+export type PilotoApi = {
+  fifo: PilotoFaseData;
+  aco:  PilotoFaseData;
+  mejora: {
+    reduccion_min:  number;
+    reduccion_pct:  number;
+    mejora_pct_45:  number;
+  } | null;
+};
+
+/** @deprecated — mantenido solo para no romper importaciones antiguas */
+export type PilotoFaseApi = PilotoFaseData;
 
 export type AuditoriaApi = {
   Id_Log: number;
@@ -299,12 +314,15 @@ export const api = {
 
   async listarPedidosAdmin(params?: {
     page?: number; pageSize?: number; estado?: string; grupo?: "activos" | "completados";
+    sortBy?: "id" | "fecha" | "estado"; sortDir?: "asc" | "desc";
   }): Promise<PaginatedResponse<PedidoApi>> {
     const qs = new URLSearchParams();
     if (params?.page)     qs.set("page",     String(params.page));
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     if (params?.estado)   qs.set("estado",   params.estado);
     if (params?.grupo)    qs.set("grupo",    params.grupo);
+    if (params?.sortBy)   qs.set("sortBy",   params.sortBy);
+    if (params?.sortDir)  qs.set("sortDir",  params.sortDir);
     const raw = await solicitar<PaginatedResponse<PedidoApi> | PedidoApi[]>(
       `/api/pedidos?${qs.toString()}`,
       { headers: cabeceraAuth() },
@@ -343,6 +361,13 @@ export const api = {
       method: "PATCH",
       headers: cabeceraAuth(),
       body: JSON.stringify({ idRepartidor }),
+    });
+  },
+
+  async limpiarAtascados(): Promise<{ ok: boolean; cancelados: number }> {
+    return solicitar<{ ok: boolean; cancelados: number }>("/api/pedidos/limpiar-atascados", {
+      method: "POST",
+      headers: cabeceraAuth(),
     });
   },
 
@@ -478,8 +503,8 @@ export const api = {
     return solicitar("/api/reportes/zonas", { headers: cabeceraAuth() });
   },
 
-  async reportePiloto(): Promise<PilotoFaseApi[]> {
-    return solicitar<PilotoFaseApi[]>("/api/reportes/piloto", { headers: cabeceraAuth() });
+  async reportePiloto(): Promise<PilotoApi> {
+    return solicitar<PilotoApi>("/api/reportes/piloto", { headers: cabeceraAuth() });
   },
 
   // ── Config ACO ────────────────────────────────────────────────────────────
