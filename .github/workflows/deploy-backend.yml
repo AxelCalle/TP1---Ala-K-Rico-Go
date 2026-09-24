@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - name: Crear paquete ZIP
-        run: zip -r deploy.zip server/ -x "*.git*" -x "server/node_modules/*"
+        run: cd server && zip -r ../deploy.zip . -x "node_modules/*" -x ".git*" && cd ..
 
       - name: Desplegar via Kudu ZIP Deploy
         env:
