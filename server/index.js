@@ -62,8 +62,21 @@ app.use(helmet());
 // Permite que el frontend cargue recursos de geocache/mapa desde otro origen
 app.use('/api/geocache', helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
+const ALLOWED_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'https://witty-meadow-0971ee010.4.azurestaticapps.net',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:8081',
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origen no permitido: ${origin}`));
+    }
+  },
   credentials: true,
 }));
 
