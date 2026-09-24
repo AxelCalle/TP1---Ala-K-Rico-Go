@@ -2,12 +2,12 @@
 # Disparado automáticamente al hacer push a main con cambios en server/
 # También puede ejecutarse manualmente desde la pestaña Actions en GitHub.
 #
-# SECRETOS requeridos (configurar en GitHub → Settings → Secrets → Actions):
-#   AZURE_WEBAPP_PUBLISH_PROFILE  — descargarlo desde Azure Portal → App Service
-#                                   → Get publish profile (botón en la barra)
+# SECRETOS requeridos (GitHub → Settings → Secrets → Actions):
+#   AZURE_KUDU_USERNAME  — userName del publish profile (ej: $ala-k-rico-go)
+#   AZURE_KUDU_PASSWORD  — userPWD del publish profile
 #
 # VARIABLES requeridas (GitHub → Settings → Variables → Actions):
-#   AZURE_WEBAPP_NAME             — ala-k-rico-go
+#   AZURE_KUDU_URL       — ej: ala-k-rico-go-xxxx.scm.chilecentral-01.azurewebsites.net
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Deploy Backend — Azure App Service
@@ -29,11 +29,9 @@ jobs:
     name: Build & Deploy API
 
     steps:
-      # 1. Checkout
       - name: Checkout código
         uses: actions/checkout@v4
 
-      # 2. Node.js
       - name: Configurar Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
@@ -41,15 +39,19 @@ jobs:
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
 
-      # 3. Instalar dependencias de producción
-      - name: Instalar dependencias
+      - name: Instalar dependencias de producción
         working-directory: server
         run: npm install --omit=dev
 
-      # 4. Deploy al App Service
-      - name: Desplegar en Azure App Service
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: server
+      - name: Crear paquete ZIP
+        run: zip -r deploy.zip server/ -x "*.git*"
+
+      - name: Desplegar via Kudu ZIP Deploy
+        run: |
+          curl -X POST \
+            "https://${{ vars.AZURE_KUDU_URL }}/api/zipdeploy" \
+            -u "${{ secrets.AZURE_KUDU_USERNAME }}:${{ secrets.AZURE_KUDU_PASSWORD }}" \
+            --data-binary @deploy.zip \
+            -H "Content-Type: application/octet-stream" \
+            --fail \
+            --show-error
