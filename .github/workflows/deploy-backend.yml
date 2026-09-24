@@ -48,7 +48,7 @@ jobs:
 
       # 4. Deploy al App Service
       - name: Desplegar en Azure App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
