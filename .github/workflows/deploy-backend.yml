@@ -39,12 +39,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
 
-      - name: Instalar dependencias de producción
-        working-directory: server
-        run: npm install --omit=dev
-
       - name: Crear paquete ZIP
-        run: zip -r deploy.zip server/ -x "*.git*"
+        run: zip -r deploy.zip server/ -x "*.git*" -x "server/node_modules/*"
 
       - name: Desplegar via Kudu ZIP Deploy
         env:
