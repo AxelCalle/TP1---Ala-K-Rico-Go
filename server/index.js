@@ -14,6 +14,7 @@ import geocacheRoutes      from './routes/geocache.js';
 import auditoriaRoutes     from './routes/auditoria.js';
 import reportesRoutes      from './routes/reportes.js';
 import configRoutes        from './routes/config.js';
+import alertasRoutes       from './routes/alertas.js';
 import { registrarAuditoria } from './middleware/auditoria.js';
 import { getPool } from './db.js';
 
@@ -124,6 +125,7 @@ app.use('/api/geocache',       geocacheRoutes);
 app.use('/api/auditoria',      auditoriaRoutes);
 app.use('/api/reportes',       reportesRoutes);
 app.use('/api/config',         configRoutes);
+app.use('/api/alertas',        alertasRoutes);
 
 // Endpoint de salud
 app.get('/api/health', (_req, res) => {

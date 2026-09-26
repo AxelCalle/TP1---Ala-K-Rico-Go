@@ -308,6 +308,71 @@ router.patch('/:id/estado', async (req, res) => {
         `);
     }
 
+    // Calificación automática al confirmar entrega (HU013)
+    if (estado === 'entregado' && pedido.Id_Repartidor) {
+      try {
+        // Distancia haversine origen→destino en km
+        const R = 6371;
+        const φ1 = pedido.Lat_Origen  * Math.PI / 180;
+        const φ2 = pedido.Lat_Destino * Math.PI / 180;
+        const Δφ = φ2 - φ1;
+        const Δλ = (pedido.Lng_Destino - pedido.Lng_Origen) * Math.PI / 180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        // ETA esperado (misma fórmula que frontend: 25 km/h)
+        const etaEsperadoMin = Math.max(1, Math.round((km / 25) * 60));
+
+        // Tiempo real desde asignación hasta entrega
+        const asignacion = pedido.Asignacion_Pedido ? new Date(pedido.Asignacion_Pedido) : now;
+        const tiempoRealMin = (now - asignacion) / 60000;
+
+        // Incidencias del pedido
+        const incRes = await pool.request()
+          .input('idPed2', sql.Int, idNum)
+          .query('SELECT COUNT(*) AS total FROM AKR_Incidencias WHERE Id_Pedido = @idPed2');
+        const numInc = incRes.recordset[0].total;
+
+        // Puntuación: base 5, penalidad por tardanza e incidencias
+        const ratio = etaEsperadoMin > 0 ? tiempoRealMin / etaEsperadoMin : 1;
+        let puntuacion = 5;
+        if (ratio > 2.0) puntuacion -= 2;
+        else if (ratio > 1.3) puntuacion -= 1;
+        puntuacion = Math.max(1, puntuacion - numInc);
+
+        const detalle =
+          `ETA esperado: ${etaEsperadoMin}min | Tiempo real: ${Math.round(tiempoRealMin)}min | Incidencias: ${numInc}`;
+
+        await pool.request()
+          .input('idPedCal', sql.Int,          idNum)
+          .input('idRepCal', sql.Int,          pedido.Id_Repartidor)
+          .input('puntaje',  sql.TinyInt,       puntuacion)
+          .input('detalle',  sql.NVarChar(200), detalle)
+          .query(`
+            INSERT INTO AKR_Calificaciones (Id_Pedido, Id_Repartidor, Puntuacion, Detalle)
+            VALUES (@idPedCal, @idRepCal, @puntaje, @detalle)
+          `);
+
+        // Alerta al admin si calificación < 3 (HU013 Esc.3)
+        if (puntuacion < 3) {
+          await pool.request()
+            .input('tipoAl', sql.NVarChar(60),   'calificacion_baja')
+            .input('msgAl',  sql.NVarChar(500),
+              `Alerta de bajo desempeño: repartidor ID ${pedido.Id_Repartidor} obtuvo ${puntuacion}/5 ` +
+              `en pedido #${idNum}. ${detalle}`)
+            .input('datosAl', sql.NVarChar(sql.MAX), JSON.stringify({
+              idPedido: idNum, idRepartidor: pedido.Id_Repartidor, puntuacion, detalle,
+            }))
+            .query(`
+              INSERT INTO AKR_Alertas_Admin (Tipo, Mensaje, Datos)
+              VALUES (@tipoAl, @msgAl, @datosAl)
+            `);
+        }
+      } catch (errCal) {
+        console.error('Error al registrar calificación automática:', errCal.message);
+      }
+    }
+
     await registrarAuditoria(pool, req.usuario.id, null, 'estado_pedido',
       `Pedido #${idNum} → ${estado}`, req);
 

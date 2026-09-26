@@ -233,4 +233,28 @@ router.get('/:id/ubicacion', async (req, res) => {
   }
 });
 
+// GET /api/repartidores/:id/calificaciones — historial de calificaciones automáticas (solo admin)
+router.get('/:id/calificaciones', async (req, res) => {
+  if (req.usuario.role !== 'admin') return res.status(403).json({ error: 'Solo admin.' });
+  const idParam = parseInt(req.params.id, 10);
+  if (!idParam || isNaN(idParam)) return res.status(400).json({ error: 'ID inválido.' });
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('id', sql.Int, idParam)
+      .query(`
+        SELECT TOP 50
+          c.Id_Calificacion, c.Id_Pedido, c.Id_Repartidor,
+          c.Puntuacion, c.Detalle, c.Creacion
+        FROM AKR_Calificaciones c
+        WHERE c.Id_Repartidor = @id
+        ORDER BY c.Creacion DESC
+      `);
+    return res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /repartidores/:id/calificaciones:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
 export default router;

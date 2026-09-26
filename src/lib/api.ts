@@ -200,6 +200,24 @@ export type PaginatedResponse<T> = {
   totalPages: number;
 };
 
+export type AlertaAdmin = {
+  Id_Alerta: number;
+  Tipo: string;
+  Mensaje: string;
+  Datos: string | null;
+  Leida: boolean;
+  Creacion: string;
+};
+
+export type CalificacionApi = {
+  Id_Calificacion: number;
+  Id_Pedido: number;
+  Id_Repartidor: number;
+  Puntuacion: number;
+  Detalle: string | null;
+  Creacion: string;
+};
+
 // ─── Helper de fetch ─────────────────────────────────────────────────────────
 
 async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
@@ -518,5 +536,36 @@ export const api = {
       headers: cabeceraAuth(),
       body: JSON.stringify(config),
     });
+  },
+
+  // ── Alertas de administrador ──────────────────────────────────────────────
+  async listarAlertas(): Promise<AlertaAdmin[]> {
+    return solicitar<AlertaAdmin[]>("/api/alertas", { headers: cabeceraAuth() });
+  },
+
+  async alertasNoLeidas(): Promise<{ total: number }> {
+    return solicitar<{ total: number }>("/api/alertas/no-leidas", { headers: cabeceraAuth() });
+  },
+
+  async leerAlerta(id: number): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>(`/api/alertas/${id}/leer`, {
+      method: "PATCH",
+      headers: cabeceraAuth(),
+    });
+  },
+
+  async leerTodasAlertas(): Promise<{ ok: boolean }> {
+    return solicitar<{ ok: boolean }>("/api/alertas/leer-todas", {
+      method: "PATCH",
+      headers: cabeceraAuth(),
+    });
+  },
+
+  // ── Calificaciones de repartidor ──────────────────────────────────────────
+  async listarCalificaciones(idRepartidor: number): Promise<CalificacionApi[]> {
+    return solicitar<CalificacionApi[]>(
+      `/api/repartidores/${idRepartidor}/calificaciones`,
+      { headers: cabeceraAuth() },
+    );
   },
 };

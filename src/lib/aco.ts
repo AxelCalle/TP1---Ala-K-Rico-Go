@@ -17,8 +17,20 @@ export const KM_SCALE = 5;
 /** Velocidad promedio de moto en zona urbana de Lima con tráfico (km/h). */
 export const MOTO_KMH = 25;
 
-export function calcularETA(km: number): number {
-  return Math.max(1, Math.round((km / MOTO_KMH) * 60));
+/**
+ * Factor de congestión basado en hora del día (heurística temporal).
+ * Horas punta Lima: 7-9h, 12-14h, 18-20h.
+ * Afecta el costo de feromonas ACO y el ETA estimado.
+ */
+export function factorTrafico(): number {
+  const h = new Date().getHours();
+  if ((h >= 7 && h < 9) || (h >= 12 && h < 14) || (h >= 18 && h < 20)) return 1.5;
+  if ((h >= 9 && h < 12) || (h >= 14 && h < 18)) return 1.2;
+  return 1.0;
+}
+
+export function calcularETA(km: number, tf = factorTrafico()): number {
+  return Math.max(1, Math.round((km / MOTO_KMH) * 60 * tf));
 }
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
@@ -356,9 +368,10 @@ export function ejecutarACO_TSP(stops: Stop[]): TSPResult | null {
       }
     }
 
-    // Depósito estándar (todas las hormigas)
+    // Depósito estándar (todas las hormigas) — ajustado por factor de tráfico
+    const tf = factorTrafico();
     for (const { tour, cost } of solutions) {
-      const deposit = Q / cost;
+      const deposit = Q / (cost * tf);
       for (let i = 0; i < tour.length - 1; i++) {
         tau[tour[i]][tour[i + 1]] = Math.max(tauMin, tau[tour[i]][tour[i + 1]] + deposit);
         tau[tour[i + 1]][tour[i]] = Math.max(tauMin, tau[tour[i + 1]][tour[i]] + deposit);
@@ -367,7 +380,7 @@ export function ejecutarACO_TSP(stops: Stop[]): TSPResult | null {
 
     // Depósito elitista (mejor ruta global)
     if (bestTour.length > 0) {
-      const eliteDeposit = (eliteFactor * Q) / bestCost;
+      const eliteDeposit = (eliteFactor * Q) / (bestCost * tf);
       for (let i = 0; i < bestTour.length - 1; i++) {
         tau[bestTour[i]][bestTour[i + 1]] = Math.max(tauMin, tau[bestTour[i]][bestTour[i + 1]] + eliteDeposit);
         tau[bestTour[i + 1]][bestTour[i]] = Math.max(tauMin, tau[bestTour[i + 1]][bestTour[i]] + eliteDeposit);
@@ -495,9 +508,10 @@ export function ejecutarACO(
       tau.set(k, Math.max(p.tauMin, v * (1 - p.rho)));
     }
 
-    // ── Fase 3a: Depósito estándar (todas las hormigas exitosas) ──────────────
+    // ── Fase 3a: Depósito estándar — ajustado por factor de tráfico temporal ──
+    const tf = factorTrafico();
     for (const { path, cost } of solutions) {
-      const deposit = p.Q / cost;
+      const deposit = p.Q / (cost * tf);
       for (let i = 0; i < path.length - 1; i++) {
         const k = eid(path[i], path[i + 1]);
         tau.set(k, Math.max(p.tauMin, (tau.get(k) ?? p.tauMin) + deposit));
@@ -506,7 +520,7 @@ export function ejecutarACO(
 
     // ── Fase 3b: Depósito elitista (mejor ruta global, cada iteración) ────────
     if (bestPath.length > 1) {
-      const eliteDeposit = (p.elite * p.Q) / bestDist;
+      const eliteDeposit = (p.elite * p.Q) / (bestDist * tf);
       for (let i = 0; i < bestPath.length - 1; i++) {
         const k = eid(bestPath[i], bestPath[i + 1]);
         tau.set(k, Math.max(p.tauMin, (tau.get(k) ?? p.tauMin) + eliteDeposit));

@@ -2,7 +2,7 @@ import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-ro
 import { useEffect, useState, type FormEvent } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, ReferenceLine } from "recharts";
 import {
-  AlertTriangle, BarChart2, Check, ClipboardList, Copy, Edit2,
+  AlertTriangle, BarChart2, Bell, Check, ClipboardList, Copy, Edit2,
   KeyRound, LayoutDashboard, Loader2, LogOut, Plus, Settings, ShieldOff,
   Truck, UserCheck, UserX,
 } from "lucide-react";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/admin")({
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type SeccionAdmin = "dashboard" | "pedidos" | "repartidores" | "reportes" | "configuracion";
+type SeccionAdmin = "dashboard" | "pedidos" | "repartidores" | "reportes" | "configuracion" | "alertas";
 
 // ─── Traducciones ─────────────────────────────────────────────────────────────
 
@@ -50,6 +50,15 @@ function PaginaAdmin() {
   const session  = useStore((s) => s.session);
   const [seccion, setSeccion] = useState<SeccionAdmin>("dashboard");
   const [montado, setMontado] = useState(false);
+  const [alertasNoLeidas, setAlertasNoLeidas] = useState(0);
+
+  useEffect(() => {
+    api.alertasNoLeidas().then((r) => setAlertasNoLeidas(r.total)).catch(() => {});
+    const interval = setInterval(() => {
+      api.alertasNoLeidas().then((r) => setAlertasNoLeidas(r.total)).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => { setMontado(true); }, []);
 
@@ -108,6 +117,21 @@ function PaginaAdmin() {
           <NavBtn activo={seccion === "repartidores"} onClick={() => setSeccion("repartidores")} icon={<Truck className="h-4 w-4" />}          label="Repartidores" />
           <NavBtn activo={seccion === "reportes"}     onClick={() => setSeccion("reportes")}     icon={<BarChart2 className="h-4 w-4" />}      label="Reportes" />
           <NavBtn activo={seccion === "configuracion"} onClick={() => setSeccion("configuracion")} icon={<Settings className="h-4 w-4" />}    label="Configuración" />
+          <NavBtn
+            activo={seccion === "alertas"}
+            onClick={() => { setSeccion("alertas"); setAlertasNoLeidas(0); }}
+            icon={
+              <span className="relative">
+                <Bell className="h-4 w-4" />
+                {alertasNoLeidas > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
+                    {alertasNoLeidas > 9 ? "9+" : alertasNoLeidas}
+                  </span>
+                )}
+              </span>
+            }
+            label="Alertas"
+          />
         </div>
       </div>
 
@@ -117,6 +141,7 @@ function PaginaAdmin() {
         {seccion === "repartidores" && <SeccionRepartidores />}
         {seccion === "reportes"     && <SeccionReportes />}
         {seccion === "configuracion" && <SeccionConfiguracion />}
+        {seccion === "alertas"      && <SeccionAlertas />}
       </main>
 
       <footer className="mt-auto border-t border-border bg-card">
@@ -1065,19 +1090,18 @@ function SeccionPedidos() {
   const [copiado,      setCopiado]      = useState<number | null>(null);
   const [filtro,       setFiltro]       = useState<FiltroEstado>("todos");
   const [confirm,      setConfirm]      = useState<{ mensaje: string; detalle?: string; accion: () => void } | null>(null);
-
-  const PAGE_SIZE = 20;
+  const [pageSize,     setPageSize]     = useState(20);
 
   const grupoFiltro: "activos" | "completados" | undefined =
     filtro === "activos"     ? "activos"
     : filtro === "completados" ? "completados"
     : undefined;
 
-  const cargar = (p = page, g = grupoFiltro, sb = sortBy, sd = sortDir) => {
+  const cargar = (p = page, g = grupoFiltro, sb = sortBy, sd = sortDir, ps = pageSize) => {
     setCargando(true);
     setErrCarga(null);
     Promise.allSettled([
-      api.listarPedidosAdmin({ page: p, pageSize: PAGE_SIZE, grupo: g, sortBy: sb, sortDir: sd }),
+      api.listarPedidosAdmin({ page: p, pageSize: ps, grupo: g, sortBy: sb, sortDir: sd }),
       api.listarRepartidores(),
     ])
       .then(([pedRes, repRes]) => {
@@ -1111,13 +1135,13 @@ function SeccionPedidos() {
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { cargar(page, grupoFiltro, sortBy, sortDir); }, [page, filtro, sortBy, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(page, grupoFiltro, sortBy, sortDir, pageSize); }, [page, filtro, sortBy, sortDir, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function ejecutarLimpiarAtascados() {
     try {
       const r = await api.limpiarAtascados();
       setPage(1);
-      cargar(1, grupoFiltro, sortBy, sortDir);
+      cargar(1, grupoFiltro, sortBy, sortDir, pageSize);
       // Refrescar conteos del dashboard
       api.dashboard().then((d) => {
         const porEstado = d.porEstado ?? [];
@@ -1309,7 +1333,7 @@ function SeccionPedidos() {
                   <tr key={p.Id_Pedido} className={`border-t border-border transition-colors ${completado ? "opacity-60" : "hover:bg-muted/30"}`}>
                     <Celda className="w-10 text-center">
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                        {(page - 1) * PAGE_SIZE + idx + 1}
+                        {(page - 1) * pageSize + idx + 1}
                       </span>
                     </Celda>
                     <Celda className="w-28">
@@ -1394,11 +1418,30 @@ function SeccionPedidos() {
       </div>
 
       {/* Paginación */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between gap-4 text-sm text-muted-foreground">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2">
           <span aria-live="polite" aria-atomic="true">
-            {totalItems} pedido{totalItems !== 1 ? "s" : ""} · página {page} de {totalPages}
+            {totalItems} pedido{totalItems !== 1 ? "s" : ""}
+            {totalPages > 1 && ` · página ${page} de ${totalPages}`}
           </span>
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs">por página:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const ps = Number(e.target.value);
+                setPageSize(ps);
+                setPage(1);
+              }}
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs outline-none ring-ring/30 transition focus:border-ring focus:ring-2"
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {totalPages > 1 && (
           <div className="flex gap-2">
             <button
               disabled={page <= 1}
@@ -1415,8 +1458,8 @@ function SeccionPedidos() {
               Siguiente →
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {abierto && <DialogNuevoPedido onClose={() => { setAbierto(false); cargar(1); }} />}
 
@@ -2165,5 +2208,125 @@ function Campo({
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECCIÓN: ALERTAS DE BAJO DESEMPEÑO (HU013 Esc.3 / HU022)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SeccionAlertas() {
+  const [alertas, setAlertas] = useState<import("@/lib/api").AlertaAdmin[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const cargar = () => {
+    setCargando(true);
+    api.listarAlertas()
+      .then(setAlertas)
+      .catch(() => setError("No se pudieron cargar las alertas."))
+      .finally(() => setCargando(false));
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const marcarTodas = async () => {
+    await api.leerTodasAlertas().catch(() => {});
+    setAlertas((prev) => prev.map((a) => ({ ...a, Leida: true })));
+  };
+
+  const marcarUna = async (id: number) => {
+    await api.leerAlerta(id).catch(() => {});
+    setAlertas((prev) => prev.map((a) => a.Id_Alerta === id ? { ...a, Leida: true } : a));
+  };
+
+  const noLeidas = alertas.filter((a) => !a.Leida).length;
+
+  if (cargando) {
+    return (
+      <div className="flex items-center justify-center py-16 text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando alertas…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Alertas de desempeño</h2>
+          <p className="text-sm text-muted-foreground">
+            Alertas automáticas por calificación baja del repartidor
+            {noLeidas > 0 && (
+              <span className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                {noLeidas} sin leer
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={cargar} className={clsBtnSecundario}>
+            Actualizar
+          </button>
+          {noLeidas > 0 && (
+            <button onClick={marcarTodas} className={clsBtnAccent}>
+              Marcar todas como leídas
+            </button>
+          )}
+        </div>
+      </div>
+
+      {alertas.length === 0 ? (
+        <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          <Bell className="mx-auto mb-3 h-8 w-8 opacity-30" />
+          No hay alertas registradas.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {alertas.map((alerta) => (
+            <div
+              key={alerta.Id_Alerta}
+              className={`rounded-lg border p-4 transition ${
+                alerta.Leida
+                  ? "border-border bg-card opacity-60"
+                  : "border-destructive/40 bg-destructive/5"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <Bell className={`mt-0.5 h-4 w-4 shrink-0 ${alerta.Leida ? "text-muted-foreground" : "text-destructive"}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-snug">{alerta.Mensaje}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(alerta.Creacion).toLocaleString("es-PE", {
+                        day: "2-digit", month: "short", year: "numeric",
+                        hour: "2-digit", minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+                {!alerta.Leida && (
+                  <button
+                    onClick={() => marcarUna(alerta.Id_Alerta)}
+                    title="Marcar como leída"
+                    className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
