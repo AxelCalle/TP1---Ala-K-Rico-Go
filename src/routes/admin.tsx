@@ -1000,29 +1000,66 @@ function SeccionConfiguracion() {
               {guiaVisible ? "Ocultar guía" : "Ver guía de parámetros"}
             </button>
           </div>
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2">
             {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((campo) => {
               const rango = ACO_RANGOS[campo];
+              const porcentaje = ((local[campo] - rango.min) / (rango.max - rango.min)) * 100;
               return (
-                <label key={campo} className="space-y-1.5">
-                  <span className="text-sm font-medium">{rango.label}</span>
-                  <input
-                    type="number"
-                    step={rango.step}
-                    min={rango.min}
-                    max={rango.max}
-                    value={local[campo]}
-                    onChange={(e) => handleChange(campo, e.target.value)}
-                    onFocus={() => setCampoActivo(campo)}
-                    className={`${clsInput} ${errores[campo] ? "border-destructive" : ""}`}
-                  />
+                <div
+                  key={campo}
+                  className={`rounded-lg border p-4 space-y-3 cursor-pointer transition-colors ${
+                    campoActivo === campo
+                      ? "border-accent bg-accent/5"
+                      : "border-border hover:border-accent/40"
+                  }`}
+                  onClick={() => setCampoActivo(campo)}
+                >
+                  {/* Encabezado: label + valor actual */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium leading-tight">
+                      {ACO_AYUDA[campo]?.icono} {rango.label}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        step={rango.step}
+                        min={rango.min}
+                        max={rango.max}
+                        value={local[campo]}
+                        onChange={(e) => handleChange(campo, e.target.value)}
+                        onFocus={() => setCampoActivo(campo)}
+                        className={`w-20 rounded-md border px-2 py-1 text-right text-sm font-semibold tabular-nums bg-background focus:outline-none focus:ring-2 focus:ring-ring ${
+                          errores[campo] ? "border-destructive text-destructive" : "border-border text-accent"
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Slider */}
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min={rango.min}
+                      max={rango.max}
+                      step={rango.step}
+                      value={local[campo]}
+                      onChange={(e) => handleChange(campo, e.target.value)}
+                      onFocus={() => setCampoActivo(campo)}
+                      className="w-full h-2 rounded-full appearance-none cursor-pointer bg-border accent-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                      style={{
+                        background: `linear-gradient(to right, var(--accent) ${porcentaje}%, var(--border) ${porcentaje}%)`,
+                      }}
+                    />
+                    <div className="flex justify-between mt-1">
+                      <span className="text-[10px] text-muted-foreground">{rango.min}</span>
+                      <span className="text-[10px] text-muted-foreground">{rango.max}</span>
+                    </div>
+                  </div>
+
                   {errores[campo] && (
                     <p className="text-xs text-destructive">{errores[campo]}</p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    Rango: {rango.min} – {rango.max}
-                  </p>
-                </label>
+                </div>
               );
             })}
           </div>
@@ -2111,7 +2148,7 @@ function SelectEstado({
 }
 
 
-/** Botón de navegación entre secciones */
+/** Botón de navegación entre secciones — responsive: ícono+texto en md+, solo ícono en mobile */
 function NavBtn({
   activo, onClick, icon, label,
 }: { activo: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
@@ -2119,13 +2156,15 @@ function NavBtn({
     <button
       onClick={onClick}
       aria-current={activo ? "page" : undefined}
-      className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+      title={label}
+      className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4 sm:gap-2 ${
         activo
           ? "border-accent text-accent"
           : "border-transparent text-muted-foreground hover:text-foreground"
       }`}
     >
-      {icon} {label}
+      {icon}
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

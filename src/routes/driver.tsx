@@ -215,7 +215,7 @@ function PaginaRepartidor() {
                   <Th className="hidden sm:table-cell">Producto</Th>
                   <Th className="hidden md:table-cell">Dirección</Th>
                   <Th>Estado</Th>
-                  <Th></Th>
+                  <Th>{""}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -475,13 +475,13 @@ function PaginaRepartidor() {
                 </ol>
               </div>
 
-              {/* Mapa multi-parada */}
-              <div className="overflow-hidden rounded-xl border border-border">
-                <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3 text-sm font-medium">
+              {/* Mapa multi-parada con avatar y navegación */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 px-1 text-sm font-medium text-muted-foreground">
                   <MapPin className="h-4 w-4 text-accent" />
-                  Ruta en mapa
+                  Ruta en mapa · simulación con navegación GPS
                 </div>
-                <MapaRutaMulti stops={mapaStops} altura={320} />
+                <MapaRutaMulti stops={mapaStops} altura={360} />
               </div>
             </>
           )}

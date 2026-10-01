@@ -2,9 +2,10 @@
  * Mapa de ruta con Leaflet + OpenStreetMap.
  * Geocodificación: Nominatim → Photon (Komoot) con simplificación progresiva.
  * Routing:        OSRM public API (ruta real por calles).
+ * MapaRutaMulti:  avatar animado del repartidor + agente de navegación GPS.
  */
-import { useEffect, useRef, useState } from "react";
-import { MapPin } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { MapPin, Navigation2, Volume2, VolumeX } from "lucide-react";
 
 // ─── Servicios externos ────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
         q: query,
         format: "json",
         limit: "1",
-        countrycodes: "pe",          // restringir a Perú mejora la precisión
+        countrycodes: "pe",
         addressdetails: "0",
       });
       const res = await fetch(`${NOMINATIM}?${params}`, {
@@ -43,11 +44,9 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
   }
 
   // ── Fallback: Photon (Komoot) ─────────────────────────────────────────────
-  // Mejor cobertura de calles en América Latina que Nominatim.
   for (const query of buildQueriesPhoton(direccion)) {
     try {
       const params = new URLSearchParams({ q: query, limit: "1", lang: "es" });
-      // bbox centrado en Lima: lat -12.3 a -11.6, lon -77.5 a -76.7
       const url = `${PHOTON}?${params}&bbox=-77.5,-12.3,-76.7,-11.6`;
       const res = await fetch(url);
       if (!res.ok) continue;
@@ -63,36 +62,25 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
   return null;
 }
 
-/**
- * Genera variantes de búsqueda, de más específica a más general.
- * Ejemplo para "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú":
- *   1. "Jr. Áncash 3855, San Martín de Porres 15101 Lima Perú"
- *   2. "Jr. Áncash, San Martín de Porres, Lima, Peru"
- *   3. "San Martín de Porres, Lima, Peru"
- */
 function buildQueries(raw: string): string[] {
-  // Normalizar: quitar acentos para mejor compatibilidad con Nominatim
   const normalize = (s: string) =>
     s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 
   const limpia = raw.trim();
   const queries: string[] = [];
 
-  // Intento 1: dirección tal cual, asegurando que incluya Lima y Peru
   const yaIncluye =
     limpia.toLowerCase().includes("peru") ||
     limpia.toLowerCase().includes("perú");
   queries.push(yaIncluye ? limpia : `${limpia}, Lima, Peru`);
 
-  // Intento 2: sin número de puerta ni código postal, con acentos normalizados
   const sinNumero = normalize(limpia)
-    .replace(/\b\d{4,5}\b/g, "")   // eliminar números largos (CP, número de calle)
+    .replace(/\b\d{4,5}\b/g, "")
     .replace(/,\s*,/g, ",")
     .replace(/\s+/g, " ")
     .trim();
   if (sinNumero !== queries[0]) queries.push(`${sinNumero}, Lima, Peru`);
 
-  // Intento 3: extraer solo el distrito si está en la dirección
   const distritos = [
     "San Martin de Porres",
     "San Martín de Porres",
@@ -112,10 +100,6 @@ function buildQueries(raw: string): string[] {
   return queries;
 }
 
-/**
- * Variantes de búsqueda optimizadas para Photon/Komoot.
- * Photon acepta mejor búsquedas cortas y sin códigos postales.
- */
 function buildQueriesPhoton(raw: string): string[] {
   const normalize = (s: string) =>
     s.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -123,7 +107,6 @@ function buildQueriesPhoton(raw: string): string[] {
   const limpia = raw.trim();
   const queries: string[] = [];
 
-  // Intento 1: sin CP ni número, con Lima Peru
   const sinNumero = normalize(limpia)
     .replace(/\b\d{4,5}\b/g, "")
     .replace(/,\s*,/g, ",")
@@ -131,11 +114,8 @@ function buildQueriesPhoton(raw: string): string[] {
     .trim();
   queries.push(`${sinNumero}, Lima, Peru`);
 
-  // Intento 2: solo jirón/avenida + distrito
   const partes = sinNumero.split(",").map((p) => p.trim()).filter(Boolean);
   if (partes.length >= 2) queries.push(`${partes[0]}, ${partes[1]}, Lima, Peru`);
-
-  // Intento 3: solo calle principal (primera parte)
   if (partes.length >= 1) queries.push(`${partes[0]}, Lima, Peru`);
 
   return queries;
@@ -157,12 +137,12 @@ async function obtenerRuta(a: Coords, b: Coords): Promise<Coords[]> {
   }
 }
 
-// ─── Componente ───────────────────────────────────────────────────────────────
+// ─── Componente simple (un origen → un destino) ───────────────────────────────
 
 interface Props {
   origen: string;
   destino: string;
-  coordsOrigen?: [number, number]; // si se proveen, se omite el geocoding
+  coordsOrigen?: [number, number];
   coordsDestino?: [number, number];
   altura?: number;
   className?: string;
@@ -184,13 +164,11 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
       const L = (await import("leaflet")).default;
       if (!activo || !contenedorRef.current) return;
 
-      // Destruir mapa anterior
       if (mapaRef.current) {
         mapaRef.current.remove();
         mapaRef.current = null;
       }
 
-      // Inicializar centrado en SMP
       const mapa = L.map(contenedorRef.current, { zoomControl: true })
         .setView(SMP_FALLBACK, 13);
       mapaRef.current = mapa;
@@ -201,10 +179,8 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         maxZoom: 19,
       }).addTo(mapa);
 
-      // Forzar redibujado del mapa tras montar en el DOM
       setTimeout(() => { if (activo && mapaRef.current) mapaRef.current.invalidateSize(); }, 100);
 
-      // Usar coordenadas directas si están disponibles, sino geocodificar
       let [coordA, coordB] = await Promise.all([
         coordsOrigen ? Promise.resolve(coordsOrigen as [number,number]) : geocodificar(origen),
         coordsDestino ? Promise.resolve(coordsDestino as [number,number]) : geocodificar(destino),
@@ -212,13 +188,10 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
 
       if (!activo) return;
 
-      // Usar coordenada de respaldo si geocoding falla completamente
       if (!coordA) coordA = SMP_FALLBACK;
 
       if (!coordB) {
-        // Sin destino no podemos mostrar la ruta
         setEstado("error");
-        // Mostrar al menos el origen
         mapa.setView(coordA, 15);
         L.marker(coordA, { icon: markerIcon(L, "A", "#4f46e5") })
           .addTo(mapa)
@@ -226,7 +199,6 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         return;
       }
 
-      // Marcadores
       L.marker(coordA, { icon: markerIcon(L, "A", "#4f46e5") })
         .addTo(mapa)
         .bindPopup("<b>Ala K' Rico GO</b><br><small>Punto de partida</small>");
@@ -235,24 +207,20 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         .addTo(mapa)
         .bindPopup("<b>Destino de entrega</b>");
 
-      // Ajustar vista para que quepan ambos marcadores
       const bounds = L.latLngBounds([coordA, coordB]).pad(0.25);
       mapa.fitBounds(bounds);
 
       if (!activo) return;
 
-      // Obtener ruta real por calles
       const puntos = await obtenerRuta(coordA, coordB);
 
       if (!activo) return;
 
       if (puntos.length > 0) {
-        // Sombra blanca para que la línea resalte sobre el mapa
         L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.7 }).addTo(mapa);
         L.polyline(puntos, { color: "#4f46e5", weight: 5, opacity: 0.95 }).addTo(mapa);
         setEstado("listo");
       } else {
-        // OSRM no respondió: dibujar línea recta punteada como indicador
         L.polyline([coordA, coordB], {
           color: "#4f46e5", weight: 4, opacity: 0.7, dashArray: "10, 8",
         }).addTo(mapa);
@@ -275,7 +243,6 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
       className={`relative overflow-hidden ${className}`}
       style={{ height: altura }}
     >
-      {/* Overlay de carga — z-index 1000 para estar sobre las capas de Leaflet */}
       {estado === "cargando" && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted"
@@ -286,7 +253,6 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         </div>
       )}
 
-      {/* Aviso de ruta aproximada (OSRM no disponible) */}
       {estado === "sin-ruta" && (
         <div
           className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow"
@@ -296,7 +262,6 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         </div>
       )}
 
-      {/* Error: no se encontró el destino */}
       {estado === "error" && (
         <div
           className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-destructive/90 px-3 py-1.5 text-xs text-white shadow"
@@ -314,27 +279,111 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
 
 // ─── Mapa multi-parada ────────────────────────────────────────────────────────
 
-/** Obtiene la ruta real por calles para N paradas (≤ 25) usando OSRM. */
-async function obtenerRutaMulti(coords: Coords[]): Promise<Coords[]> {
-  if (coords.length < 2) return [];
+async function obtenerRutaMulti(coords: Coords[]): Promise<{ puntos: Coords[]; pasos: OsrmStep[] }> {
+  if (coords.length < 2) return { puntos: [], pasos: [] };
   try {
     const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
-    const url = `${OSRM}/${waypoints}?overview=full&geometries=geojson`;
+    const url = `${OSRM}/${waypoints}?overview=full&geometries=geojson&steps=true&annotations=false`;
     const res = await fetch(url);
-    if (!res.ok) return [];
+    if (!res.ok) return { puntos: [], pasos: [] };
     const data = await res.json();
-    if (data.code !== "Ok") return [];
-    return data.routes[0].geometry.coordinates.map(
+    if (data.code !== "Ok") return { puntos: [], pasos: [] };
+
+    const puntos: Coords[] = data.routes[0].geometry.coordinates.map(
       ([lng, lat]: [number, number]) => [lat, lng] as Coords,
     );
+
+    // Extraer pasos de manejo de todas las legs
+    const pasos: OsrmStep[] = [];
+    for (const leg of data.routes[0].legs ?? []) {
+      for (const step of leg.steps ?? []) {
+        const maneuver = step.maneuver ?? {};
+        pasos.push({
+          instruccion: buildInstruccion(maneuver.type, maneuver.modifier, step.name),
+          distancia: Math.round(step.distance ?? 0),
+          coordInicio: maneuver.location
+            ? [maneuver.location[1], maneuver.location[0]] as Coords
+            : puntos[0],
+        });
+      }
+    }
+
+    return { puntos, pasos };
   } catch {
-    return [];
+    return { puntos: [], pasos: [] };
   }
+}
+
+interface OsrmStep {
+  instruccion: string;
+  distancia: number;
+  coordInicio: Coords;
+}
+
+function buildInstruccion(type?: string, modifier?: string, nombre?: string): string {
+  const calle = nombre && nombre !== "" ? ` por ${nombre}` : "";
+  const dirMap: Record<string, string> = {
+    left: "izquierda",
+    right: "derecha",
+    "sharp left": "izquierda pronunciada",
+    "sharp right": "derecha pronunciada",
+    "slight left": "levemente a la izquierda",
+    "slight right": "levemente a la derecha",
+    straight: "recto",
+    uturn: "dar la vuelta",
+  };
+  const dir = dirMap[modifier ?? ""] ?? "";
+
+  switch (type) {
+    case "turn":
+      return `Gire a la ${dir}${calle}`;
+    case "new name":
+      return `Continúe${calle}`;
+    case "depart":
+      return `Inicie el recorrido${calle}`;
+    case "arrive":
+      return "Ha llegado al destino";
+    case "merge":
+      return `Incorpore${dir ? " " + dir : ""}${calle}`;
+    case "on ramp":
+      return `Tome la rampa${dir ? " " + dir : ""}${calle}`;
+    case "off ramp":
+      return `Salga por la rampa${dir ? " " + dir : ""}${calle}`;
+    case "fork":
+      return `En el cruce, tome la ${dir}${calle}`;
+    case "end of road":
+      return `Al final, gire a la ${dir}${calle}`;
+    case "roundabout":
+      return `En la rotonda, tome la salida${calle}`;
+    case "rotary":
+      return `En la glorieta, continúe${calle}`;
+    default:
+      return dir ? `Dirija ${dir}${calle}` : `Continúe${calle}`;
+  }
+}
+
+// ─── Calcular bearing entre dos puntos ───────────────────────────────────────
+
+function calcularBearing(p1: Coords, p2: Coords): number {
+  const lat1 = (p1[0] * Math.PI) / 180;
+  const lat2 = (p2[0] * Math.PI) / 180;
+  const dLng = ((p2[1] - p1[1]) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+// ─── Interpolación lineal entre dos coords ───────────────────────────────────
+
+function interpolar(a: Coords, b: Coords, t: number): Coords {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
 export interface MultiStop {
   coords: Coords;
-  label: string;  // número o etiqueta corta
+  label: string;
   sublabel?: string;
   color: string;
 }
@@ -347,21 +396,56 @@ interface MultiProps {
 
 /**
  * Mapa de ruta multi-parada con Leaflet.
- * Muestra marcadores numerados y la ruta real por calles (OSRM).
- * stops[0] es siempre el depot (punto de origen).
+ * - Marcadores numerados y ruta real por calles (OSRM).
+ * - Avatar animado del repartidor que recorre la ruta.
+ * - Agente de navegación GPS con instrucciones de giro.
+ * - stops[0] es siempre el depot (punto de origen).
  */
 export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProps) {
-  const contenedorRef = useRef<HTMLDivElement>(null);
-  const mapaRef       = useRef<any>(null);
-  const [estado, setEstado] = useState<Estado>("cargando");
+  const contenedorRef  = useRef<HTMLDivElement>(null);
+  const mapaRef        = useRef<any>(null);
+  const leafletRef     = useRef<any>(null);        // referencia a L (Leaflet) una vez importado
+  const avatarRef      = useRef<any>(null);        // marcador Leaflet del repartidor
+  const animFrameRef   = useRef<number>(0);
+  const rutaPuntosRef  = useRef<Coords[]>([]);
+  const pasosNavRef    = useRef<OsrmStep[]>([]);
 
+  const [estado,          setEstado]          = useState<Estado>("cargando");
+  const [simulando,       setSimulando]       = useState(false);
+  const [instruccion,     setInstruccion]     = useState<string>("");
+  const [distSiguiente,   setDistSiguiente]   = useState<number>(0);
+  const [vozActiva,       setVozActiva]       = useState(true);
+  const [pasoActual,      setPasoActual]      = useState(0);
+  const [llegadaVisible,  setLlegadaVisible]  = useState(false);
+
+  // Hablar instrucción con Web Speech API
+  const hablar = useCallback((texto: string) => {
+    if (!vozActiva) return;
+    try {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(texto);
+        utt.lang = "es-PE";
+        utt.rate = 1.05;
+        utt.pitch = 1;
+        window.speechSynthesis.speak(utt);
+      }
+    } catch { /* no crítico */ }
+  }, [vozActiva]);
+
+  // ── Montar el mapa ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!contenedorRef.current || stops.length < 2) return;
     let activo = true;
     setEstado("cargando");
+    setSimulando(false);
+    setInstruccion("");
+    setLlegadaVisible(false);
+    cancelAnimationFrame(animFrameRef.current);
 
     async function montar() {
       const L = (await import("leaflet")).default;
+      leafletRef.current = L;
       if (!activo || !contenedorRef.current) return;
 
       if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
@@ -378,11 +462,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
       setTimeout(() => { if (activo && mapaRef.current) mapaRef.current.invalidateSize(); }, 100);
 
-      // Ajustar vista para que quepan todas las paradas
       const bounds = L.latLngBounds(stops.map((s) => s.coords)).pad(0.2);
       mapa.fitBounds(bounds);
 
-      // Marcadores numerados
+      // Marcadores de paradas
       stops.forEach((stop, idx) => {
         const icon = markerIcon(L, stop.label, stop.color);
         const popup = idx === 0
@@ -393,19 +476,31 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
       if (!activo) return;
 
-      // Ruta real por calles
       const coords: Coords[] = stops.map((s) => s.coords);
-      const puntos = await obtenerRutaMulti(coords);
+      const { puntos, pasos } = await obtenerRutaMulti(coords);
 
       if (!activo) return;
 
       if (puntos.length > 0) {
+        rutaPuntosRef.current = puntos;
+        pasosNavRef.current   = pasos;
+
         L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
         L.polyline(puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
+
+        // Crear avatar del repartidor en la posición inicial
+        const avatarIcon = crearAvatarRepartidor(L, 0);
+        const avatar = L.marker(puntos[0], {
+          icon: avatarIcon,
+          zIndexOffset: 1000,
+        }).addTo(mapa);
+        avatarRef.current = avatar;
+
         setEstado("listo");
       } else {
-        // Sin OSRM: línea recta entre paradas
-        L.polyline(coords, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(mapa);
+        rutaPuntosRef.current = [];
+        const linea: Coords[] = stops.map((s) => s.coords);
+        L.polyline(linea, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(mapa);
         setEstado("sin-ruta");
       }
 
@@ -416,24 +511,195 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
     return () => {
       activo = false;
+      cancelAnimationFrame(animFrameRef.current);
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
       if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
     };
   }, [stops]);
 
+  // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
+  function iniciarSimulacion() {
+    const puntos = rutaPuntosRef.current;
+    const pasos  = pasosNavRef.current;
+    const L      = leafletRef.current;
+    if (!puntos.length || !avatarRef.current || !L) return;
+
+    setSimulando(true);
+    setLlegadaVisible(false);
+    setPasoActual(0);
+
+    // Velocidad: 500 puntos por segundo (ajustar según distancia real)
+    const VELOCIDAD_PUNTOS = 3;   // puntos de ruta por frame (≈ 18 seg para 1000 pts a 60fps)
+    let idx = 0;                  // índice en puntos[]
+    let stepNavActual = 0;
+    let ultimaInstruccion = "";
+
+    const pasoNavCercano = (pos: Coords): OsrmStep | null => {
+      if (!pasos.length) return null;
+      let minDist = Infinity;
+      let cercano: OsrmStep | null = null;
+      for (const p of pasos) {
+        const d = distanciaM(pos, p.coordInicio);
+        if (d < minDist) { minDist = d; cercano = p; }
+      }
+      return minDist < 80 ? cercano : null; // dentro de 80 m
+    };
+
+    const frame = () => {
+      if (!avatarRef.current || !mapaRef.current) return;
+
+      // Calcular bearing para rotar avatar
+      const siguiente = Math.min(idx + 1, puntos.length - 1);
+      const bearing = calcularBearing(puntos[idx], puntos[siguiente]);
+
+      // Actualizar posición del avatar
+      avatarRef.current.setLatLng(puntos[idx]);
+
+      // Actualizar ícono con rotación
+      avatarRef.current.setIcon(crearAvatarRepartidorImport(L, bearing));
+
+      // ── Navegación: buscar instrucción cercana ────────────────────────────
+      const pasoNav = pasoNavCercano(puntos[idx]);
+      if (pasoNav && pasoNav.instruccion !== ultimaInstruccion) {
+        ultimaInstruccion = pasoNav.instruccion;
+        setInstruccion(pasoNav.instruccion);
+        setDistSiguiente(pasoNav.distancia);
+        hablar(pasoNav.instruccion);
+        setPasoActual((prev) => prev + 1);
+      }
+
+      idx += VELOCIDAD_PUNTOS;
+
+      if (idx >= puntos.length - 1) {
+        // Llegó al final
+        avatarRef.current.setLatLng(puntos[puntos.length - 1]);
+        setSimulando(false);
+        setInstruccion("Ha llegado al destino final");
+        setLlegadaVisible(true);
+        hablar("Ha llegado al destino final");
+        return;
+      }
+
+      animFrameRef.current = requestAnimationFrame(frame);
+    };
+
+    // Primera instrucción
+    if (pasos.length > 0) {
+      setInstruccion(pasos[0].instruccion);
+      setDistSiguiente(pasos[0].distancia);
+      hablar(pasos[0].instruccion);
+    }
+
+    animFrameRef.current = requestAnimationFrame(frame);
+  }
+
+  function detenerSimulacion() {
+    cancelAnimationFrame(animFrameRef.current);
+    setSimulando(false);
+    setInstruccion("");
+    // Reiniciar avatar al inicio
+    if (avatarRef.current && rutaPuntosRef.current.length) {
+      avatarRef.current.setLatLng(rutaPuntosRef.current[0]);
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+
+  const puedeComentar = estado === "listo" && rutaPuntosRef.current.length > 0;
+
   return (
-    <div className={`relative overflow-hidden ${className}`} style={{ height: altura }}>
+    <div className={`relative flex flex-col overflow-hidden rounded-xl border border-border ${className}`} style={{ height: altura }}>
+
+      {/* ── Panel de navegación GPS ── */}
+      {(instruccion || simulando) && (
+        <div
+          className="absolute left-2 right-2 top-2 z-[1001] flex items-start gap-3 rounded-xl bg-card/95 px-4 py-3 shadow-lg"
+          style={{ backdropFilter: "blur(8px)" }}
+        >
+          <Navigation2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold leading-snug text-foreground truncate">
+              {instruccion || "Iniciando…"}
+            </p>
+            {distSiguiente > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {distSiguiente < 1000
+                  ? `En ${distSiguiente} m`
+                  : `En ${(distSiguiente / 1000).toFixed(1)} km`}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setVozActiva((v) => !v)}
+            className="shrink-0 rounded-full p-1 text-muted-foreground hover:text-foreground transition"
+            title={vozActiva ? "Silenciar voz" : "Activar voz"}
+          >
+            {vozActiva ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </button>
+        </div>
+      )}
+
+      {/* Overlay llegada */}
+      {llegadaVisible && (
+        <div
+          className="absolute inset-x-2 top-2 z-[1002] flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
+          style={{ backdropFilter: "blur(8px)" }}
+        >
+          <span className="text-2xl">🏁</span>
+          <div>
+            <p className="text-sm font-bold">¡Llegada al destino!</p>
+            <p className="text-xs opacity-80">Todas las paradas completadas.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay carga */}
       {estado === "cargando" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted" style={{ zIndex: 1000 }}>
           <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
           <p className="text-sm text-muted-foreground">Trazando ruta…</p>
         </div>
       )}
+
       {estado === "sin-ruta" && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
+        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
           Ruta aproximada — servicio de calles no disponible
         </div>
       )}
+
+      {/* Mapa Leaflet */}
       <div ref={contenedorRef} className="h-full w-full" />
+
+      {/* ── Barra de control del repartidor ── */}
+      {puedeComentar && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-[1000] flex items-center justify-between gap-3 border-t border-border bg-card/95 px-4 py-2.5"
+          style={{ backdropFilter: "blur(8px)" }}
+        >
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="text-base">🛵</span>
+            <span className="hidden sm:inline">Simulación del repartidor</span>
+            {pasoActual > 0 && <span className="font-medium text-accent">· {pasoActual} instrucciones</span>}
+          </div>
+          <div className="flex gap-2">
+            {simulando ? (
+              <button
+                onClick={detenerSimulacion}
+                className="inline-flex items-center gap-1.5 rounded-md bg-destructive/90 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-destructive"
+              >
+                Detener
+              </button>
+            ) : (
+              <button
+                onClick={iniciarSimulacion}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition hover:brightness-110"
+              >
+                <Navigation2 className="h-3.5 w-3.5" />
+                Iniciar recorrido
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -458,4 +724,72 @@ function markerIcon(L: any, label: string, color: string) {
     iconAnchor: [16, 16],
     popupAnchor: [0, -20],
   });
+}
+
+/** SVG del avatar repartidor con rotación por bearing */
+function svgRepartidor(bearing: number): string {
+  return `
+    <div style="
+      transform: rotate(${bearing}deg);
+      transform-origin: center center;
+      width: 44px;
+      height: 44px;
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5));
+    ">
+      <svg viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" width="44" height="44">
+        <!-- Sombra base -->
+        <ellipse cx="22" cy="41" rx="9" ry="3" fill="rgba(0,0,0,0.18)"/>
+        <!-- Moto / scooter -->
+        <ellipse cx="22" cy="34" rx="12" ry="5" fill="#1e40af"/>
+        <ellipse cx="13" cy="34" rx="4" ry="4" fill="#1e3a8a" stroke="#fff" stroke-width="1.5"/>
+        <ellipse cx="31" cy="34" rx="4" ry="4" fill="#1e3a8a" stroke="#fff" stroke-width="1.5"/>
+        <!-- Chasis -->
+        <rect x="14" y="29" width="16" height="7" rx="3" fill="#2563eb"/>
+        <!-- Cuerpo del repartidor -->
+        <rect x="15" y="17" width="14" height="14" rx="4" fill="#1d4ed8"/>
+        <!-- Mochila de entrega (naranja) -->
+        <rect x="26" y="18" width="7" height="10" rx="2" fill="#f59e0b" stroke="#d97706" stroke-width="1"/>
+        <line x1="29" y1="18" x2="29" y2="28" stroke="#d97706" stroke-width="0.8"/>
+        <!-- Cabeza con casco -->
+        <circle cx="22" cy="13" r="7" fill="#f59e0b"/>
+        <path d="M15.5 12 Q22 5 28.5 12" fill="#1e3a8a" stroke="#1e40af" stroke-width="0.5"/>
+        <!-- Visera del casco -->
+        <path d="M16.5 13 Q22 10 27.5 13" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- Punto de dirección (flecha arriba) -->
+        <polygon points="22,2 19,7 25,7" fill="#f59e0b"/>
+      </svg>
+    </div>
+  `;
+}
+
+function crearAvatarRepartidor(L: any, bearing: number) {
+  return L.divIcon({
+    html: svgRepartidor(bearing),
+    className: "",
+    iconSize: [44, 44],
+    iconAnchor: [22, 38],
+    popupAnchor: [0, -42],
+  });
+}
+
+function crearAvatarRepartidorImport(L: any, bearing: number) {
+  return L.divIcon({
+    html: svgRepartidor(bearing),
+    className: "",
+    iconSize: [44, 44],
+    iconAnchor: [22, 38],
+    popupAnchor: [0, -42],
+  });
+}
+
+/** Distancia en metros entre dos Coords */
+function distanciaM(a: Coords, b: Coords): number {
+  const R = 6371000;
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const c = sinDLat * sinDLat +
+    Math.cos((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * sinDLng * sinDLng;
+  return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
 }
