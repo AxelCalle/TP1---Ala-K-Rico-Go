@@ -517,6 +517,13 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     };
   }, [stops]);
 
+  // ── Ajustar tamaño del mapa cuando aparece el panel lateral ────────────────
+  useEffect(() => {
+    if (estado === "listo" || estado === "sin-ruta") {
+      setTimeout(() => { mapaRef.current?.invalidateSize(); }, 80);
+    }
+  }, [estado]);
+
   // ── Scroll automático del historial ─────────────────────────────────────────
   useEffect(() => {
     if (historialRef.current) {
@@ -626,126 +633,132 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const puedeComentar = estado === "listo" && rutaPuntosRef.current.length > 0;
 
   return (
-    <div className={`relative flex flex-col overflow-hidden rounded-xl border border-border ${className}`} style={{ height: altura }}>
+    <div className={`relative flex overflow-hidden rounded-xl border border-border ${className}`} style={{ height: altura }}>
 
-      {/* ── Instrucción GPS actual (banner superior compacto) ── */}
-      {simulando && instruccion && (
-        <div
-          className="absolute left-2 right-2 top-2 z-[1001] flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
-          style={{ backdropFilter: "blur(8px)" }}
-        >
-          <Navigation2 className="h-4 w-4 shrink-0 text-accent" />
-          <p className="flex-1 min-w-0 text-xs font-semibold leading-snug text-foreground truncate">
-            {instruccion}
-          </p>
-          <button
-            onClick={() => setVozActiva((v) => !v)}
-            className="shrink-0 rounded-full p-1 text-muted-foreground hover:text-foreground transition"
-            title={vozActiva ? "Silenciar voz" : "Activar voz"}
-          >
-            {vozActiva ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      )}
+      {/* ── IZQUIERDA: Mapa Leaflet ── */}
+      <div className="relative min-w-0 flex-1">
 
-      {/* Overlay llegada */}
-      {llegadaVisible && (
-        <div
-          className="absolute inset-x-2 top-2 z-[1002] flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
-          style={{ backdropFilter: "blur(8px)" }}
-        >
-          <span className="text-2xl">🏁</span>
-          <div>
-            <p className="text-sm font-bold">¡Llegada al destino!</p>
-            <p className="text-xs opacity-80">Todas las paradas completadas.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Overlay carga */}
-      {estado === "cargando" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted" style={{ zIndex: 1000 }}>
-          <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Trazando ruta…</p>
-        </div>
-      )}
-
-      {estado === "sin-ruta" && (
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
-          Ruta aproximada — servicio de calles no disponible
-        </div>
-      )}
-
-      {/* Mapa Leaflet */}
-      <div ref={contenedorRef} className="h-full w-full" />
-
-      {/* ── Chat de instrucciones GPS ── */}
-      {historialInstrucciones.length > 0 && (
-        <div
-          className="absolute bottom-11 left-0 right-0 z-[1000] border-t border-border/50 bg-card/95"
-          style={{ backdropFilter: "blur(10px)", maxHeight: "130px" }}
-        >
+        {/* Banner instrucción GPS actual (overlay superior) */}
+        {simulando && instruccion && (
           <div
-            ref={historialRef}
-            className="overflow-y-auto px-3 py-2 space-y-1"
-            style={{ maxHeight: "130px" }}
+            className="absolute left-2 right-2 top-2 z-[1001] flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
+            style={{ backdropFilter: "blur(8px)" }}
           >
-            {historialInstrucciones.map((inst, i) => {
-              const esActual = i === historialInstrucciones.length - 1;
-              return (
-                <div
-                  key={i}
-                  className={`flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all ${
-                    esActual
-                      ? "bg-accent/15 border border-accent/30 text-foreground font-semibold"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  <Navigation2
-                    className={`mt-0.5 h-3 w-3 shrink-0 ${esActual ? "text-accent" : "text-muted-foreground/50"}`}
-                  />
-                  <span className="leading-snug">{inst}</span>
-                  {esActual && distSiguiente > 0 && !inst.includes("destino") && (
-                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
-                      {distSiguiente < 1000 ? `${distSiguiente} m` : `${(distSiguiente / 1000).toFixed(1)} km`}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            <Navigation2 className="h-4 w-4 shrink-0 text-accent" />
+            <p className="flex-1 min-w-0 text-xs font-semibold leading-snug text-foreground truncate">
+              {instruccion}
+            </p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Barra de control del repartidor ── */}
+        {/* Overlay llegada */}
+        {llegadaVisible && (
+          <div
+            className="absolute inset-x-2 top-2 z-[1002] flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
+            style={{ backdropFilter: "blur(8px)" }}
+          >
+            <span className="text-2xl">🏁</span>
+            <div>
+              <p className="text-sm font-bold">¡Llegada al destino!</p>
+              <p className="text-xs opacity-80">Todas las paradas completadas.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Overlay carga */}
+        {estado === "cargando" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted" style={{ zIndex: 1000 }}>
+            <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
+            <p className="text-sm text-muted-foreground">Trazando ruta…</p>
+          </div>
+        )}
+
+        {estado === "sin-ruta" && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
+            Ruta aproximada — servicio de calles no disponible
+          </div>
+        )}
+
+        <div ref={contenedorRef} className="h-full w-full" />
+      </div>
+
+      {/* ── DERECHA: Panel de instrucciones GPS ── */}
       {puedeComentar && (
-        <div
-          className="absolute bottom-0 left-0 right-0 z-[1000] flex items-center justify-between gap-3 border-t border-border bg-card/95 px-4 py-2"
-          style={{ backdropFilter: "blur(8px)" }}
-        >
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="text-base">🛵</span>
-            <span className="hidden sm:inline">Simulación del repartidor</span>
-            {pasoActual > 0 && (
-              <span className="font-medium text-accent">· {pasoActual} instrucciones</span>
+        <div className="flex w-56 shrink-0 flex-col border-l border-border bg-card">
+
+          {/* Cabecera del panel */}
+          <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <span className="text-sm">🛵</span>
+              Navegación GPS
+            </div>
+            <button
+              onClick={() => setVozActiva((v) => !v)}
+              className="shrink-0 rounded-full p-1 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={vozActiva ? "Silenciar voz" : "Activar voz"}
+            >
+              {vozActiva ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+
+          {/* Lista de instrucciones */}
+          <div ref={historialRef} className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+            {historialInstrucciones.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 px-2 py-8 text-center">
+                <Navigation2 className="h-8 w-8 text-muted-foreground/20" />
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Presiona «Iniciar recorrido» para ver las instrucciones paso a paso
+                </p>
+              </div>
+            ) : (
+              historialInstrucciones.map((inst, i) => {
+                const esActual = i === historialInstrucciones.length - 1;
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs transition-all ${
+                      esActual
+                        ? "border border-accent/30 bg-accent/15 font-semibold text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    <Navigation2
+                      className={`mt-0.5 h-3 w-3 shrink-0 ${esActual ? "text-accent" : "text-muted-foreground/40"}`}
+                    />
+                    <span className="leading-snug">{inst}</span>
+                    {esActual && distSiguiente > 0 && !inst.includes("destino") && (
+                      <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                        {distSiguiente < 1000 ? `${distSiguiente} m` : `${(distSiguiente / 1000).toFixed(1)} km`}
+                      </span>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
-          <div className="flex gap-2">
+
+          {/* Controles */}
+          <div className="border-t border-border px-3 py-2.5 space-y-1.5">
             {simulando ? (
               <button
                 onClick={detenerSimulacion}
-                className="inline-flex items-center gap-1.5 rounded-md bg-destructive/90 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-destructive"
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-destructive/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Detener
               </button>
             ) : (
               <button
                 onClick={iniciarSimulacion}
-                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition hover:brightness-110"
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Navigation2 className="h-3.5 w-3.5" />
                 {historialInstrucciones.length > 0 ? "Reiniciar" : "Iniciar recorrido"}
               </button>
+            )}
+            {pasoActual > 0 && (
+              <p className="text-center text-[10px] text-muted-foreground">
+                {pasoActual} instrucciones
+              </p>
             )}
           </div>
         </div>
