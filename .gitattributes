@@ -1,0 +1,12 @@
+# Fuerza LF en todos los archivos de texto — evita errores CRLF en Windows
+* text=auto eol=lf
+
+# Binarios — sin conversión
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
