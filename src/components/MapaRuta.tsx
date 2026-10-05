@@ -10,8 +10,8 @@ import { MapPin, Navigation2, Volume2, VolumeX } from "lucide-react";
 // ─── Servicios externos ────────────────────────────────────────────────────────
 
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-const PHOTON    = "https://photon.komoot.io/api";
-const OSRM      = "https://router.project-osrm.org/route/v1/driving";
+const PHOTON = "https://photon.komoot.io/api";
+const OSRM = "https://router.project-osrm.org/route/v1/driving";
 
 /** Coordenadas de respaldo para San Martín de Porres cuando todo el geocoding falla */
 const SMP_FALLBACK: [number, number] = [-12.026, -77.058];
@@ -64,7 +64,7 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
 
 function buildQueries(raw: string): string[] {
   const normalize = (s: string) =>
-    s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   const limpia = raw.trim();
   const queries: string[] = [];
@@ -102,7 +102,7 @@ function buildQueries(raw: string): string[] {
 
 function buildQueriesPhoton(raw: string): string[] {
   const normalize = (s: string) =>
-    s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   const limpia = raw.trim();
   const queries: string[] = [];
