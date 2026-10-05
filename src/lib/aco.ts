@@ -282,7 +282,36 @@ export interface TSPResult {
  * @param stops  Array de paradas incluyendo depot en posición 0.
  *               Mínimo 2 elementos (depot + 1 entrega).
  */
-export function ejecutarACO_TSP(stops: Stop[]): TSPResult | null {
+/** Parámetros del ACS para la ruta del repartidor (configurables en AKR_ConfigACO). */
+export type TspParams = {
+  alfa: number;
+  beta: number;
+  rho: number;
+  Q: number;
+  numAnts: number;
+  iterations: number;
+  elite: number;
+  tauMin: number;
+};
+
+/** Valores con los que se validó el piloto; se usan si no hay configuración guardada. */
+export const ACO_PARAMS_DEFECTO: TspParams = {
+  alfa: 1.0,
+  beta: 3.5,
+  rho: 0.25,
+  Q: 1.0,
+  numAnts: 12,
+  iterations: 100,
+  elite: 5,
+  tauMin: 0.01,
+};
+
+function valorValido(v: unknown, def: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
+export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}): TSPResult | null {
   if (stops.length < 2) return null;
 
   const n = stops.length;
@@ -294,15 +323,17 @@ export function ejecutarACO_TSP(stops: Stop[]): TSPResult | null {
     ),
   );
 
-  // Parámetros ACO — calibrados para N pequeño (2–15 paradas)
-  const numAnts = Math.max(12, n * 4);
-  const iterations = 100;
-  const alpha = 1.0;
-  const beta = 3.5;   // mayor peso a distancia corta
-  const rho = 0.25;
-  const Q = 1.0;
-  const eliteFactor = 5;
-  const tauMin = 0.01;
+  // Parámetros ACO — guardados por el administrador o, si faltan, los del piloto.
+  // Las hormigas nunca son menos de 4 por parada para cubrir N pequeño (2–15 paradas).
+  const d = ACO_PARAMS_DEFECTO;
+  const numAnts = Math.max(Math.round(valorValido(config.numAnts, d.numAnts)), n * 4);
+  const iterations = Math.max(1, Math.round(valorValido(config.iterations, d.iterations)));
+  const alpha = valorValido(config.alfa, d.alfa);
+  const beta = valorValido(config.beta, d.beta);   // mayor peso a distancia corta
+  const rho = Math.min(0.99, valorValido(config.rho, d.rho));
+  const Q = valorValido(config.Q, d.Q) || d.Q;
+  const eliteFactor = valorValido(config.elite, d.elite);
+  const tauMin = valorValido(config.tauMin, d.tauMin);
   const tauInit = 1.0;
 
   // Matriz de feromonas n×n inicializada uniformemente

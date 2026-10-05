@@ -329,8 +329,8 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       setError("Ingresa un correo electrónico válido.");
       return;
     }
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
     if (password !== confirmar) {
@@ -467,12 +467,12 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
             type={verPass ? "text" : "password"}
             autoComplete="new-password"
             required
-            minLength={6}
-            maxLength={120}
+            minLength={8}
+            maxLength={100}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className={`${inputCls} pr-10`}
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Mínimo 8 caracteres"
           />
           <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} />
         </div>
@@ -488,7 +488,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
           type={verPass ? "text" : "password"}
           autoComplete="new-password"
           required
-          maxLength={120}
+          maxLength={100}
           value={confirmar}
           onChange={(e) => setConfirmar(e.target.value)}
           className={`${inputCls} ${confirmar && password !== confirmar ? "border-destructive" : ""}`}

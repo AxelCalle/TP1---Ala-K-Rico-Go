@@ -9,7 +9,7 @@ import { store, useStore } from "@/lib/store";
 import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION, ESTADO_PEDIDO_ES } from "@/lib/constants";
 import { ejecutarACO_TSP, type Stop, type TSPResult } from "@/lib/aco";
 import { MapaRutaMulti, type MultiStop } from "@/components/MapaRuta";
-import { api, type PedidoApi } from "@/lib/api";
+import { api, type AcoConfigApi, type PedidoApi } from "@/lib/api";
 
 export const Route = createFileRoute("/driver")({
   head: () => ({
@@ -92,10 +92,13 @@ function PaginaRepartidor() {
     (p) => p.Estado === "entregado" || p.Estado === "cancelado",
   ).sort((a, b) => b.Id_Pedido - a.Id_Pedido);
 
-  function generarRutaOptima() {
+  async function generarRutaOptima() {
     if (pedidosActivos.length === 0) return;
     setTspRunning(true);
     setTspResult(null);
+    // Parámetros guardados por el administrador (HU025); si falla, se usan los del piloto
+    let config: Partial<AcoConfigApi> = {};
+    try { config = await api.obtenerAcoConfig(); } catch { /* valores por defecto */ }
     setTimeout(() => {
       try {
         const stops: Stop[] = [
@@ -112,7 +115,7 @@ function PaginaRepartidor() {
             label: `AKA-${String(p.Id_Pedido).padStart(4, "0")}`,
           })),
         ];
-        setTspResult(ejecutarACO_TSP(stops));
+        setTspResult(ejecutarACO_TSP(stops, config));
       } catch {
         setTspResult(null);
       } finally {

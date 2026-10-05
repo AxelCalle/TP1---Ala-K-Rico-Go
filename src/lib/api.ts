@@ -152,6 +152,7 @@ export type PilotoFaseData = {
 };
 
 export type PilotoApi = {
+  inicio_aco?: string;
   fifo: PilotoFaseData;
   aco:  PilotoFaseData;
   mejora: {

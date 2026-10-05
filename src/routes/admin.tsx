@@ -583,8 +583,8 @@ function SeccionReportes() {
         <div className="rounded-xl border border-border bg-card p-6">
           <h2 className="mb-1 text-base font-semibold">Comparativa piloto — FIFO vs ACO</h2>
           <p className="mb-4 text-xs text-muted-foreground">
-            FIFO: referencia histórica del proceso manual previo a la app ·
-            ACO: métricas reales del sistema actual
+            Ambas fases calculadas desde los pedidos entregados · FIFO: despacho manual (AS-IS) ·
+            ACO: con ACO-DeliRoute{piloto.inicio_aco ? ` desde el ${piloto.inicio_aco.split("-").reverse().join("/")}` : ""}
           </p>
 
           {/* Tarjetas FIFO / ACO */}

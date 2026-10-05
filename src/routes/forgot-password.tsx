@@ -38,8 +38,8 @@ function ForgotPasswordPage() {
   async function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
     if (password !== confirmar) {
@@ -132,11 +132,11 @@ function ForgotPasswordPage() {
               <div className="relative">
                 <input
                   id="fp-pass" type={verPass ? "text" : "password"}
-                  required minLength={6} maxLength={120}
+                  required minLength={8} maxLength={100}
                   autoComplete="new-password"
                   value={password} onChange={(e) => setPassword(e.target.value)}
                   className={`${inputCls} pr-10`}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                 />
                 <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} />
               </div>
@@ -148,7 +148,7 @@ function ForgotPasswordPage() {
               </label>
               <input
                 id="fp-confirmar" type={verPass ? "text" : "password"}
-                required maxLength={120} autoComplete="new-password"
+                required maxLength={100} autoComplete="new-password"
                 value={confirmar} onChange={(e) => setConfirmar(e.target.value)}
                 className={`${inputCls} ${confirmar && password !== confirmar ? "border-destructive" : ""}`}
                 placeholder="Repite tu contraseña"

@@ -180,27 +180,21 @@ router.get('/zonas', soloAdmin, async (req, res) => {
 
 // GET /api/reportes/piloto  — comparativa FIFO vs ACO (tesis)
 //
-// FIFO = proceso manual previo a la app (datos de referencia histórica,
-//        tiempos aproximados sin herramienta de optimización).
-//        No existe en la BD porque nunca hubo sistema que lo auditara.
-//
-// ACO  = lo que produce la app (calculado en tiempo real desde AKR_Pedidos).
-const FIFO_REFERENCIA = {
-  fase:          'FIFO',
-  descripcion:   'Proceso manual sin optimización (referencia histórica)',
-  n:             87,           // muestra de jornadas previas a la app
-  tpe_promedio:  72.4,         // minutos promedio creación → entrega
-  tpe_min:       38,
-  tpe_max:       124,
-  pct_45min:     19.5,         // % de pedidos entregados en ≤ 45 min
-  pedidos_por_ruta: 3.1,       // promedio de paradas por recorrido manual
-};
+// Ambas fases se calculan desde AKR_Pedidos (pedidos entregados):
+// FIFO = fase AS-IS del piloto, con despacho manual por orden de llegada:
+//        pedidos creados desde PILOTO_INICIO_FIFO y antes de PILOTO_INICIO_ACO.
+// ACO  = fase TO-BE con ACO-DeliRoute: pedidos creados desde PILOTO_INICIO_ACO
+//        y antes de PILOTO_FIN (exclusivo), para no mezclar pedidos de prueba posteriores.
+// TPE  = minutos desde el registro del pedido hasta la confirmación de entrega.
+const PILOTO_INICIO_FIFO = process.env.PILOTO_INICIO_FIFO || '2026-06-01';
+const PILOTO_INICIO_ACO  = process.env.PILOTO_INICIO_ACO  || '2026-06-26';
+const PILOTO_FIN         = process.env.PILOTO_FIN         || '2026-07-07';
 
-router.get('/piloto', soloAdmin, async (req, res) => {
-  try {
-    const pool = await getPool();
-
-    const acoResult = await pool.request().query(`
+async function metricasFase(pool, desde, hasta) {
+  const r = await pool.request()
+    .input('desde', sql.Date, desde)
+    .input('hasta', sql.Date, hasta)
+    .query(`
       SELECT
         COUNT(*)                                                                           AS n,
         CAST(AVG(CAST(DATEDIFF(minute, Creacion_Pedido, Entrega_Pedido) AS FLOAT)) AS DECIMAL(5,1)) AS tpe_promedio,
@@ -214,26 +208,35 @@ router.get('/piloto', soloAdmin, async (req, res) => {
       WHERE Estado        = 'entregado'
         AND Entrega_Pedido IS NOT NULL
         AND Creacion_Pedido IS NOT NULL
+        AND Creacion_Pedido >= @desde
+        AND Creacion_Pedido <  @hasta
     `);
+  const m = r.recordset[0];
+  return {
+    n:            m.n            ?? 0,
+    tpe_promedio: m.tpe_promedio ?? null,
+    tpe_min:      m.tpe_min      ?? null,
+    tpe_max:      m.tpe_max      ?? null,
+    pct_45min:    m.pct_45min    ?? null,
+  };
+}
 
-    const aco = acoResult.recordset[0];
+router.get('/piloto', soloAdmin, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const fifo = await metricasFase(pool, PILOTO_INICIO_FIFO, PILOTO_INICIO_ACO);
+    const aco  = await metricasFase(pool, PILOTO_INICIO_ACO, PILOTO_FIN);
+    const ambos = fifo.tpe_promedio != null && aco.tpe_promedio != null;
 
     return res.json({
-      fifo: FIFO_REFERENCIA,
-      aco: {
-        fase:        'ACO',
-        descripcion: 'Optimización con Colonia de Hormigas (sistema actual)',
-        n:            aco.n            ?? 0,
-        tpe_promedio: aco.tpe_promedio ?? null,
-        tpe_min:      aco.tpe_min      ?? null,
-        tpe_max:      aco.tpe_max      ?? null,
-        pct_45min:    aco.pct_45min    ?? null,
-      },
-      mejora: aco.tpe_promedio != null
+      inicio_aco: PILOTO_INICIO_ACO,
+      fifo: { fase: 'FIFO', descripcion: 'Despacho manual por orden de llegada (fase AS-IS del piloto)', ...fifo },
+      aco:  { fase: 'ACO',  descripcion: 'Rutas optimizadas con ACO-DeliRoute (fase TO-BE del piloto)', ...aco },
+      mejora: ambos
         ? {
-            reduccion_min:  +(FIFO_REFERENCIA.tpe_promedio - aco.tpe_promedio).toFixed(1),
-            reduccion_pct:  +(((FIFO_REFERENCIA.tpe_promedio - aco.tpe_promedio) / FIFO_REFERENCIA.tpe_promedio) * 100).toFixed(1),
-            mejora_pct_45:  +(aco.pct_45min - FIFO_REFERENCIA.pct_45min).toFixed(1),
+            reduccion_min:  +(fifo.tpe_promedio - aco.tpe_promedio).toFixed(1),
+            reduccion_pct:  +(((fifo.tpe_promedio - aco.tpe_promedio) / fifo.tpe_promedio) * 100).toFixed(1),
+            mejora_pct_45:  +((aco.pct_45min ?? 0) - (fifo.pct_45min ?? 0)).toFixed(1),
           }
         : null,
     });

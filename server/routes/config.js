@@ -7,10 +7,10 @@ import { registrarAuditoria } from '../middleware/auditoria.js';
 const router = Router();
 router.use(verificarToken);
 
-// GET /api/config/aco  — solo admin
+// GET /api/config/aco  — admin y repartidor (el repartidor la usa para calcular su ruta)
 router.get('/aco', async (req, res) => {
-  if (req.usuario.role !== 'admin') {
-    return res.status(403).json({ error: 'Solo admin.' });
+  if (!['admin', 'driver'].includes(req.usuario.role)) {
+    return res.status(403).json({ error: 'Acceso denegado.' });
   }
   try {
     const pool = await getPool();

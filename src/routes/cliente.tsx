@@ -989,7 +989,7 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
   async function handleCambiarPass(e: FormEvent) {
     e.preventDefault();
     setPassError("");
-    if (passNuevo.length < 6) { setPassError("La contraseña debe tener al menos 6 caracteres."); return; }
+    if (passNuevo.length < 8) { setPassError("La contraseña debe tener al menos 8 caracteres."); return; }
     if (passNuevo !== passConfirm) { setPassError("Las contraseñas no coinciden."); return; }
     setPassLoading(true);
     try {
@@ -1107,12 +1107,12 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="pass-nuevo" className="text-sm font-medium">Nueva contraseña</label>
-              <input id="pass-nuevo" type="password" required minLength={6} maxLength={120} autoComplete="new-password"
-                value={passNuevo} onChange={(e) => setPassNuevo(e.target.value)} className={clsInput} placeholder="Mínimo 6 caracteres" />
+              <input id="pass-nuevo" type="password" required minLength={8} maxLength={100} autoComplete="new-password"
+                value={passNuevo} onChange={(e) => setPassNuevo(e.target.value)} className={clsInput} placeholder="Mínimo 8 caracteres" />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="pass-confirm" className="text-sm font-medium">Confirmar contraseña</label>
-              <input id="pass-confirm" type="password" required maxLength={120} autoComplete="new-password"
+              <input id="pass-confirm" type="password" required maxLength={100} autoComplete="new-password"
                 value={passConfirm} onChange={(e) => setPassConfirm(e.target.value)}
                 className={`${clsInput} ${passConfirm && passNuevo !== passConfirm ? "border-destructive" : ""}`}
                 placeholder="Repite la contraseña" />

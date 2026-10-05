@@ -149,23 +149,23 @@ CREATE TABLE AKR_ConfigACO (
     Valor   FLOAT           NOT NULL
 );
 
--- Valores por defecto del ACO
+-- Valores por defecto del ACO (los validados en el piloto)
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'alfa')
     INSERT INTO AKR_ConfigACO VALUES ('alfa', 1.0);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'beta')
-    INSERT INTO AKR_ConfigACO VALUES ('beta', 3.0);
+    INSERT INTO AKR_ConfigACO VALUES ('beta', 3.5);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'rho')
-    INSERT INTO AKR_ConfigACO VALUES ('rho', 0.3);
+    INSERT INTO AKR_ConfigACO VALUES ('rho', 0.25);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'Q')
     INSERT INTO AKR_ConfigACO VALUES ('Q', 1.0);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'numAnts')
-    INSERT INTO AKR_ConfigACO VALUES ('numAnts', 20);
+    INSERT INTO AKR_ConfigACO VALUES ('numAnts', 12);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'iterations')
-    INSERT INTO AKR_ConfigACO VALUES ('iterations', 60);
+    INSERT INTO AKR_ConfigACO VALUES ('iterations', 100);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'elite')
-    INSERT INTO AKR_ConfigACO VALUES ('elite', 4);
+    INSERT INTO AKR_ConfigACO VALUES ('elite', 5);
 IF NOT EXISTS (SELECT 1 FROM AKR_ConfigACO WHERE Clave = 'tauMin')
-    INSERT INTO AKR_ConfigACO VALUES ('tauMin', 0.02);
+    INSERT INTO AKR_ConfigACO VALUES ('tauMin', 0.01);
 
 -- ---------------------------------------------------------------------------
 -- 11. CALIFICACIONES AUTOMÁTICAS DE REPARTIDOR
