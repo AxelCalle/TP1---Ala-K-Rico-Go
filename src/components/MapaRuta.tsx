@@ -40,7 +40,9 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
       if (!res.ok) continue;
       const data: { lat: string; lon: string }[] = await res.json();
       if (data.length) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-    } catch { /* siguiente intento */ }
+    } catch {
+      /* siguiente intento */
+    }
   }
 
   // ── Fallback: Photon (Komoot) ─────────────────────────────────────────────
@@ -56,22 +58,21 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
         const [lng, lat] = data.features[0].geometry.coordinates;
         return [lat, lng];
       }
-    } catch { /* siguiente intento */ }
+    } catch {
+      /* siguiente intento */
+    }
   }
 
   return null;
 }
 
 function buildQueries(raw: string): string[] {
-  const normalize = (s: string) =>
-    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   const limpia = raw.trim();
   const queries: string[] = [];
 
-  const yaIncluye =
-    limpia.toLowerCase().includes("peru") ||
-    limpia.toLowerCase().includes("perú");
+  const yaIncluye = limpia.toLowerCase().includes("peru") || limpia.toLowerCase().includes("perú");
   queries.push(yaIncluye ? limpia : `${limpia}, Lima, Peru`);
 
   const sinNumero = normalize(limpia)
@@ -101,8 +102,7 @@ function buildQueries(raw: string): string[] {
 }
 
 function buildQueriesPhoton(raw: string): string[] {
-  const normalize = (s: string) =>
-    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   const limpia = raw.trim();
   const queries: string[] = [];
@@ -114,7 +114,10 @@ function buildQueriesPhoton(raw: string): string[] {
     .trim();
   queries.push(`${sinNumero}, Lima, Peru`);
 
-  const partes = sinNumero.split(",").map((p) => p.trim()).filter(Boolean);
+  const partes = sinNumero
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (partes.length >= 2) queries.push(`${partes[0]}, ${partes[1]}, Lima, Peru`);
   if (partes.length >= 1) queries.push(`${partes[0]}, Lima, Peru`);
 
@@ -130,7 +133,7 @@ async function obtenerRuta(a: Coords, b: Coords): Promise<Coords[]> {
     const data = await res.json();
     if (data.code !== "Ok") return [];
     return data.routes[0].geometry.coordinates.map(
-      ([lng, lat]: [number, number]) => [lat, lng] as Coords
+      ([lng, lat]: [number, number]) => [lat, lng] as Coords,
     );
   } catch {
     return [];
@@ -150,9 +153,16 @@ interface Props {
 
 type Estado = "cargando" | "listo" | "sin-ruta" | "error";
 
-export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura = 380, className = "" }: Props) {
+export function MapaRuta({
+  origen,
+  destino,
+  coordsOrigen,
+  coordsDestino,
+  altura = 380,
+  className = "",
+}: Props) {
   const contenedorRef = useRef<HTMLDivElement>(null);
-  const mapaRef       = useRef<any>(null);
+  const mapaRef = useRef<any>(null);
   const [estado, setEstado] = useState<Estado>("cargando");
 
   useEffect(() => {
@@ -169,20 +179,25 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         mapaRef.current = null;
       }
 
-      const mapa = L.map(contenedorRef.current, { zoomControl: true })
-        .setView(SMP_FALLBACK, 13);
+      const mapa = L.map(contenedorRef.current, { zoomControl: true }).setView(SMP_FALLBACK, 13);
       mapaRef.current = mapa;
 
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(mapa);
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
+          maxZoom: 19,
+        },
+      ).addTo(mapa);
 
-      setTimeout(() => { if (activo && mapaRef.current) mapaRef.current.invalidateSize(); }, 100);
+      setTimeout(() => {
+        if (activo && mapaRef.current) mapaRef.current.invalidateSize();
+      }, 100);
 
       let [coordA, coordB] = await Promise.all([
-        coordsOrigen ? Promise.resolve(coordsOrigen as [number,number]) : geocodificar(origen),
-        coordsDestino ? Promise.resolve(coordsDestino as [number,number]) : geocodificar(destino),
+        coordsOrigen ? Promise.resolve(coordsOrigen as [number, number]) : geocodificar(origen),
+        coordsDestino ? Promise.resolve(coordsDestino as [number, number]) : geocodificar(destino),
       ]);
 
       if (!activo) return;
@@ -221,7 +236,10 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         setEstado("listo");
       } else {
         L.polyline([coordA, coordB], {
-          color: "#4f46e5", weight: 4, opacity: 0.7, dashArray: "10, 8",
+          color: "#4f46e5",
+          weight: 4,
+          opacity: 0.7,
+          dashArray: "10, 8",
         }).addTo(mapa);
         setEstado("sin-ruta");
       }
@@ -229,19 +247,21 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
       mapa.invalidateSize();
     }
 
-    montar().catch(() => { if (activo) setEstado("error"); });
+    montar().catch(() => {
+      if (activo) setEstado("error");
+    });
 
     return () => {
       activo = false;
-      if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
+      if (mapaRef.current) {
+        mapaRef.current.remove();
+        mapaRef.current = null;
+      }
     };
   }, [origen, destino]);
 
   return (
-    <div
-      className={`relative overflow-hidden ${className}`}
-      style={{ height: altura }}
-    >
+    <div className={`relative overflow-hidden ${className}`} style={{ height: altura }}>
       {estado === "cargando" && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted"
@@ -278,7 +298,9 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
 
 // ─── Mapa multi-parada ────────────────────────────────────────────────────────
 
-async function obtenerRutaMulti(coords: Coords[]): Promise<{ puntos: Coords[]; pasos: OsrmStep[] }> {
+async function obtenerRutaMulti(
+  coords: Coords[],
+): Promise<{ puntos: Coords[]; pasos: OsrmStep[] }> {
   if (coords.length < 2) return { puntos: [], pasos: [] };
   try {
     const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
@@ -301,7 +323,7 @@ async function obtenerRutaMulti(coords: Coords[]): Promise<{ puntos: Coords[]; p
           instruccion: buildInstruccion(maneuver.type, maneuver.modifier, step.name),
           distancia: Math.round(step.distance ?? 0),
           coordInicio: maneuver.location
-            ? [maneuver.location[1], maneuver.location[0]] as Coords
+            ? ([maneuver.location[1], maneuver.location[0]] as Coords)
             : puntos[0],
         });
       }
@@ -368,9 +390,7 @@ function calcularBearing(p1: Coords, p2: Coords): number {
   const lat2 = (p2[0] * Math.PI) / 180;
   const dLng = ((p2[1] - p1[1]) * Math.PI) / 180;
   const y = Math.sin(dLng) * Math.cos(lat2);
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) -
-    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
   return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
 }
 
@@ -401,38 +421,43 @@ interface MultiProps {
  * - stops[0] es siempre el depot (punto de origen).
  */
 export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProps) {
-  const contenedorRef  = useRef<HTMLDivElement>(null);
-  const mapaRef        = useRef<any>(null);
-  const leafletRef     = useRef<any>(null);        // referencia a L (Leaflet) una vez importado
-  const avatarRef      = useRef<any>(null);        // marcador Leaflet del repartidor
-  const animFrameRef   = useRef<number>(0);
-  const rutaPuntosRef  = useRef<Coords[]>([]);
-  const pasosNavRef    = useRef<OsrmStep[]>([]);
+  const contenedorRef = useRef<HTMLDivElement>(null);
+  const mapaRef = useRef<any>(null);
+  const leafletRef = useRef<any>(null); // referencia a L (Leaflet) una vez importado
+  const avatarRef = useRef<any>(null); // marcador Leaflet del repartidor
+  const animFrameRef = useRef<number>(0);
+  const rutaPuntosRef = useRef<Coords[]>([]);
+  const pasosNavRef = useRef<OsrmStep[]>([]);
 
-  const [estado,                 setEstado]                 = useState<Estado>("cargando");
-  const [simulando,              setSimulando]              = useState(false);
-  const [instruccion,            setInstruccion]            = useState<string>("");
-  const [distSiguiente,          setDistSiguiente]          = useState<number>(0);
-  const [vozActiva,              setVozActiva]              = useState(true);
-  const [pasoActual,             setPasoActual]             = useState(0);
-  const [llegadaVisible,         setLlegadaVisible]         = useState(false);
+  const [estado, setEstado] = useState<Estado>("cargando");
+  const [simulando, setSimulando] = useState(false);
+  const [instruccion, setInstruccion] = useState<string>("");
+  const [distSiguiente, setDistSiguiente] = useState<number>(0);
+  const [vozActiva, setVozActiva] = useState(true);
+  const [pasoActual, setPasoActual] = useState(0);
+  const [llegadaVisible, setLlegadaVisible] = useState(false);
   const [historialInstrucciones, setHistorialInstrucciones] = useState<string[]>([]);
-  const historialRef             = useRef<HTMLDivElement>(null);
+  const historialRef = useRef<HTMLDivElement>(null);
 
   // Hablar instrucción con Web Speech API
-  const hablar = useCallback((texto: string) => {
-    if (!vozActiva) return;
-    try {
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utt = new SpeechSynthesisUtterance(texto);
-        utt.lang = "es-PE";
-        utt.rate = 1.05;
-        utt.pitch = 1;
-        window.speechSynthesis.speak(utt);
+  const hablar = useCallback(
+    (texto: string) => {
+      if (!vozActiva) return;
+      try {
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          const utt = new SpeechSynthesisUtterance(texto);
+          utt.lang = "es-PE";
+          utt.rate = 1.05;
+          utt.pitch = 1;
+          window.speechSynthesis.speak(utt);
+        }
+      } catch {
+        /* no crítico */
       }
-    } catch { /* no crítico */ }
-  }, [vozActiva]);
+    },
+    [vozActiva],
+  );
 
   // ── Montar el mapa ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -449,18 +474,26 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       leafletRef.current = L;
       if (!activo || !contenedorRef.current) return;
 
-      if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
+      if (mapaRef.current) {
+        mapaRef.current.remove();
+        mapaRef.current = null;
+      }
 
-      const mapa = L.map(contenedorRef.current, { zoomControl: true })
-        .setView(stops[0].coords, 13);
+      const mapa = L.map(contenedorRef.current, { zoomControl: true }).setView(stops[0].coords, 13);
       mapaRef.current = mapa;
 
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(mapa);
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
+          maxZoom: 19,
+        },
+      ).addTo(mapa);
 
-      setTimeout(() => { if (activo && mapaRef.current) mapaRef.current.invalidateSize(); }, 100);
+      setTimeout(() => {
+        if (activo && mapaRef.current) mapaRef.current.invalidateSize();
+      }, 100);
 
       const bounds = L.latLngBounds(stops.map((s) => s.coords)).pad(0.2);
       mapa.fitBounds(bounds);
@@ -468,9 +501,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       // Marcadores de paradas
       stops.forEach((stop, idx) => {
         const icon = markerIcon(L, stop.label, stop.color);
-        const popup = idx === 0
-          ? "<b>Ala K' Rico GO</b><br><small>Punto de partida</small>"
-          : `<b>Parada ${idx}</b><br><small>${stop.sublabel ?? ""}</small>`;
+        const popup =
+          idx === 0
+            ? "<b>Ala K' Rico GO</b><br><small>Punto de partida</small>"
+            : `<b>Parada ${idx}</b><br><small>${stop.sublabel ?? ""}</small>`;
         L.marker(stop.coords, { icon }).addTo(mapa).bindPopup(popup);
       });
 
@@ -483,7 +517,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
       if (puntos.length > 0) {
         rutaPuntosRef.current = puntos;
-        pasosNavRef.current   = pasos;
+        pasosNavRef.current = pasos;
 
         L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
         L.polyline(puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
@@ -500,27 +534,36 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       } else {
         rutaPuntosRef.current = [];
         const linea: Coords[] = stops.map((s) => s.coords);
-        L.polyline(linea, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(mapa);
+        L.polyline(linea, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(
+          mapa,
+        );
         setEstado("sin-ruta");
       }
 
       mapa.invalidateSize();
     }
 
-    montar().catch(() => { if (activo) setEstado("error"); });
+    montar().catch(() => {
+      if (activo) setEstado("error");
+    });
 
     return () => {
       activo = false;
       cancelAnimationFrame(animFrameRef.current);
       if (window.speechSynthesis) window.speechSynthesis.cancel();
-      if (mapaRef.current) { mapaRef.current.remove(); mapaRef.current = null; }
+      if (mapaRef.current) {
+        mapaRef.current.remove();
+        mapaRef.current = null;
+      }
     };
   }, [stops]);
 
   // ── Ajustar tamaño del mapa cuando aparece el panel lateral ────────────────
   useEffect(() => {
     if (estado === "listo" || estado === "sin-ruta") {
-      setTimeout(() => { mapaRef.current?.invalidateSize(); }, 80);
+      setTimeout(() => {
+        mapaRef.current?.invalidateSize();
+      }, 80);
     }
   }, [estado]);
 
@@ -534,8 +577,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
   function iniciarSimulacion() {
     const puntos = rutaPuntosRef.current;
-    const pasos  = pasosNavRef.current;
-    const L      = leafletRef.current;
+    const pasos = pasosNavRef.current;
+    const L = leafletRef.current;
     if (!puntos.length || !avatarRef.current || !L) return;
 
     setSimulando(true);
@@ -557,7 +600,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       let cercano: OsrmStep | null = null;
       for (const p of pasos) {
         const d = distanciaM(pos, p.coordInicio);
-        if (d < minDist) { minDist = d; cercano = p; }
+        if (d < minDist) {
+          minDist = d;
+          cercano = p;
+        }
       }
       return minDist < 80 ? cercano : null;
     };
@@ -633,11 +679,12 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const puedeComentar = estado === "listo" && rutaPuntosRef.current.length > 0;
 
   return (
-    <div className={`relative flex overflow-hidden rounded-xl border border-border ${className}`} style={{ height: altura }}>
-
+    <div
+      className={`relative flex overflow-hidden rounded-xl border border-border ${className}`}
+      style={{ height: altura }}
+    >
       {/* ── IZQUIERDA: Mapa Leaflet ── */}
       <div className="relative min-w-0 flex-1">
-
         {/* Banner instrucción GPS actual (overlay superior) */}
         {simulando && instruccion && (
           <div
@@ -667,14 +714,20 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
         {/* Overlay carga */}
         {estado === "cargando" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted" style={{ zIndex: 1000 }}>
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted"
+            style={{ zIndex: 1000 }}
+          >
             <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
             <p className="text-sm text-muted-foreground">Trazando ruta…</p>
           </div>
         )}
 
         {estado === "sin-ruta" && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow" style={{ zIndex: 1000 }}>
+          <div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow"
+            style={{ zIndex: 1000 }}
+          >
             Ruta aproximada — servicio de calles no disponible
           </div>
         )}
@@ -685,7 +738,6 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       {/* ── DERECHA: Panel de instrucciones GPS ── */}
       {puedeComentar && (
         <div className="flex w-56 shrink-0 flex-col border-l border-border bg-card">
-
           {/* Cabecera del panel */}
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
@@ -697,7 +749,11 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
               className="shrink-0 rounded-full p-1 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={vozActiva ? "Silenciar voz" : "Activar voz"}
             >
-              {vozActiva ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+              {vozActiva ? (
+                <Volume2 className="h-3.5 w-3.5" />
+              ) : (
+                <VolumeX className="h-3.5 w-3.5" />
+              )}
             </button>
           </div>
 
@@ -728,7 +784,9 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                     <span className="leading-snug">{inst}</span>
                     {esActual && distSiguiente > 0 && !inst.includes("destino") && (
                       <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
-                        {distSiguiente < 1000 ? `${distSiguiente} m` : `${(distSiguiente / 1000).toFixed(1)} km`}
+                        {distSiguiente < 1000
+                          ? `${distSiguiente} m`
+                          : `${(distSiguiente / 1000).toFixed(1)} km`}
                       </span>
                     )}
                   </div>
@@ -852,7 +910,8 @@ function distanciaM(a: Coords, b: Coords): number {
   const dLng = ((b[1] - a[1]) * Math.PI) / 180;
   const sinDLat = Math.sin(dLat / 2);
   const sinDLng = Math.sin(dLng / 2);
-  const c = sinDLat * sinDLat +
+  const c =
+    sinDLat * sinDLat +
     Math.cos((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * sinDLng * sinDLng;
   return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
 }

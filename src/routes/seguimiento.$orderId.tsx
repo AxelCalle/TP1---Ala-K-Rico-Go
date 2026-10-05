@@ -1,6 +1,16 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, MapPin, PackageCheck, Truck, ChefHat, ClipboardList, ChevronLeft, Phone, Loader2 } from "lucide-react";
+import {
+  Check,
+  MapPin,
+  PackageCheck,
+  Truck,
+  ChefHat,
+  ClipboardList,
+  ChevronLeft,
+  Phone,
+  Loader2,
+} from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -39,26 +49,41 @@ export const Route = createFileRoute("/seguimiento/$orderId")({
 });
 
 const STEPS = [
-  { key: "sin_asignar", label: "Pedido recibido",  icon: ClipboardList, desc: "Tu pedido fue registrado y está en cola." },
-  { key: "asignado",    label: "En preparación",    icon: ChefHat,       desc: "Nuestro equipo está preparando tus alitas." },
-  { key: "en_camino",  label: "En camino",          icon: Truck,         desc: "Tu repartidor está en camino." },
-  { key: "entregado",  label: "Entregado",           icon: PackageCheck,  desc: "¡Pedido entregado! Buen provecho." },
+  {
+    key: "sin_asignar",
+    label: "Pedido recibido",
+    icon: ClipboardList,
+    desc: "Tu pedido fue registrado y está en cola.",
+  },
+  {
+    key: "asignado",
+    label: "En preparación",
+    icon: ChefHat,
+    desc: "Nuestro equipo está preparando tus alitas.",
+  },
+  { key: "en_camino", label: "En camino", icon: Truck, desc: "Tu repartidor está en camino." },
+  {
+    key: "entregado",
+    label: "Entregado",
+    icon: PackageCheck,
+    desc: "¡Pedido entregado! Buen provecho.",
+  },
 ] as const;
 
-type StepKey = typeof STEPS[number]["key"];
+type StepKey = (typeof STEPS)[number]["key"];
 
 const GREETINGS: Record<StepKey, (nombre: string) => string> = {
   sin_asignar: (n) => `Recibimos tu pedido, ${n}.`,
-  asignado:    (n) => `Tus alitas están en preparación, ${n}.`,
-  en_camino:   (n) => `¡Ya van en camino, ${n}!`,
-  entregado:   (n) => `¡Que aproveche, ${n}!`,
+  asignado: (n) => `Tus alitas están en preparación, ${n}.`,
+  en_camino: (n) => `¡Ya van en camino, ${n}!`,
+  entregado: (n) => `¡Que aproveche, ${n}!`,
 };
 
 const SUBTITLES: Record<StepKey, string> = {
   sin_asignar: "Estamos procesando tu orden. Te notificaremos cuando salga de cocina.",
-  asignado:    "Un repartidor fue asignado. En breve estarán de camino.",
-  en_camino:   "Tu repartidor está en ruta. Prepara un lugar para recibirlas.",
-  entregado:   "Gracias por elegir Ala K' Rico GO. ¡Vuelve pronto!",
+  asignado: "Un repartidor fue asignado. En breve estarán de camino.",
+  en_camino: "Tu repartidor está en ruta. Prepara un lugar para recibirlas.",
+  entregado: "Gracias por elegir Ala K' Rico GO. ¡Vuelve pronto!",
 };
 
 function PaginaSeguimiento() {
@@ -67,7 +92,11 @@ function PaginaSeguimiento() {
   // Acepta formato "AKA-1042" (desde la landing) o numérico directo
   const numericId = parseInt(orderId.replace(/^AKA-0*/i, ""), 10);
 
-  const { data: pedido, isLoading, isError } = useQuery({
+  const {
+    data: pedido,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["seguimiento", orderId],
     queryFn: () => {
       if (!numericId || isNaN(numericId)) throw new Error("id_invalido");
@@ -108,7 +137,13 @@ function PaginaSeguimiento() {
     );
   }
 
-  const productos = (() => { try { return JSON.parse(pedido.Productos ?? "[]"); } catch { return []; } })();
+  const productos = (() => {
+    try {
+      return JSON.parse(pedido.Productos ?? "[]");
+    } catch {
+      return [];
+    }
+  })();
   const p0 = productos[0] ?? {};
 
   const estado = pedido.Estado as StepKey;
@@ -128,7 +163,10 @@ function PaginaSeguimiento() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link to="/" className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Link
+            to="/"
+            className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <LogoIcon size={28} />
             <span className="font-display text-base tracking-wide">GO</span>
           </Link>
@@ -142,7 +180,6 @@ function PaginaSeguimiento() {
       </header>
 
       <main className="mx-auto max-w-3xl space-y-5 px-4 py-8 sm:px-6">
-
         {/* Encabezado de estado */}
         <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
@@ -153,20 +190,21 @@ function PaginaSeguimiento() {
               <h1 className="mt-1 text-2xl font-semibold leading-tight sm:text-3xl">
                 {GREETINGS[currentStep.key]?.(nombre) ?? `Hola, ${nombre}`}
               </h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                {SUBTITLES[currentStep.key]}
-              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">{SUBTITLES[currentStep.key]}</p>
             </div>
             <span
               className={`hidden shrink-0 sm:grid h-14 w-14 place-items-center rounded-full ${
                 estado === "entregado"
                   ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
                   : estado === "en_camino"
-                  ? "bg-accent/15 text-accent"
-                  : "bg-muted text-muted-foreground"
+                    ? "bg-accent/15 text-accent"
+                    : "bg-muted text-muted-foreground"
               }`}
             >
-              {(() => { const Icon = currentStep.icon; return <Icon className="h-7 w-7" />; })()}
+              {(() => {
+                const Icon = currentStep.icon;
+                return <Icon className="h-7 w-7" />;
+              })()}
             </span>
           </div>
         </div>
@@ -178,11 +216,11 @@ function PaginaSeguimiento() {
           </h2>
           <ol className="relative space-y-0">
             {STEPS.map((step, i) => {
-              const done   = i < currentIndex;
+              const done = i < currentIndex;
               const active = i === currentIndex;
               const future = i > currentIndex;
               const isLast = i === STEPS.length - 1;
-              const Icon   = step.icon;
+              const Icon = step.icon;
 
               return (
                 <li key={step.key} className="flex gap-4">
@@ -192,13 +230,15 @@ function PaginaSeguimiento() {
                         done
                           ? "border-primary bg-primary text-primary-foreground"
                           : active
-                          ? "border-accent bg-accent text-accent-foreground"
-                          : "border-border bg-background text-muted-foreground"
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border bg-background text-muted-foreground"
                       }`}
                     >
-                      {done
-                        ? <Check className="h-4 w-4" />
-                        : <Icon className={`h-4 w-4 ${active ? "" : "opacity-50"}`} />}
+                      {done ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Icon className={`h-4 w-4 ${active ? "" : "opacity-50"}`} />
+                      )}
                       {active && (
                         <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-20" />
                       )}
@@ -212,15 +252,13 @@ function PaginaSeguimiento() {
                     )}
                   </div>
                   <div className={`pb-5 pt-1.5 ${isLast ? "pb-0" : ""}`}>
-                    <p className={`text-sm font-semibold ${future ? "text-muted-foreground" : "text-foreground"}`}>
+                    <p
+                      className={`text-sm font-semibold ${future ? "text-muted-foreground" : "text-foreground"}`}
+                    >
                       {step.label}
                     </p>
-                    {active && (
-                      <p className="mt-0.5 text-xs text-accent">{step.desc}</p>
-                    )}
-                    {done && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">Completado</p>
-                    )}
+                    {active && <p className="mt-0.5 text-xs text-accent">{step.desc}</p>}
+                    {done && <p className="mt-0.5 text-xs text-muted-foreground">Completado</p>}
                   </div>
                 </li>
               );
@@ -236,9 +274,9 @@ function PaginaSeguimiento() {
             </h2>
             <dl className="space-y-2.5 text-sm">
               {p0.alitas && <FilaDato label="Alitas" value={`${p0.alitas} piezas`} />}
-              {p0.salsa  && <FilaDato label="Salsa"  value={p0.salsa} />}
+              {p0.salsa && <FilaDato label="Salsa" value={p0.salsa} />}
               <FilaDato label="Dirección" value={pedido.Direccion_Destino} multiline />
-              {p0.notas  && <FilaDato label="Notas"  value={p0.notas} />}
+              {p0.notas && <FilaDato label="Notas" value={p0.notas} />}
             </dl>
           </div>
 
@@ -249,7 +287,12 @@ function PaginaSeguimiento() {
             {nombreRepartidor && estado !== "sin_asignar" ? (
               <div className="flex items-center gap-3">
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent/15 text-base font-bold text-accent">
-                  {nombreRepartidor.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                  {nombreRepartidor
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase()}
                 </span>
                 <div className="min-w-0">
                   <p className="font-semibold">{nombreRepartidor}</p>
@@ -257,8 +300,8 @@ function PaginaSeguimiento() {
                     {estado === "en_camino"
                       ? "En camino a tu dirección"
                       : estado === "entregado"
-                      ? "Pedido entregado"
-                      : "Listo para salir de cocina"}
+                        ? "Pedido entregado"
+                        : "Listo para salir de cocina"}
                   </p>
                 </div>
               </div>
@@ -301,7 +344,10 @@ function PaginaSeguimiento() {
 
         <p className="text-center text-xs text-muted-foreground">
           ¿Algún problema con tu pedido?{" "}
-          <a href="tel:+51000000000" className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <a
+            href="tel:+51000000000"
+            className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             Llámanos
           </a>{" "}
           y te ayudamos de inmediato.
@@ -311,7 +357,15 @@ function PaginaSeguimiento() {
   );
 }
 
-function FilaDato({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
+function FilaDato({
+  label,
+  value,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+}) {
   return (
     <div className={`flex ${multiline ? "flex-col gap-0.5" : "items-start justify-between gap-4"}`}>
       <dt className="shrink-0 text-muted-foreground">{label}</dt>

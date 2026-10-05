@@ -13,11 +13,11 @@ import { RESTAURANTE_COORDS, RADIO_COBERTURA_KM } from "@/lib/constants";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
-    * Math.sin(dLng / 2) ** 2;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -32,20 +32,16 @@ interface Props {
   altura?: number;
 }
 
-export function MapaSelectorUbicacion({
-  onSeleccion,
-  coordsIniciales,
-  altura = 320,
-}: Props) {
+export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 320 }: Props) {
   const contenedorRef = useRef<HTMLDivElement>(null);
-  const mapaRef       = useRef<any>(null);
-  const marcadorRef   = useRef<any>(null);
-  const activoRef     = useRef(true);
+  const mapaRef = useRef<any>(null);
+  const marcadorRef = useRef<any>(null);
+  const activoRef = useRef(true);
 
-  const [cargando,      setCargando]      = useState(true);
-  const [buscandoDir,   setBuscandoDir]   = useState(false);
-  const [direccionSel,  setDireccionSel]  = useState<string>("");
-  const [fueraDeZona,   setFueraDeZona]   = useState(false);
+  const [cargando, setCargando] = useState(true);
+  const [buscandoDir, setBuscandoDir] = useState(false);
+  const [direccionSel, setDireccionSel] = useState<string>("");
+  const [fueraDeZona, setFueraDeZona] = useState(false);
 
   // ── Geocodificación inversa ──────────────────────────────────────────────────
   const geocodInverso = useCallback(async (lat: number, lng: number): Promise<string> => {
@@ -103,7 +99,9 @@ export function MapaSelectorUbicacion({
             </div>`,
           )
           .openPopup();
-      } catch { /* el mapa puede haberse desmontado */ }
+      } catch {
+        /* el mapa puede haberse desmontado */
+      }
     },
     [geocodInverso, onSeleccion],
   );
@@ -124,7 +122,7 @@ export function MapaSelectorUbicacion({
       }
 
       const centro = coordsIniciales ?? CENTRO_DEFAULT;
-      const zoom   = coordsIniciales ? 17 : 15;
+      const zoom = coordsIniciales ? 17 : 15;
 
       const mapa = L.map(contenedorRef.current, {
         zoomControl: true,
@@ -133,10 +131,14 @@ export function MapaSelectorUbicacion({
 
       mapaRef.current = mapa;
 
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(mapa);
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
+          maxZoom: 19,
+        },
+      ).addTo(mapa);
 
       // Zona de cobertura — círculo de 3 km
       L.circle(RESTAURANTE_COORDS, {
@@ -146,13 +148,16 @@ export function MapaSelectorUbicacion({
         fillOpacity: 0.07,
         weight: 2,
         dashArray: "6 4",
-      }).addTo(mapa)
+      })
+        .addTo(mapa)
         .bindTooltip(`Zona de cobertura (${RADIO_COBERTURA_KM} km)`, { sticky: true });
 
       // Marcador fijo del restaurante
       L.marker(RESTAURANTE_COORDS, { icon: crearIconoRestaurante(L) })
         .addTo(mapa)
-        .bindPopup("<b style='color:#f59e0b'>🍗 Ala K&apos; Rico GO</b><br><small>Punto de origen</small>")
+        .bindPopup(
+          "<b style='color:#f59e0b'>🍗 Ala K&apos; Rico GO</b><br><small>Punto de origen</small>",
+        );
 
       // Redibujado tras montar en el DOM
       setTimeout(() => {
@@ -286,7 +291,7 @@ function crearIconoRestaurante(L: any) {
       ">🍗</div>
     `,
     className: "",
-    iconSize:   [34, 34],
+    iconSize: [34, 34],
     iconAnchor: [17, 17],
     popupAnchor: [0, -20],
   });
@@ -321,8 +326,8 @@ function crearIconoPin(L: any) {
       </div>
     `,
     className: "",
-    iconSize:   [32, 44],
-    iconAnchor: [16, 44],   // punta del pin en el suelo
+    iconSize: [32, 44],
+    iconAnchor: [16, 44], // punta del pin en el suelo
     popupAnchor: [0, -46],
   });
 }

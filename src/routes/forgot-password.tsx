@@ -5,7 +5,6 @@ import { inputCls, ErrorMsg, TogglePass } from "@/components/FormBits";
 import { LogoIcon } from "../components/Logo";
 import { api } from "@/lib/api";
 
-
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
     meta: [{ title: "Recuperar contraseña — Ala K' Rico GO" }],
@@ -16,12 +15,12 @@ export const Route = createFileRoute("/forgot-password")({
 type Paso = "email" | "nueva-clave" | "exito";
 
 function ForgotPasswordPage() {
-  const [paso, setPaso]       = useState<Paso>("email");
-  const [email, setEmail]     = useState("");
+  const [paso, setPaso] = useState<Paso>("email");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [verPass, setVerPass] = useState(false);
-  const [error, setError]     = useState("");
+  const [error, setError] = useState("");
 
   // ── Paso 1: verificar correo ───────────────────────────────────────────────
   function handleEmailSubmit(e: FormEvent) {
@@ -58,7 +57,10 @@ function ForgotPasswordPage() {
     <div className="grid min-h-screen place-items-center bg-background p-6">
       <div className="w-full max-w-sm space-y-6">
         {/* Logo */}
-        <Link to="/" className="flex items-center justify-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Link
+          to="/"
+          className="flex items-center justify-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <LogoIcon size={32} />
           <span className="font-display text-xl tracking-wide">Ala K' Rico GO</span>
         </Link>
@@ -84,8 +86,13 @@ function ForgotPasswordPage() {
                 Correo electrónico
               </label>
               <input
-                id="fp-email" type="email" required autoComplete="email" maxLength={120}
-                value={email} onChange={(e) => setEmail(e.target.value)}
+                id="fp-email"
+                type="email"
+                required
+                autoComplete="email"
+                maxLength={120}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className={inputCls}
                 placeholder="tu@correo.com"
               />
@@ -98,7 +105,10 @@ function ForgotPasswordPage() {
             </button>
 
             <p className="text-center text-sm text-muted-foreground">
-              <Link to="/login" className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Link
+                to="/login"
+                className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 ← Volver al inicio de sesión
               </Link>
             </p>
@@ -114,15 +124,14 @@ function ForgotPasswordPage() {
             <div className="flex flex-col items-center gap-2 text-center">
               <h1 className="text-xl font-semibold">Nueva contraseña</h1>
               <p className="text-sm text-muted-foreground">
-                Cuenta:{" "}
-                <span className="font-medium text-foreground">{email}</span>
+                Cuenta: <span className="font-medium text-foreground">{email}</span>
               </p>
             </div>
 
             {/* Nota de prototipo */}
             <div className="rounded-md bg-muted px-3 py-2.5 text-xs text-muted-foreground">
-              <strong>Nota (prototipo):</strong> En producción se enviaría un enlace al correo.
-              Para el demo puedes ingresar tu nueva contraseña directamente.
+              <strong>Nota (prototipo):</strong> En producción se enviaría un enlace al correo. Para
+              el demo puedes ingresar tu nueva contraseña directamente.
             </div>
 
             <div className="space-y-1.5">
@@ -131,10 +140,14 @@ function ForgotPasswordPage() {
               </label>
               <div className="relative">
                 <input
-                  id="fp-pass" type={verPass ? "text" : "password"}
-                  required minLength={8} maxLength={100}
+                  id="fp-pass"
+                  type={verPass ? "text" : "password"}
+                  required
+                  minLength={8}
+                  maxLength={100}
                   autoComplete="new-password"
-                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className={`${inputCls} pr-10`}
                   placeholder="Mínimo 8 caracteres"
                 />
@@ -147,9 +160,13 @@ function ForgotPasswordPage() {
                 Confirmar contraseña
               </label>
               <input
-                id="fp-confirmar" type={verPass ? "text" : "password"}
-                required maxLength={100} autoComplete="new-password"
-                value={confirmar} onChange={(e) => setConfirmar(e.target.value)}
+                id="fp-confirmar"
+                type={verPass ? "text" : "password"}
+                required
+                maxLength={100}
+                autoComplete="new-password"
+                value={confirmar}
+                onChange={(e) => setConfirmar(e.target.value)}
                 className={`${inputCls} ${confirmar && password !== confirmar ? "border-destructive" : ""}`}
                 placeholder="Repite tu contraseña"
               />

@@ -248,8 +248,8 @@ function PaginaRuta() {
         const match = String(raw.nombre).match(/^(\d+)\s*alitas?\s*[-·]?\s*(.*)/i);
         return {
           alitas: match?.[1] ? Number(match[1]) : undefined,
-          salsa:  match?.[2]?.trim() || undefined,
-          notas:  raw.notas,
+          salsa: match?.[2]?.trim() || undefined,
+          notas: raw.notas,
         };
       }
       return raw;
@@ -449,7 +449,10 @@ function PaginaRuta() {
               </div>
 
               {errorEstado && (
-                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <p
+                  role="alert"
+                  className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                >
                   {errorEstado}
                 </p>
               )}
@@ -522,7 +525,9 @@ function PaginaRuta() {
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
                     />
                     {errorIncidencia && (
-                      <p role="alert" className="text-xs text-destructive">{errorIncidencia}</p>
+                      <p role="alert" className="text-xs text-destructive">
+                        {errorIncidencia}
+                      </p>
                     )}
                     <button
                       onClick={enviarIncidencia}

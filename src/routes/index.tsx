@@ -7,13 +7,7 @@
  */
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import {
-  PackageSearch,
-  ClipboardList,
-  Bike,
-  ScanBarcode,
-  ChevronRight,
-} from "lucide-react";
+import { PackageSearch, ClipboardList, Bike, ScanBarcode, ChevronRight } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 
 export const Route = createFileRoute("/")({
@@ -22,8 +16,7 @@ export const Route = createFileRoute("/")({
       { title: "Ala K' Rico GO — Alitas a domicilio" },
       {
         name: "description",
-        content:
-          "Pide tus alitas favoritas y sigue tu pedido en tiempo real.",
+        content: "Pide tus alitas favoritas y sigue tu pedido en tiempo real.",
       },
     ],
   }),
@@ -87,7 +80,6 @@ export function PaginaInicio() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--cream)" }}>
-
       {/* ══════════════════════════════════════
           HEADER
           Heurística #4: Consistencia — mismo color de CTA en todo el sitio
@@ -131,12 +123,8 @@ export function PaginaInicio() {
           Color teoría: fondo carbón cálido + CTA naranja-rojo
           Heurística #8: diseño estético minimalista — acción principal al frente
          ══════════════════════════════════════ */}
-      <section
-        className="relative overflow-hidden"
-        style={{ background: "var(--gradient-hero)" }}
-      >
+      <section className="relative overflow-hidden" style={{ background: "var(--gradient-hero)" }}>
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-16 md:py-24 lg:py-28">
-
           {/* Eyebrow — Heurística #2: lenguaje del mundo real */}
           <p
             className="mb-4 text-xs font-bold uppercase tracking-[0.22em]"
@@ -158,12 +146,9 @@ export function PaginaInicio() {
             <span style={{ color: "var(--flame)" }}>&amp; RÁPIDO.</span>
           </h1>
 
-          <p
-            className="mt-5 max-w-sm text-base leading-relaxed"
-            style={{ color: "var(--smoke)" }}
-          >
-            Desde la parrilla hasta tu puerta. Usá el código de tu recibo para
-            saber exactamente dónde está tu pedido.
+          <p className="mt-5 max-w-sm text-base leading-relaxed" style={{ color: "var(--smoke)" }}>
+            Desde la parrilla hasta tu puerta. Usá el código de tu recibo para saber exactamente
+            dónde está tu pedido.
           </p>
 
           {/* ──────────────────────────────────
@@ -248,10 +233,7 @@ export function PaginaInicio() {
         style={{ background: "var(--flame)", borderColor: "var(--flame-lt)" }}
         aria-label="Pedidos activos en vivo"
       >
-        <div
-          className="flex whitespace-nowrap"
-          style={{ animation: "ticker 20s linear infinite" }}
-        >
+        <div className="flex whitespace-nowrap" style={{ animation: "ticker 20s linear infinite" }}>
           {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => (
             <span
               key={i}
@@ -318,10 +300,7 @@ export function PaginaInicio() {
                 />
               </div>
 
-              <h3
-                className="mt-4 font-display text-2xl"
-                style={{ color: "var(--coal)" }}
-              >
+              <h3 className="mt-4 font-display text-2xl" style={{ color: "var(--coal)" }}>
                 {paso.titulo.toUpperCase()}
               </h3>
               <p
@@ -339,10 +318,7 @@ export function PaginaInicio() {
           CTA FINAL — Heurística #7: flexibilidad y eficiencia de uso
           Los usuarios del equipo tienen acceso rápido desde cualquier parte
          ══════════════════════════════════════ */}
-      <section
-        className="py-10 sm:py-14"
-        style={{ background: "var(--coal)" }}
-      >
+      <section className="py-10 sm:py-14" style={{ background: "var(--coal)" }}>
         <div className="mx-auto max-w-6xl px-4 sm:px-6 md:flex md:items-center md:justify-between">
           <div>
             <h2
@@ -372,10 +348,7 @@ export function PaginaInicio() {
       </section>
 
       {/* FOOTER */}
-      <footer
-        className="border-t"
-        style={{ borderColor: "var(--border)" }}
-      >
+      <footer className="border-t" style={{ borderColor: "var(--border)" }}>
         <div
           className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 py-5 text-xs"
           style={{ color: "var(--muted-foreground)" }}
@@ -387,7 +360,6 @@ export function PaginaInicio() {
           </span>
         </div>
       </footer>
-
     </div>
   );
 }

@@ -55,7 +55,7 @@ export interface AcoGraph {
 }
 
 export interface AcoResult {
-  path: number[];       // IDs de nodos en orden
+  path: number[]; // IDs de nodos en orden
   distanceKm: number;
   etaMin: number;
   pheromones: Map<string, number>;
@@ -67,12 +67,12 @@ export interface AcoResult {
 interface AcoParams {
   numAnts: number;
   iterations: number;
-  alpha: number;    // exponente de feromona τ^α
-  beta: number;     // exponente heurístico  η^β = (1/d)^β
-  rho: number;      // tasa de evaporación (0..1)
-  Q: number;        // constante de depósito de feromona
-  elite: number;    // refuerzo extra para la mejor ruta global
-  tauMin: number;   // piso mínimo de feromona (evita estagnación)
+  alpha: number; // exponente de feromona τ^α
+  beta: number; // exponente heurístico  η^β = (1/d)^β
+  rho: number; // tasa de evaporación (0..1)
+  Q: number; // constante de depósito de feromona
+  elite: number; // refuerzo extra para la mejor ruta global
+  tauMin: number; // piso mínimo de feromona (evita estagnación)
 }
 
 /**
@@ -164,17 +164,17 @@ export function construirGrafo(semillaStr: string, numNodos = 16): AcoGraph {
 
   // Nodos fijos: A a la izquierda, B a la derecha
   const nodes: AcoNode[] = [
-    { id: 0, x: 0.05, y: 0.50, label: "A" },
-    { id: 1, x: 0.95, y: 0.50, label: "B" },
+    { id: 0, x: 0.05, y: 0.5, label: "A" },
+    { id: 1, x: 0.95, y: 0.5, label: "B" },
   ];
 
   // Nodos intermedios: distribuidos progresivamente de izquierda a derecha
   // con ruido vertical. La distribución progresiva asegura que el camino
   // base (por orden de X) sea natural y no cruce en zigzag.
   for (let i = 2; i < numNodos; i++) {
-    const t = (i - 1) / (numNodos - 1);          // progreso 0..1
-    const xBase = 0.10 + t * 0.80;               // columna base
-    const xNoise = (rng() - 0.5) * 0.12;         // ruido horizontal pequeño
+    const t = (i - 1) / (numNodos - 1); // progreso 0..1
+    const xBase = 0.1 + t * 0.8; // columna base
+    const xNoise = (rng() - 0.5) * 0.12; // ruido horizontal pequeño
     nodes.push({
       id: i,
       x: Math.max(0.08, Math.min(0.92, xBase + xNoise)),
@@ -220,11 +220,15 @@ export function construirGrafo(semillaStr: string, numNodos = 16): AcoGraph {
     // Conectar el componente de A con el componente de B usando el nodo más cercano
     const enA = [...alcanzables];
     const enB = nodes.map((n) => n.id).filter((id) => !alcanzables.has(id));
-    let minDist = Infinity, puente: [number, number] = [0, 1];
+    let minDist = Infinity,
+      puente: [number, number] = [0, 1];
     for (const a of enA)
       for (const b of enB) {
         const d = euclidean(nodes[a], nodes[b]);
-        if (d < minDist) { minDist = d; puente = [a, b]; }
+        if (d < minDist) {
+          minDist = d;
+          puente = [a, b];
+        }
       }
     addEdge(puente[0], puente[1]);
     adj = buildAdj(nodes, edges); // reconstruir adj limpio
@@ -242,9 +246,7 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   const dLng = (lng2 - lng1) * (Math.PI / 180);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLng / 2) ** 2;
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -253,7 +255,7 @@ export interface Stop {
   id: string;
   lat: number;
   lng: number;
-  label: string;   // texto corto para mostrar en UI
+  label: string; // texto corto para mostrar en UI
 }
 
 /** Resultado del ACO para ruta multi-parada. */
@@ -329,7 +331,7 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
   const numAnts = Math.max(Math.round(valorValido(config.numAnts, d.numAnts)), n * 4);
   const iterations = Math.max(1, Math.round(valorValido(config.iterations, d.iterations)));
   const alpha = valorValido(config.alfa, d.alfa);
-  const beta = valorValido(config.beta, d.beta);   // mayor peso a distancia corta
+  const beta = valorValido(config.beta, d.beta); // mayor peso a distancia corta
   const rho = Math.min(0.99, valorValido(config.rho, d.rho));
   const Q = valorValido(config.Q, d.Q) || d.Q;
   const eliteFactor = valorValido(config.elite, d.elite);
@@ -375,7 +377,10 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
           next = candidates[candidates.length - 1];
           for (let i = 0; i < candidates.length; i++) {
             r -= scores[i];
-            if (r <= 0) { next = candidates[i]; break; }
+            if (r <= 0) {
+              next = candidates[i];
+              break;
+            }
           }
         }
 
@@ -413,8 +418,14 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
     if (bestTour.length > 0) {
       const eliteDeposit = (eliteFactor * Q) / (bestCost * tf);
       for (let i = 0; i < bestTour.length - 1; i++) {
-        tau[bestTour[i]][bestTour[i + 1]] = Math.max(tauMin, tau[bestTour[i]][bestTour[i + 1]] + eliteDeposit);
-        tau[bestTour[i + 1]][bestTour[i]] = Math.max(tauMin, tau[bestTour[i + 1]][bestTour[i]] + eliteDeposit);
+        tau[bestTour[i]][bestTour[i + 1]] = Math.max(
+          tauMin,
+          tau[bestTour[i]][bestTour[i + 1]] + eliteDeposit,
+        );
+        tau[bestTour[i + 1]][bestTour[i]] = Math.max(
+          tauMin,
+          tau[bestTour[i + 1]][bestTour[i]] + eliteDeposit,
+        );
       }
     }
   }
@@ -455,16 +466,13 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
  * @returns AcoResult con ruta, distancia en km y ETA en moto, o null si el grafo
  *          no tiene solución (no debería ocurrir con construirGrafo).
  */
-export function ejecutarACO(
-  grafo: AcoGraph,
-  params: Partial<AcoParams> = {},
-): AcoResult | null {
+export function ejecutarACO(grafo: AcoGraph, params: Partial<AcoParams> = {}): AcoResult | null {
   const p: AcoParams = { ...PARAMS, ...params };
   const { nodes, edges, adj } = grafo;
 
   // Inicializar mapas de feromona y distancia con acceso O(1)
-  const tau = new Map<string, number>();   // feromona por arista
-  const dist = new Map<string, number>();  // distancia por arista
+  const tau = new Map<string, number>(); // feromona por arista
+  const dist = new Map<string, number>(); // distancia por arista
   for (const e of edges) {
     const k = eid(e.from, e.to);
     tau.set(k, 1.0);
@@ -476,7 +484,6 @@ export function ejecutarACO(
 
   // ── Bucle principal ───────────────────────────────────────────────────────────
   for (let iter = 0; iter < p.iterations; iter++) {
-
     // ── Fase 1: Construcción de caminos ──────────────────────────────────────
     const solutions: { path: number[]; cost: number }[] = [];
 
@@ -514,7 +521,10 @@ export function ejecutarACO(
           next = neighbors[neighbors.length - 1]; // fallback al último
           for (let i = 0; i < neighbors.length; i++) {
             r -= scores[i];
-            if (r <= 0) { next = neighbors[i]; break; }
+            if (r <= 0) {
+              next = neighbors[i];
+              break;
+            }
           }
         }
 
@@ -571,4 +581,3 @@ export function ejecutarACO(
     iterations: p.iterations,
   };
 }
-

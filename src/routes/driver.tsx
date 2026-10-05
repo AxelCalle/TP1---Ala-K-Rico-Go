@@ -1,8 +1,15 @@
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  CheckCircle2, ExternalLink, Loader2, LogOut, MapPin,
-  Navigation, Route as RouteIcon, ShieldCheck, Zap,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  LogOut,
+  MapPin,
+  Navigation,
+  Route as RouteIcon,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore } from "@/lib/store";
@@ -29,30 +36,38 @@ const STATUS_ES = ESTADO_PEDIDO_ES;
 
 const STATUS_COLOR: Record<string, string> = {
   sin_asignar: "bg-muted text-muted-foreground",
-  asignado:    "bg-accent/20 text-accent",
-  en_camino:   "bg-primary/15 text-primary dark:text-primary",
-  entregado:   "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  asignado: "bg-accent/20 text-accent",
+  en_camino: "bg-primary/15 text-primary dark:text-primary",
+  entregado: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
 };
 
 /** Colores para los marcadores del mapa según posición en la ruta */
 const STOP_COLORS = [
-  "#ea580c", "#d97706", "#92400e", "#b45309",
-  "#dc2626", "#c2410c", "#78350f", "#9a3412",
+  "#ea580c",
+  "#d97706",
+  "#92400e",
+  "#b45309",
+  "#dc2626",
+  "#c2410c",
+  "#78350f",
+  "#9a3412",
 ];
 
 // ─── Página principal ──────────────────────────────────────────────────────────
 
 function PaginaRepartidor() {
-  const navigate  = useNavigate();
-  const session   = useStore((s) => s.session);
-  const [montado, setMontado]   = useState(false);
-  const [pedidos, setPedidos]   = useState<PedidoApi[]>([]);
+  const navigate = useNavigate();
+  const session = useStore((s) => s.session);
+  const [montado, setMontado] = useState(false);
+  const [pedidos, setPedidos] = useState<PedidoApi[]>([]);
   const [cargando, setCargando] = useState(true);
   const [tspResult, setTspResult] = useState<TSPResult | null>(null);
   const [tspRunning, setTspRunning] = useState(false);
   const [historialExpandido, setHistorialExpandido] = useState(false);
 
-  useEffect(() => { setMontado(true); }, []);
+  useEffect(() => {
+    setMontado(true);
+  }, []);
 
   useEffect(() => {
     if (montado && (!session || (session.role !== "driver" && session.role !== "admin"))) {
@@ -63,7 +78,8 @@ function PaginaRepartidor() {
   useEffect(() => {
     if (!montado || !session) return;
     setCargando(true);
-    api.listarPedidos()
+    api
+      .listarPedidos()
       .then((data) => {
         const arr = Array.isArray(data) ? data : ((data as any).items ?? []);
         setPedidos(arr);
@@ -88,9 +104,9 @@ function PaginaRepartidor() {
     (p) => p.Estado !== "entregado" && p.Estado !== "cancelado",
   );
   // Historial: entregados y cancelados — sección separada
-  const pedidosHistorial = pedidos.filter(
-    (p) => p.Estado === "entregado" || p.Estado === "cancelado",
-  ).sort((a, b) => b.Id_Pedido - a.Id_Pedido);
+  const pedidosHistorial = pedidos
+    .filter((p) => p.Estado === "entregado" || p.Estado === "cancelado")
+    .sort((a, b) => b.Id_Pedido - a.Id_Pedido);
 
   async function generarRutaOptima() {
     if (pedidosActivos.length === 0) return;
@@ -98,7 +114,11 @@ function PaginaRepartidor() {
     setTspResult(null);
     // Parámetros guardados por el administrador (HU025); si falla, se usan los del piloto
     let config: Partial<AcoConfigApi> = {};
-    try { config = await api.obtenerAcoConfig(); } catch { /* valores por defecto */ }
+    try {
+      config = await api.obtenerAcoConfig();
+    } catch {
+      /* valores por defecto */
+    }
     setTimeout(() => {
       try {
         const stops: Stop[] = [
@@ -110,8 +130,8 @@ function PaginaRepartidor() {
           },
           ...pedidosActivos.map((p) => ({
             id: String(p.Id_Pedido),
-            lat:  p.Lat_Destino,
-            lng:  p.Lng_Destino,
+            lat: p.Lat_Destino,
+            lng: p.Lng_Destino,
             label: `AKA-${String(p.Id_Pedido).padStart(4, "0")}`,
           })),
         ];
@@ -147,7 +167,9 @@ function PaginaRepartidor() {
             </span>
           </Link>
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">{nombreRepartidor}</span>
+            <span className="hidden text-sm text-muted-foreground sm:inline">
+              {nombreRepartidor}
+            </span>
             <Link
               to="/admin"
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -167,7 +189,6 @@ function PaginaRepartidor() {
       </header>
 
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1fr_420px]">
-
         {/* ── Columna izquierda: lista de pedidos ── */}
         <div className="space-y-5">
           <div className="flex items-start justify-between gap-4">
@@ -187,9 +208,13 @@ function PaginaRepartidor() {
               className="inline-flex shrink-0 items-center gap-2 rounded-sm bg-accent px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-accent-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {tspRunning ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Calculando…
+                </>
               ) : (
-                <><Zap className="h-4 w-4" /> Generar ruta óptima</>
+                <>
+                  <Zap className="h-4 w-4" /> Generar ruta óptima
+                </>
               )}
             </button>
           </div>
@@ -230,7 +255,10 @@ function PaginaRepartidor() {
                   </tr>
                 ) : pedidosActivos.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                    >
                       No tenés pedidos activos por el momento.
                     </td>
                   </tr>
@@ -254,7 +282,9 @@ function PaginaRepartidor() {
                               {posEnRuta > 0 && (
                                 <span
                                   className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                                  style={{ background: STOP_COLORS[posEnRuta % STOP_COLORS.length] }}
+                                  style={{
+                                    background: STOP_COLORS[posEnRuta % STOP_COLORS.length],
+                                  }}
                                 >
                                   {posEnRuta}
                                 </span>
@@ -273,7 +303,9 @@ function PaginaRepartidor() {
                             {p0.alitas || p0.salsa ? (
                               <div className="space-y-0.5">
                                 {p0.alitas && <div className="font-medium">{p0.alitas} alitas</div>}
-                                {p0.salsa && <div className="text-xs text-muted-foreground">{p0.salsa}</div>}
+                                {p0.salsa && (
+                                  <div className="text-xs text-muted-foreground">{p0.salsa}</div>
+                                )}
                               </div>
                             ) : (
                               <span className="text-xs text-muted-foreground">—</span>
@@ -285,7 +317,9 @@ function PaginaRepartidor() {
                             </div>
                           </Td>
                           <Td>
-                            <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
+                            <span
+                              className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}
+                            >
                               {STATUS_ES[o.Estado] ?? o.Estado}
                             </span>
                           </Td>
@@ -356,7 +390,9 @@ function PaginaRepartidor() {
                               {p0.alitas || p0.salsa ? (
                                 <div className="text-xs">
                                   {p0.alitas && <span>{p0.alitas} alitas</span>}
-                                  {p0.salsa && <span className="text-muted-foreground"> · {p0.salsa}</span>}
+                                  {p0.salsa && (
+                                    <span className="text-muted-foreground"> · {p0.salsa}</span>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-xs text-muted-foreground">—</span>
@@ -364,13 +400,20 @@ function PaginaRepartidor() {
                             </Td>
                             <Td className="hidden md:table-cell">
                               <span className="text-xs text-muted-foreground">
-                                {fecha ? new Date(fecha).toLocaleDateString("es-PE", {
-                                  day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-                                }) : "—"}
+                                {fecha
+                                  ? new Date(fecha).toLocaleDateString("es-PE", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "—"}
                               </span>
                             </Td>
                             <Td>
-                              <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}>
+                              <span
+                                className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[o.Estado] ?? "bg-muted text-muted-foreground"}`}
+                              >
                                 {STATUS_ES[o.Estado] ?? o.Estado}
                               </span>
                             </Td>
@@ -420,7 +463,8 @@ function PaginaRepartidor() {
                 <div className="border-b border-border px-4 py-3">
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <RouteIcon className="h-4 w-4 text-accent" />
-                    Ruta óptima — {tspResult.orden.length - 1} entrega{tspResult.orden.length - 1 !== 1 ? "s" : ""}
+                    Ruta óptima — {tspResult.orden.length - 1} entrega
+                    {tspResult.orden.length - 1 !== 1 ? "s" : ""}
                   </div>
                 </div>
                 <ol className="divide-y divide-border">
@@ -444,16 +488,21 @@ function PaginaRepartidor() {
                             <span className="truncate text-sm font-medium">
                               {isDepot
                                 ? "Ala K' Rico GO"
-                                : `${pedido?.Nombre_Cliente ?? ""} ${pedido?.Apellido_Cliente ?? ""}`.trim() || stop.label}
+                                : `${pedido?.Nombre_Cliente ?? ""} ${pedido?.Apellido_Cliente ?? ""}`.trim() ||
+                                  stop.label}
                             </span>
-                            <span className="shrink-0 text-xs font-semibold text-accent">{etaStr}</span>
+                            <span className="shrink-0 text-xs font-semibold text-accent">
+                              {etaStr}
+                            </span>
                           </div>
                           <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {isDepot ? RESTAURANTE_DIRECCION : pedido?.Direccion_Destino ?? ""}
+                            {isDepot ? RESTAURANTE_DIRECCION : (pedido?.Direccion_Destino ?? "")}
                           </div>
                           {!isDepot && pedido && (
                             <div className="mt-1 flex items-center gap-2">
-                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_COLOR[pedido.Estado] ?? ""}`}>
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_COLOR[pedido.Estado] ?? ""}`}
+                              >
                                 {STATUS_ES[pedido.Estado] ?? pedido.Estado}
                               </span>
                               <a
@@ -496,22 +545,36 @@ function PaginaRepartidor() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function parsearProducto(raw: string | null | undefined): { alitas?: number; salsa?: string; notas?: string } {
+function parsearProducto(raw: string | null | undefined): {
+  alitas?: number;
+  salsa?: string;
+  notas?: string;
+} {
   try {
     const lista = JSON.parse(raw ?? "[]");
     const p0 = Array.isArray(lista) ? (lista[0] ?? {}) : lista;
     if (!p0.alitas && !p0.salsa && p0.nombre) {
       const match = String(p0.nombre).match(/^(\d+)\s*alitas?\s*[-·]?\s*(.*)/i);
-      return { alitas: match?.[1] ? Number(match[1]) : undefined, salsa: match?.[2]?.trim() || undefined, notas: p0.notas };
+      return {
+        alitas: match?.[1] ? Number(match[1]) : undefined,
+        salsa: match?.[2]?.trim() || undefined,
+        notas: p0.notas,
+      };
     }
     return p0;
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 // ─── Componentes de tabla ─────────────────────────────────────────────────────
 
 function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className ?? ""}`}>{children}</th>;
+  return (
+    <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className ?? ""}`}>
+      {children}
+    </th>
+  );
 }
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-top ${className ?? ""}`}>{children}</td>;

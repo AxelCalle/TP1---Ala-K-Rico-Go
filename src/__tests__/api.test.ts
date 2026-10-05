@@ -75,12 +75,18 @@ describe("lógica de localStorage mock (simulación de browser)", () => {
   const CLAVE = "akr-jwt-token";
   const store: Record<string, string> = {};
   const ls = {
-    getItem:    (k: string) => store[k] ?? null,
-    setItem:    (k: string, v: string) => { store[k] = v; },
-    removeItem: (k: string) => { delete store[k]; },
+    getItem: (k: string) => store[k] ?? null,
+    setItem: (k: string, v: string) => {
+      store[k] = v;
+    },
+    removeItem: (k: string) => {
+      delete store[k];
+    },
   };
 
-  afterEach(() => { Object.keys(store).forEach((k) => delete store[k]); });
+  afterEach(() => {
+    Object.keys(store).forEach((k) => delete store[k]);
+  });
 
   it("setItem + getItem recupera el token guardado", () => {
     ls.setItem(CLAVE, "mi.jwt.token");

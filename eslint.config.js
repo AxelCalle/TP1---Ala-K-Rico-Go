@@ -34,6 +34,8 @@ export default tseslint.config(
       ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // Leaflet se importa dinámicamente — los tipos del ref no son inferibles en compile-time
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   eslintPluginPrettier,

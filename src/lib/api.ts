@@ -154,11 +154,11 @@ export type PilotoFaseData = {
 export type PilotoApi = {
   inicio_aco?: string;
   fifo: PilotoFaseData;
-  aco:  PilotoFaseData;
+  aco: PilotoFaseData;
   mejora: {
-    reduccion_min:  number;
-    reduccion_pct:  number;
-    mejora_pct_45:  number;
+    reduccion_min: number;
+    reduccion_pct: number;
+    mejora_pct_45: number;
   } | null;
 };
 
@@ -260,7 +260,6 @@ function cabeceraAuth(): Record<string, string> {
 // ─── API pública ──────────────────────────────────────────────────────────────
 
 export const api = {
-
   // ── Token JWT ─────────────────────────────────────────────────────────────
   guardarToken(token: string) {
     if (typeof window !== "undefined") localStorage.setItem(CLAVE_TOKEN, token);
@@ -293,7 +292,10 @@ export const api = {
   },
 
   async actualizarPerfil(datos: {
-    nombre?: string; apellido?: string; dni?: string; telefono?: string;
+    nombre?: string;
+    apellido?: string;
+    dni?: string;
+    telefono?: string;
   }): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>("/api/auth/perfil", {
       method: "PUT",
@@ -332,16 +334,20 @@ export const api = {
   },
 
   async listarPedidosAdmin(params?: {
-    page?: number; pageSize?: number; estado?: string; grupo?: "activos" | "completados";
-    sortBy?: "id" | "fecha" | "estado"; sortDir?: "asc" | "desc";
+    page?: number;
+    pageSize?: number;
+    estado?: string;
+    grupo?: "activos" | "completados";
+    sortBy?: "id" | "fecha" | "estado";
+    sortDir?: "asc" | "desc";
   }): Promise<PaginatedResponse<PedidoApi>> {
     const qs = new URLSearchParams();
-    if (params?.page)     qs.set("page",     String(params.page));
+    if (params?.page) qs.set("page", String(params.page));
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
-    if (params?.estado)   qs.set("estado",   params.estado);
-    if (params?.grupo)    qs.set("grupo",    params.grupo);
-    if (params?.sortBy)   qs.set("sortBy",   params.sortBy);
-    if (params?.sortDir)  qs.set("sortDir",  params.sortDir);
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.grupo) qs.set("grupo", params.grupo);
+    if (params?.sortBy) qs.set("sortBy", params.sortBy);
+    if (params?.sortDir) qs.set("sortDir", params.sortDir);
     const raw = await solicitar<PaginatedResponse<PedidoApi> | PedidoApi[]>(
       `/api/pedidos?${qs.toString()}`,
       { headers: cabeceraAuth() },
@@ -357,8 +363,13 @@ export const api = {
   },
 
   async crearPedido(datos: {
-    latDestino: number; lngDestino: number; direccionDestino: string;
-    productos?: unknown[]; total?: number; latOrigen?: number; lngOrigen?: number;
+    latDestino: number;
+    lngDestino: number;
+    direccionDestino: string;
+    productos?: unknown[];
+    total?: number;
+    latOrigen?: number;
+    lngOrigen?: number;
   }): Promise<{ ok: boolean; id: number }> {
     return solicitar<{ ok: boolean; id: number }>("/api/pedidos", {
       method: "POST",
@@ -390,7 +401,11 @@ export const api = {
     });
   },
 
-  async reportarIncidencia(idPedido: number, tipo: string, detalle?: string): Promise<{ ok: boolean }> {
+  async reportarIncidencia(
+    idPedido: number,
+    tipo: string,
+    detalle?: string,
+  ): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/pedidos/${idPedido}/incidencia`, {
       method: "POST",
       headers: cabeceraAuth(),
@@ -404,7 +419,11 @@ export const api = {
   },
 
   async crearRepartidor(datos: {
-    nombre: string; apellido?: string; email: string; dni: string; telefono?: string;
+    nombre: string;
+    apellido?: string;
+    email: string;
+    dni: string;
+    telefono?: string;
   }): Promise<{ ok: boolean; id: number; passwordAuto: string }> {
     return solicitar<{ ok: boolean; id: number; passwordAuto: string }>("/api/repartidores", {
       method: "POST",
@@ -413,9 +432,16 @@ export const api = {
     });
   },
 
-  async editarRepartidor(id: number, datos: {
-    nombre: string; apellido?: string; email: string; dni?: string; telefono?: string;
-  }): Promise<{ ok: boolean }> {
+  async editarRepartidor(
+    id: number,
+    datos: {
+      nombre: string;
+      apellido?: string;
+      email: string;
+      dni?: string;
+      telefono?: string;
+    },
+  ): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/repartidores/${id}`, {
       method: "PUT",
       headers: cabeceraAuth(),
@@ -430,7 +456,11 @@ export const api = {
     });
   },
 
-  async actualizarUbicacion(idRepartidor: number, lat: number, lng: number): Promise<{ ok: boolean }> {
+  async actualizarUbicacion(
+    idRepartidor: number,
+    lat: number,
+    lng: number,
+  ): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/repartidores/${idRepartidor}/ubicacion`, {
       method: "PUT",
       headers: cabeceraAuth(),
@@ -438,7 +468,9 @@ export const api = {
     });
   },
 
-  async obtenerUbicacion(idRepartidor: number): Promise<{ Lat: number; Lng: number; Actualizado: string }> {
+  async obtenerUbicacion(
+    idRepartidor: number,
+  ): Promise<{ Lat: number; Lng: number; Actualizado: string }> {
     return solicitar<{ Lat: number; Lng: number; Actualizado: string }>(
       `/api/repartidores/${idRepartidor}/ubicacion`,
       { headers: cabeceraAuth() },
@@ -466,14 +498,16 @@ export const api = {
 
   // ── Geocaché ──────────────────────────────────────────────────────────────
   async buscarGeocache(query: string): Promise<GeocacheResultado> {
-    return solicitar<GeocacheResultado>(
-      `/api/geocache?q=${encodeURIComponent(query)}`,
-      { headers: cabeceraAuth() },
-    );
+    return solicitar<GeocacheResultado>(`/api/geocache?q=${encodeURIComponent(query)}`, {
+      headers: cabeceraAuth(),
+    });
   },
 
   async guardarGeocache(datos: {
-    query: string; lat: number; lng: number; resultado?: unknown;
+    query: string;
+    lat: number;
+    lng: number;
+    resultado?: unknown;
   }): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>("/api/geocache", {
       method: "POST",
@@ -484,19 +518,21 @@ export const api = {
 
   // ── Auditoría ─────────────────────────────────────────────────────────────
   async listarAuditoria(params?: {
-    evento?: string; desde?: string; hasta?: string;
-    page?: number; pageSize?: number;
+    evento?: string;
+    desde?: string;
+    hasta?: string;
+    page?: number;
+    pageSize?: number;
   }): Promise<PaginatedResponse<AuditoriaApi>> {
     const qs = new URLSearchParams();
-    if (params?.evento)    qs.set("evento",    params.evento);
-    if (params?.desde)     qs.set("desde",     params.desde);
-    if (params?.hasta)     qs.set("hasta",     params.hasta);
-    if (params?.page)      qs.set("page",      String(params.page));
-    if (params?.pageSize)  qs.set("pageSize",  String(params.pageSize));
-    return solicitar<PaginatedResponse<AuditoriaApi>>(
-      `/api/auditoria?${qs.toString()}`,
-      { headers: cabeceraAuth() },
-    );
+    if (params?.evento) qs.set("evento", params.evento);
+    if (params?.desde) qs.set("desde", params.desde);
+    if (params?.hasta) qs.set("hasta", params.hasta);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    return solicitar<PaginatedResponse<AuditoriaApi>>(`/api/auditoria?${qs.toString()}`, {
+      headers: cabeceraAuth(),
+    });
   },
 
   // ── Reportes ──────────────────────────────────────────────────────────────
@@ -508,17 +544,20 @@ export const api = {
     const qs = new URLSearchParams();
     if (params?.desde) qs.set("desde", params.desde);
     if (params?.hasta) qs.set("hasta", params.hasta);
-    return solicitar<ReporteTiemposApi>(
-      `/api/reportes/tiempos?${qs.toString()}`,
-      { headers: cabeceraAuth() },
-    );
+    return solicitar<ReporteTiemposApi>(`/api/reportes/tiempos?${qs.toString()}`, {
+      headers: cabeceraAuth(),
+    });
   },
 
   async reporteRepartidores(): Promise<RankingRepartidorApi[]> {
-    return solicitar<RankingRepartidorApi[]>("/api/reportes/repartidores", { headers: cabeceraAuth() });
+    return solicitar<RankingRepartidorApi[]>("/api/reportes/repartidores", {
+      headers: cabeceraAuth(),
+    });
   },
 
-  async reporteZonas(): Promise<{ lat: number; lng: number; frecuencia: number; avg_minutos: number | null }[]> {
+  async reporteZonas(): Promise<
+    { lat: number; lng: number; frecuencia: number; avg_minutos: number | null }[]
+  > {
     return solicitar("/api/reportes/zonas", { headers: cabeceraAuth() });
   },
 
@@ -564,9 +603,8 @@ export const api = {
 
   // ── Calificaciones de repartidor ──────────────────────────────────────────
   async listarCalificaciones(idRepartidor: number): Promise<CalificacionApi[]> {
-    return solicitar<CalificacionApi[]>(
-      `/api/repartidores/${idRepartidor}/calificaciones`,
-      { headers: cabeceraAuth() },
-    );
+    return solicitar<CalificacionApi[]>(`/api/repartidores/${idRepartidor}/calificaciones`, {
+      headers: cabeceraAuth(),
+    });
   },
 };

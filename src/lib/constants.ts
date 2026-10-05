@@ -4,8 +4,8 @@ export const RADIO_COBERTURA_KM = 3;
 
 export const ESTADO_PEDIDO_ES: Record<string, string> = {
   sin_asignar: "Sin asignar",
-  asignado:    "Asignado",
-  en_camino:   "En camino",
-  entregado:   "Entregado",
-  cancelado:   "Cancelado",
+  asignado: "Asignado",
+  en_camino: "En camino",
+  entregado: "Entregado",
+  cancelado: "Cancelado",
 };
