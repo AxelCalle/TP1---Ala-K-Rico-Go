@@ -259,7 +259,7 @@ export function MapaRuta({
         mapaRef.current = null;
       }
     };
-  }, [origen, destino]);
+  }, [origen, destino, coordsOrigen, coordsDestino]);
 
   return (
     <div className={`relative overflow-hidden ${className}`} style={{ height: altura }}>
@@ -689,7 +689,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         {/* Banner instrucción GPS actual (overlay superior) */}
         {simulando && instruccion && (
           <div
-            className="absolute left-2 right-2 top-2 z-[1001] flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
+            className="absolute left-2 right-2 top-2 z-1001 flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
             style={{ backdropFilter: "blur(8px)" }}
           >
             <Navigation2 className="h-4 w-4 shrink-0 text-accent" />
@@ -702,7 +702,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         {/* Overlay llegada */}
         {llegadaVisible && (
           <div
-            className="absolute inset-x-2 top-2 z-[1002] flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
+            className="absolute inset-x-2 top-2 z-1002 flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
             style={{ backdropFilter: "blur(8px)" }}
           >
             <span className="text-2xl">🏁</span>

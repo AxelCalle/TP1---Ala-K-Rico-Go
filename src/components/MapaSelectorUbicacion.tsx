@@ -233,7 +233,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
       {/* Advertencia fuera de zona */}
       {fueraDeZona && !cargando && (
         <div
-          className="pointer-events-none absolute left-2 right-2 top-2.5 z-[1001] flex items-center gap-1.5 rounded-lg bg-destructive/90 px-3 py-2 text-[11px] font-semibold text-destructive-foreground shadow"
+          className="pointer-events-none absolute left-2 right-2 top-2.5 z-1001 flex items-center gap-1.5 rounded-lg bg-destructive/90 px-3 py-2 text-[11px] font-semibold text-destructive-foreground shadow"
           style={{ backdropFilter: "blur(4px)" }}
         >
           <MapPin className="h-3.5 w-3.5 flex-none" />
@@ -244,7 +244,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
       {/* Hint superior */}
       {!cargando && !fueraDeZona && (
         <div
-          className="pointer-events-none absolute left-1/2 top-2.5 z-[1000] -translate-x-1/2 whitespace-nowrap rounded-full bg-card/90 px-3 py-1 text-[11px] font-medium shadow"
+          className="pointer-events-none absolute left-1/2 top-2.5 z-1000 -translate-x-1/2 whitespace-nowrap rounded-full bg-card/90 px-3 py-1 text-[11px] font-medium shadow"
           style={{ backdropFilter: "blur(4px)" }}
         >
           <MapPin className="mr-1 inline h-3 w-3 text-accent" />
@@ -255,12 +255,12 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
       {/* Dirección detectada — barra inferior */}
       {(direccionSel || buscandoDir) && !cargando && (
         <div
-          className="absolute bottom-2 left-2 right-2 z-[1000] flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow"
+          className="absolute bottom-2 left-2 right-2 z-1000 flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow"
           style={{ backdropFilter: "blur(4px)" }}
         >
           {buscandoDir ? (
             <>
-              <div className="h-4 w-4 animate-spin rounded-full border-[2px] border-accent border-t-transparent flex-none" />
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent flex-none" />
               <span className="text-xs text-muted-foreground">Obteniendo dirección…</span>
             </>
           ) : (
