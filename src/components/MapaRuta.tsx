@@ -410,13 +410,15 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const rutaPuntosRef  = useRef<Coords[]>([]);
   const pasosNavRef    = useRef<OsrmStep[]>([]);
 
-  const [estado,          setEstado]          = useState<Estado>("cargando");
-  const [simulando,       setSimulando]       = useState(false);
-  const [instruccion,     setInstruccion]     = useState<string>("");
-  const [distSiguiente,   setDistSiguiente]   = useState<number>(0);
-  const [vozActiva,       setVozActiva]       = useState(true);
-  const [pasoActual,      setPasoActual]      = useState(0);
-  const [llegadaVisible,  setLlegadaVisible]  = useState(false);
+  const [estado,                 setEstado]                 = useState<Estado>("cargando");
+  const [simulando,              setSimulando]              = useState(false);
+  const [instruccion,            setInstruccion]            = useState<string>("");
+  const [distSiguiente,          setDistSiguiente]          = useState<number>(0);
+  const [vozActiva,              setVozActiva]              = useState(true);
+  const [pasoActual,             setPasoActual]             = useState(0);
+  const [llegadaVisible,         setLlegadaVisible]         = useState(false);
+  const [historialInstrucciones, setHistorialInstrucciones] = useState<string[]>([]);
+  const historialRef             = useRef<HTMLDivElement>(null);
 
   // Hablar instrucción con Web Speech API
   const hablar = useCallback((texto: string) => {
@@ -517,6 +519,13 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     };
   }, [stops]);
 
+  // ── Scroll automático del historial ─────────────────────────────────────────
+  useEffect(() => {
+    if (historialRef.current) {
+      historialRef.current.scrollTop = historialRef.current.scrollHeight;
+    }
+  }, [historialInstrucciones]);
+
   // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
   function iniciarSimulacion() {
     const puntos = rutaPuntosRef.current;
@@ -527,11 +536,14 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     setSimulando(true);
     setLlegadaVisible(false);
     setPasoActual(0);
+    setHistorialInstrucciones([]);
+    setInstruccion("");
 
-    // Velocidad: 500 puntos por segundo (ajustar según distancia real)
-    const VELOCIDAD_PUNTOS = 3;   // puntos de ruta por frame (≈ 18 seg para 1000 pts a 60fps)
-    let idx = 0;                  // índice en puntos[]
-    let stepNavActual = 0;
+    // Un punto de ruta por cada FRAMES_POR_PUNTO frames (≈60fps).
+    // Con 6 frames/punto: ~10 pts/s → ~30-60 s para una ruta urbana típica.
+    const FRAMES_POR_PUNTO = 6;
+    let frameCount = 0;
+    let idx = 0;
     let ultimaInstruccion = "";
 
     const pasoNavCercano = (pos: Coords): OsrmStep | null => {
@@ -542,51 +554,60 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         const d = distanciaM(pos, p.coordInicio);
         if (d < minDist) { minDist = d; cercano = p; }
       }
-      return minDist < 80 ? cercano : null; // dentro de 80 m
+      return minDist < 80 ? cercano : null;
     };
 
     const frame = () => {
       if (!avatarRef.current || !mapaRef.current) return;
 
-      // Calcular bearing para rotar avatar
-      const siguiente = Math.min(idx + 1, puntos.length - 1);
-      const bearing = calcularBearing(puntos[idx], puntos[siguiente]);
+      frameCount++;
 
-      // Actualizar posición del avatar
-      avatarRef.current.setLatLng(puntos[idx]);
+      // Solo avanzar un punto cada FRAMES_POR_PUNTO frames
+      if (frameCount % FRAMES_POR_PUNTO === 0) {
+        idx++;
 
-      // Actualizar ícono con rotación
-      avatarRef.current.setIcon(crearAvatarRepartidorImport(L, bearing));
+        if (idx >= puntos.length - 1) {
+          avatarRef.current.setLatLng(puntos[puntos.length - 1]);
+          setSimulando(false);
+          const msg = "Ha llegado al destino final";
+          setInstruccion(msg);
+          setHistorialInstrucciones((prev) => [...prev, msg]);
+          setLlegadaVisible(true);
+          hablar(msg);
+          return;
+        }
 
-      // ── Navegación: buscar instrucción cercana ────────────────────────────
-      const pasoNav = pasoNavCercano(puntos[idx]);
-      if (pasoNav && pasoNav.instruccion !== ultimaInstruccion) {
-        ultimaInstruccion = pasoNav.instruccion;
-        setInstruccion(pasoNav.instruccion);
-        setDistSiguiente(pasoNav.distancia);
-        hablar(pasoNav.instruccion);
-        setPasoActual((prev) => prev + 1);
-      }
+        const siguiente = Math.min(idx + 1, puntos.length - 1);
+        const bearing = calcularBearing(puntos[idx], puntos[siguiente]);
 
-      idx += VELOCIDAD_PUNTOS;
+        avatarRef.current.setLatLng(puntos[idx]);
+        avatarRef.current.setIcon(crearAvatarRepartidorImport(L, bearing));
 
-      if (idx >= puntos.length - 1) {
-        // Llegó al final
-        avatarRef.current.setLatLng(puntos[puntos.length - 1]);
-        setSimulando(false);
-        setInstruccion("Ha llegado al destino final");
-        setLlegadaVisible(true);
-        hablar("Ha llegado al destino final");
-        return;
+        // El mapa sigue al avatar suavemente cada 15 puntos
+        if (idx % 15 === 0) {
+          mapaRef.current.panTo(puntos[idx], { animate: true, duration: 0.8, easeLinearity: 0.4 });
+        }
+
+        // Instrucción de navegación si hay paso cercano
+        const pasoNav = pasoNavCercano(puntos[idx]);
+        if (pasoNav && pasoNav.instruccion !== ultimaInstruccion) {
+          ultimaInstruccion = pasoNav.instruccion;
+          setInstruccion(pasoNav.instruccion);
+          setDistSiguiente(pasoNav.distancia);
+          setHistorialInstrucciones((prev) => [...prev.slice(-19), pasoNav.instruccion]);
+          hablar(pasoNav.instruccion);
+          setPasoActual((prev) => prev + 1);
+        }
       }
 
       animFrameRef.current = requestAnimationFrame(frame);
     };
 
-    // Primera instrucción
+    // Primera instrucción al arrancar
     if (pasos.length > 0) {
       setInstruccion(pasos[0].instruccion);
       setDistSiguiente(pasos[0].distancia);
+      setHistorialInstrucciones([pasos[0].instruccion]);
       hablar(pasos[0].instruccion);
     }
 
@@ -597,7 +618,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     cancelAnimationFrame(animFrameRef.current);
     setSimulando(false);
     setInstruccion("");
-    // Reiniciar avatar al inicio
+    setHistorialInstrucciones([]);
     if (avatarRef.current && rutaPuntosRef.current.length) {
       avatarRef.current.setLatLng(rutaPuntosRef.current[0]);
     }
@@ -609,31 +630,22 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   return (
     <div className={`relative flex flex-col overflow-hidden rounded-xl border border-border ${className}`} style={{ height: altura }}>
 
-      {/* ── Panel de navegación GPS ── */}
-      {(instruccion || simulando) && (
+      {/* ── Instrucción GPS actual (banner superior compacto) ── */}
+      {simulando && instruccion && (
         <div
-          className="absolute left-2 right-2 top-2 z-[1001] flex items-start gap-3 rounded-xl bg-card/95 px-4 py-3 shadow-lg"
+          className="absolute left-2 right-2 top-2 z-[1001] flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
           style={{ backdropFilter: "blur(8px)" }}
         >
-          <Navigation2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold leading-snug text-foreground truncate">
-              {instruccion || "Iniciando…"}
-            </p>
-            {distSiguiente > 0 && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {distSiguiente < 1000
-                  ? `En ${distSiguiente} m`
-                  : `En ${(distSiguiente / 1000).toFixed(1)} km`}
-              </p>
-            )}
-          </div>
+          <Navigation2 className="h-4 w-4 shrink-0 text-accent" />
+          <p className="flex-1 min-w-0 text-xs font-semibold leading-snug text-foreground truncate">
+            {instruccion}
+          </p>
           <button
             onClick={() => setVozActiva((v) => !v)}
             className="shrink-0 rounded-full p-1 text-muted-foreground hover:text-foreground transition"
             title={vozActiva ? "Silenciar voz" : "Activar voz"}
           >
-            {vozActiva ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            {vozActiva ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           </button>
         </div>
       )}
@@ -669,16 +681,56 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       {/* Mapa Leaflet */}
       <div ref={contenedorRef} className="h-full w-full" />
 
+      {/* ── Chat de instrucciones GPS ── */}
+      {historialInstrucciones.length > 0 && (
+        <div
+          className="absolute bottom-11 left-0 right-0 z-[1000] border-t border-border/50 bg-card/95"
+          style={{ backdropFilter: "blur(10px)", maxHeight: "130px" }}
+        >
+          <div
+            ref={historialRef}
+            className="overflow-y-auto px-3 py-2 space-y-1"
+            style={{ maxHeight: "130px" }}
+          >
+            {historialInstrucciones.map((inst, i) => {
+              const esActual = i === historialInstrucciones.length - 1;
+              return (
+                <div
+                  key={i}
+                  className={`flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all ${
+                    esActual
+                      ? "bg-accent/15 border border-accent/30 text-foreground font-semibold"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  <Navigation2
+                    className={`mt-0.5 h-3 w-3 shrink-0 ${esActual ? "text-accent" : "text-muted-foreground/50"}`}
+                  />
+                  <span className="leading-snug">{inst}</span>
+                  {esActual && distSiguiente > 0 && !inst.includes("destino") && (
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+                      {distSiguiente < 1000 ? `${distSiguiente} m` : `${(distSiguiente / 1000).toFixed(1)} km`}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Barra de control del repartidor ── */}
       {puedeComentar && (
         <div
-          className="absolute bottom-0 left-0 right-0 z-[1000] flex items-center justify-between gap-3 border-t border-border bg-card/95 px-4 py-2.5"
+          className="absolute bottom-0 left-0 right-0 z-[1000] flex items-center justify-between gap-3 border-t border-border bg-card/95 px-4 py-2"
           style={{ backdropFilter: "blur(8px)" }}
         >
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="text-base">🛵</span>
             <span className="hidden sm:inline">Simulación del repartidor</span>
-            {pasoActual > 0 && <span className="font-medium text-accent">· {pasoActual} instrucciones</span>}
+            {pasoActual > 0 && (
+              <span className="font-medium text-accent">· {pasoActual} instrucciones</span>
+            )}
           </div>
           <div className="flex gap-2">
             {simulando ? (
@@ -694,7 +746,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition hover:brightness-110"
               >
                 <Navigation2 className="h-3.5 w-3.5" />
-                Iniciar recorrido
+                {historialInstrucciones.length > 0 ? "Reiniciar" : "Iniciar recorrido"}
               </button>
             )}
           </div>
