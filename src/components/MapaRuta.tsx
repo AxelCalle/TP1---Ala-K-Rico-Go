@@ -173,9 +173,8 @@ export function MapaRuta({ origen, destino, coordsOrigen, coordsDestino, altura 
         .setView(SMP_FALLBACK, 13);
       mapaRef.current = mapa;
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        subdomains: ["a", "b", "c"],
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
         maxZoom: 19,
       }).addTo(mapa);
 
@@ -456,9 +455,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         .setView(stops[0].coords, 13);
       mapaRef.current = mapa;
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        subdomains: ["a", "b", "c"],
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
         maxZoom: 19,
       }).addTo(mapa);
 
