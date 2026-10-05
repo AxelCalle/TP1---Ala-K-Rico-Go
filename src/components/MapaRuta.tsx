@@ -738,7 +738,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
       {/* ── DERECHA: Panel de instrucciones GPS ── */}
       {puedeComentar && (
-        <div className="flex w-56 shrink-0 flex-col border-l border-border bg-card">
+        <div className="hidden sm:flex w-56 shrink-0 flex-col border-l border-border bg-card">
           {/* Cabecera del panel */}
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">

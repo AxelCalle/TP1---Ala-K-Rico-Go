@@ -2200,7 +2200,7 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo label="Nombre(s)">
               <input
                 required
@@ -2294,12 +2294,12 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="rounded-xl border border-border bg-muted/50 p-4 space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Correo</span>
-              <span className="font-mono font-medium">{credenciales.correo}</span>
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-muted-foreground shrink-0">Correo</span>
+              <span className="font-mono font-medium break-all">{credenciales.correo}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Contraseña inicial</span>
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-muted-foreground shrink-0">Contraseña inicial</span>
               <span className="font-mono font-semibold text-accent">{credenciales.password}</span>
             </div>
           </div>
@@ -2388,7 +2388,7 @@ function DialogEditarRepartidor({
 
         {/* Formulario de edición */}
         <form onSubmit={handleGuardar} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo label="Nombre(s)">
               <input
                 required
@@ -2593,7 +2593,7 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo label="Nombre del cliente">
             <input
               required

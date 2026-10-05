@@ -96,7 +96,7 @@ function LoginPage() {
             )}
           </h2>
 
-          <p className="max-w-88 text-sm leading-relaxed text-white/55">
+          <p className="max-w-80 text-sm leading-relaxed text-white/55">
             {modo === "login"
               ? "La ruta más rápida desde la parrilla hasta tu casa."
               : "Crea tu cuenta y rastrea tus alitas en tiempo real."}
@@ -387,7 +387,7 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       </div>
 
       {/* Nombre + Apellido */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <label htmlFor="reg-nombre" className="text-sm font-medium">
             Nombres <Req />

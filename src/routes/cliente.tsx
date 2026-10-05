@@ -153,6 +153,7 @@ function ClientePage() {
             {/* Botón principal: hacer pedido */}
             <button
               onClick={() => setModalPedido(true)}
+              aria-label="Hacer pedido"
               className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
             >
               <Plus className="h-4 w-4" />
@@ -190,7 +191,7 @@ function ClientePage() {
                 )}
               </button>
               {mostrarNotifs && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
+                <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:w-80">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <span className="text-sm font-semibold">Notificaciones</span>
                     <button
@@ -424,7 +425,7 @@ function ModalNuevoPedido({
         {/* ── Cuerpo con scroll ──────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
           {/* Cantidad + Salsa */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Cantidad de alitas</label>
               <input
@@ -796,7 +797,7 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
   return (
     <div className="space-y-6">
       {/* ── Cabecera ──────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Seguimiento en tiempo real</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">

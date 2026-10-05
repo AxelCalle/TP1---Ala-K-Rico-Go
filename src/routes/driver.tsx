@@ -191,7 +191,7 @@ function PaginaRepartidor() {
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1fr_420px]">
         {/* ── Columna izquierda: lista de pedidos ── */}
         <div className="space-y-5">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold">{nombreRepartidor}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -205,7 +205,7 @@ function PaginaRepartidor() {
             <button
               onClick={generarRutaOptima}
               disabled={tspRunning || pedidosActivos.length === 0}
-              className="inline-flex shrink-0 items-center gap-2 rounded-sm bg-accent px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-accent-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-accent px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-accent-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:shrink-0 sm:justify-start"
             >
               {tspRunning ? (
                 <>
@@ -429,7 +429,7 @@ function PaginaRepartidor() {
         </div>
 
         {/* ── Columna derecha: panel de ruta óptima ── */}
-        <div className="sticky top-6 space-y-4">
+        <div className="sm:sticky sm:top-6 space-y-4">
           {!tspResult && !tspRunning && (
             <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card py-16 text-center">
               <Navigation className="h-10 w-10 text-muted-foreground/30" />

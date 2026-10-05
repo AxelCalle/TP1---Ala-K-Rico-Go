@@ -277,7 +277,7 @@ function PaginaRuta() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <Link
             to="/driver"
             className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
@@ -293,11 +293,11 @@ function PaginaRuta() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[1fr_360px]">
+      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1fr_360px]">
         {/* Mapa */}
         <div className="flex flex-col gap-6">
           <section className="overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant)">
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Navigation className="h-4 w-4 text-accent" />
                 Mejor ruta al destino
@@ -308,7 +308,7 @@ function PaginaRuta() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
               >
-                Abrir en Google Maps →
+                Google Maps →
               </a>
             </div>
             <MapaRuta
