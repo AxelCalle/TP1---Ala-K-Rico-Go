@@ -111,7 +111,7 @@ function PaginaAdmin() {
 
       {/* Navegación de secciones */}
       <div className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl gap-0 overflow-x-auto px-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl gap-0 overflow-x-auto scrollbar-none px-4 sm:px-6">
           <NavBtn activo={seccion === "dashboard"}    onClick={() => setSeccion("dashboard")}    icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
           <NavBtn activo={seccion === "pedidos"}      onClick={() => setSeccion("pedidos")}      icon={<ClipboardList className="h-4 w-4" />}  label="Pedidos" />
           <NavBtn activo={seccion === "repartidores"} onClick={() => setSeccion("repartidores")} icon={<Truck className="h-4 w-4" />}          label="Repartidores" />

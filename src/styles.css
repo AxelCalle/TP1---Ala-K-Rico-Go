@@ -257,3 +257,34 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* ─── Ocultar scrollbar horizontal en navegaciones de tabs ─────────── */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Scrollbar delgado para tablas con overflow-x ─────────────────── */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.overflow-x-auto::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+/* ─── Excepción: botones pequeños dentro de tablas ─────────────────── */
+table button,
+.btn-sm {
+  min-height: unset;
+}
