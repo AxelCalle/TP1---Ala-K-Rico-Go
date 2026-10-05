@@ -195,10 +195,11 @@ export function MapaRuta({
         if (activo && mapaRef.current) mapaRef.current.invalidateSize();
       }, 100);
 
-      let [coordA, coordB] = await Promise.all([
+      const [coordAInit, coordB] = await Promise.all([
         coordsOrigen ? Promise.resolve(coordsOrigen as [number, number]) : geocodificar(origen),
         coordsDestino ? Promise.resolve(coordsDestino as [number, number]) : geocodificar(destino),
       ]);
+      let coordA = coordAInit;
 
       if (!activo) return;
 
