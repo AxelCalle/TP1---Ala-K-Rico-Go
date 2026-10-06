@@ -2,10 +2,34 @@
  * Mapa de ruta con Leaflet + OpenStreetMap.
  * Geocodificación: Nominatim → Photon (Komoot) con simplificación progresiva.
  * Routing:        OSRM public API (ruta real por calles).
- * MapaRutaMulti:  avatar animado del repartidor + agente de navegación GPS.
+ * MapaRutaMulti:  avatar animado del repartidor + navegación tipo app
+ *                 (maniobras con icono, bottom sheet en móvil, panel en desktop).
  */
-import { useEffect, useRef, useState, useCallback } from "react";
-import { MapPin, Navigation2, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
+import {
+  ArrowUp,
+  ArrowUpLeft,
+  ArrowUpRight,
+  CornerUpLeft,
+  CornerUpRight,
+  Flag,
+  LocateFixed,
+  MapPin,
+  Maximize2,
+  Merge,
+  Minimize2,
+  Minus,
+  Navigation2,
+  Plus,
+  RotateCw,
+  Scan,
+  Split,
+  Square,
+  Undo2,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 
 // ─── Servicios externos ────────────────────────────────────────────────────────
 
@@ -140,6 +164,220 @@ async function obtenerRuta(a: Coords, b: Coords): Promise<Coords[]> {
   }
 }
 
+// ─── Mapas (UI) ───────────────────────────────────────────────────────────────
+
+type Variante = "origin" | "pending" | "current" | "done" | "dest";
+
+/** Clases de fondo equivalentes a los colores de .akr-pin--* (styles.css) */
+const VARIANTE_BG: Record<Variante, string> = {
+  origin: "bg-coal text-cream",
+  pending: "bg-amber-700 text-white",
+  current: "bg-accent text-accent-foreground",
+  done: "bg-green-600 text-white",
+  dest: "bg-amber-600 text-white",
+};
+
+const VARIANTE_TEXTO: Record<Variante, string> = {
+  origin: "Punto de partida",
+  pending: "Pendiente",
+  current: "Siguiente parada",
+  done: "Completada",
+  dest: "Destino final",
+};
+
+const TILE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+const TILE_ATTRIBUTION =
+  'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors';
+
+/** Crea el mapa base sin el control de zoom nativo (se usan controles táctiles propios). */
+function crearMapaBase(L: any, el: HTMLElement, centro: Coords, conAtribucion = true) {
+  const mapa = L.map(el, { zoomControl: false, attributionControl: conAtribucion }).setView(
+    centro,
+    13,
+  );
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(mapa);
+  return mapa;
+}
+
+function escaparHtml(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
+  );
+}
+
+/** Pin con número y estado. Área táctil de 44×52 px. */
+function pinIcon(L: any, label: string, variante: Variante, seleccionado = false) {
+  const wrap = [
+    "akr-pin-wrap",
+    variante === "current" ? "akr-pin-wrap--current" : "",
+    seleccionado ? "akr-pin-wrap--selected" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return L.divIcon({
+    html: `<div class="${wrap}"><div class="akr-pin akr-pin--${variante}"><span>${escaparHtml(label)}</span></div></div>`,
+    className: "",
+    iconSize: [44, 52],
+    iconAnchor: [22, 45],
+    popupAnchor: [0, -42],
+  });
+}
+
+function formatDist(m: number): string {
+  if (m < 1000) return `${Math.max(0, Math.round(m / 10) * 10)} m`;
+  return `${(m / 1000).toFixed(1)} km`;
+}
+
+function urlNavegar(c: Coords): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${c[0]},${c[1]}&travelmode=driving`;
+}
+
+/** Pantalla completa del mapa (fixed) con Escape para salir y scroll del body bloqueado. */
+function usePantallaCompleta(mapaRef: React.RefObject<any>) {
+  const [activa, setActiva] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => mapaRef.current?.invalidateSize(), 60);
+    if (!activa) return () => clearTimeout(t);
+    const previo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActiva(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(t);
+      document.body.style.overflow = previo;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [activa, mapaRef]);
+  return [activa, setActiva] as const;
+}
+
+/** Recalcula el tamaño de Leaflet cuando cambia el contenedor (rotación, paneles, etc.). */
+function useAjusteTamano(
+  elRef: React.RefObject<HTMLElement | null>,
+  mapaRef: React.RefObject<any>,
+) {
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => mapaRef.current?.invalidateSize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [elRef, mapaRef]);
+}
+
+function BotonMapa({
+  label,
+  onClick,
+  activo,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  activo?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={activo}
+      onClick={onClick}
+      className={`grid h-11 w-11 place-items-center rounded-full shadow-md ring-1 ring-black/5 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        activo ? "bg-accent text-accent-foreground" : "bg-card text-foreground hover:bg-secondary"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Columna de controles táctiles: zoom, ajustar ruta, centrar y pantalla completa. */
+function ControlesMapa({
+  mapaRef,
+  onAjustar,
+  onCentrar,
+  centrado,
+  pantallaCompleta,
+  onPantallaCompleta,
+  top,
+}: {
+  mapaRef: React.RefObject<any>;
+  onAjustar: () => void;
+  onCentrar?: () => void;
+  centrado?: boolean;
+  pantallaCompleta: boolean;
+  onPantallaCompleta: () => void;
+  top: string;
+}) {
+  return (
+    <div className="absolute right-3 z-1001 flex flex-col gap-2" style={{ top }}>
+      <div className="flex flex-col overflow-hidden rounded-full bg-card shadow-md ring-1 ring-black/5">
+        <button
+          type="button"
+          aria-label="Acercar"
+          title="Acercar"
+          onClick={() => mapaRef.current?.zoomIn()}
+          className="grid h-11 w-11 place-items-center transition hover:bg-secondary active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <Plus className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <span className="mx-2 h-px bg-border" />
+        <button
+          type="button"
+          aria-label="Alejar"
+          title="Alejar"
+          onClick={() => mapaRef.current?.zoomOut()}
+          className="grid h-11 w-11 place-items-center transition hover:bg-secondary active:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <Minus className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+      <BotonMapa label="Ver toda la ruta" onClick={onAjustar}>
+        <Scan className="h-5 w-5" aria-hidden="true" />
+      </BotonMapa>
+      {onCentrar && (
+        <BotonMapa label="Seguir al repartidor" onClick={onCentrar} activo={centrado}>
+          <LocateFixed className="h-5 w-5" aria-hidden="true" />
+        </BotonMapa>
+      )}
+      <BotonMapa
+        label={pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"}
+        onClick={onPantallaCompleta}
+        activo={pantallaCompleta}
+      >
+        {pantallaCompleta ? (
+          <Minimize2 className="h-5 w-5" aria-hidden="true" />
+        ) : (
+          <Maximize2 className="h-5 w-5" aria-hidden="true" />
+        )}
+      </BotonMapa>
+    </div>
+  );
+}
+
+function OverlayCarga({ texto }: { texto: string }) {
+  return (
+    <div
+      role="status"
+      className="absolute inset-0 z-1000 flex flex-col items-center justify-center gap-2 bg-muted"
+    >
+      <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
+      <p className="text-sm text-muted-foreground">{texto}</p>
+    </div>
+  );
+}
+
+/** Convierte la altura (número en px o valor CSS, p.ej. "min(60svh, 480px)") a CSS. */
+function alturaCss(altura: number | string, pantallaCompleta: boolean): string {
+  if (pantallaCompleta) return "100dvh";
+  return typeof altura === "number" ? `${altura}px` : altura;
+}
+
 // ─── Componente simple (un origen → un destino) ───────────────────────────────
 
 interface Props {
@@ -147,7 +385,8 @@ interface Props {
   destino: string;
   coordsOrigen?: [number, number];
   coordsDestino?: [number, number];
-  altura?: number;
+  /** px o cualquier valor CSS de altura (p.ej. "clamp(320px, 55svh, 560px)") */
+  altura?: number | string;
   className?: string;
 }
 
@@ -161,9 +400,13 @@ export function MapaRuta({
   altura = 380,
   className = "",
 }: Props) {
+  const raizRef = useRef<HTMLDivElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
+  const boundsRef = useRef<any>(null);
   const [estado, setEstado] = useState<Estado>("cargando");
+  const [pantallaCompleta, setPantallaCompleta] = usePantallaCompleta(mapaRef);
+  useAjusteTamano(raizRef, mapaRef);
 
   useEffect(() => {
     if (!contenedorRef.current) return;
@@ -179,17 +422,8 @@ export function MapaRuta({
         mapaRef.current = null;
       }
 
-      const mapa = L.map(contenedorRef.current, { zoomControl: true }).setView(SMP_FALLBACK, 13);
+      const mapa = crearMapaBase(L, contenedorRef.current, SMP_FALLBACK);
       mapaRef.current = mapa;
-
-      L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-        {
-          attribution:
-            'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
-          maxZoom: 19,
-        },
-      ).addTo(mapa);
 
       setTimeout(() => {
         if (activo && mapaRef.current) mapaRef.current.invalidateSize();
@@ -208,21 +442,23 @@ export function MapaRuta({
       if (!coordB) {
         setEstado("error");
         mapa.setView(coordA, 15);
-        L.marker(coordA, { icon: markerIcon(L, "A", "#4f46e5") })
+        boundsRef.current = L.latLngBounds([coordA, coordA]);
+        L.marker(coordA, { icon: pinIcon(L, "A", "origin"), title: "Ala K' Rico GO" })
           .addTo(mapa)
           .bindPopup("<b>Ala K' Rico GO</b>");
         return;
       }
 
-      L.marker(coordA, { icon: markerIcon(L, "A", "#4f46e5") })
+      L.marker(coordA, { icon: pinIcon(L, "A", "origin"), title: "Punto de partida" })
         .addTo(mapa)
         .bindPopup("<b>Ala K' Rico GO</b><br><small>Punto de partida</small>");
 
-      L.marker(coordB, { icon: markerIcon(L, "B", "#f59e0b") })
+      L.marker(coordB, { icon: pinIcon(L, "B", "dest"), title: "Destino de entrega" })
         .addTo(mapa)
         .bindPopup("<b>Destino de entrega</b>");
 
       const bounds = L.latLngBounds([coordA, coordB]).pad(0.25);
+      boundsRef.current = bounds;
       mapa.fitBounds(bounds);
 
       if (!activo) return;
@@ -233,11 +469,12 @@ export function MapaRuta({
 
       if (puntos.length > 0) {
         L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.7 }).addTo(mapa);
-        L.polyline(puntos, { color: "#4f46e5", weight: 5, opacity: 0.95 }).addTo(mapa);
+        L.polyline(puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
+        boundsRef.current = L.latLngBounds(puntos).pad(0.15);
         setEstado("listo");
       } else {
         L.polyline([coordA, coordB], {
-          color: "#4f46e5",
+          color: "#ea580c",
           weight: 4,
           opacity: 0.7,
           dashArray: "10, 8",
@@ -261,127 +498,223 @@ export function MapaRuta({
     };
   }, [origen, destino, coordsOrigen, coordsDestino]);
 
+  const top = pantallaCompleta ? "calc(env(safe-area-inset-top) + 0.75rem)" : "0.75rem";
+
   return (
-    <div className={`relative overflow-hidden ${className}`} style={{ height: altura }}>
-      {estado === "cargando" && (
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted"
-          style={{ zIndex: 1000 }}
-        >
-          <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Calculando ruta…</p>
-        </div>
-      )}
+    <div
+      ref={raizRef}
+      className={`isolate overflow-hidden ${
+        pantallaCompleta ? "fixed inset-0 z-1100 bg-background" : `relative ${className}`
+      }`}
+      style={{ height: alturaCss(altura, pantallaCompleta) }}
+    >
+      {estado === "cargando" && <OverlayCarga texto="Calculando ruta…" />}
 
       {estado === "sin-ruta" && (
-        <div
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow"
-          style={{ zIndex: 1000 }}
-        >
+        <div className="absolute left-3 right-[4.25rem] top-3 z-1000 rounded-lg bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow">
           Ruta aproximada — servicio de calles no disponible
         </div>
       )}
 
       {estado === "error" && (
         <div
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-md bg-destructive/90 px-3 py-1.5 text-xs text-white shadow"
-          style={{ zIndex: 1000 }}
+          role="alert"
+          className="absolute left-3 right-[4.25rem] top-3 z-1000 flex items-center gap-1.5 rounded-lg bg-destructive/95 px-3 py-2 text-xs text-white shadow"
         >
-          <MapPin className="mr-1 inline h-3 w-3" />
+          <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           No se encontró la dirección de destino
         </div>
       )}
 
-      <div ref={contenedorRef} className="h-full w-full" />
+      {estado !== "cargando" && (
+        <ControlesMapa
+          mapaRef={mapaRef}
+          top={top}
+          onAjustar={() => {
+            if (boundsRef.current) mapaRef.current?.fitBounds(boundsRef.current);
+          }}
+          pantallaCompleta={pantallaCompleta}
+          onPantallaCompleta={() => setPantallaCompleta((v) => !v)}
+        />
+      )}
+
+      <div
+        ref={contenedorRef}
+        className="h-full w-full"
+        role="region"
+        aria-label="Mapa de la ruta de entrega"
+      />
     </div>
   );
 }
 
 // ─── Mapa multi-parada ────────────────────────────────────────────────────────
 
-async function obtenerRutaMulti(
-  coords: Coords[],
-): Promise<{ puntos: Coords[]; pasos: OsrmStep[] }> {
-  if (coords.length < 2) return { puntos: [], pasos: [] };
+/** Maniobra de OSRM ya ubicada sobre la polilínea de la ruta. */
+interface Paso {
+  tipo: string;
+  modificador?: string;
+  salida?: number;
+  calle: string;
+  /** metros hasta la siguiente maniobra */
+  distancia: number;
+  coord: Coords;
+  /** índice del tramo (leg): va de la parada `tramo` a la `tramo + 1` */
+  tramo: number;
+  /** índice del punto de la polilínea donde ocurre la maniobra */
+  polyIdx: number;
+}
+
+interface RutaCalculada {
+  puntos: Coords[];
+  /** distancia acumulada (m) hasta cada punto de la polilínea */
+  acum: number[];
+  pasos: Paso[];
+  /** polyIdx de llegada a cada parada k ≥ 1 (posición k - 1) */
+  llegadaParada: number[];
+  distancia: number;
+  duracion: number;
+}
+
+async function obtenerRutaMulti(coords: Coords[]): Promise<RutaCalculada | null> {
+  if (coords.length < 2) return null;
   try {
     const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
     const url = `${OSRM}/${waypoints}?overview=full&geometries=geojson&steps=true&annotations=false`;
     const res = await fetch(url);
-    if (!res.ok) return { puntos: [], pasos: [] };
+    if (!res.ok) return null;
     const data = await res.json();
-    if (data.code !== "Ok") return { puntos: [], pasos: [] };
+    if (data.code !== "Ok") return null;
 
-    const puntos: Coords[] = data.routes[0].geometry.coordinates.map(
+    const ruta = data.routes[0];
+    const puntos: Coords[] = ruta.geometry.coordinates.map(
       ([lng, lat]: [number, number]) => [lat, lng] as Coords,
     );
+    if (puntos.length < 2) return null;
 
-    // Extraer pasos de manejo de todas las legs
-    const pasos: OsrmStep[] = [];
-    for (const leg of data.routes[0].legs ?? []) {
-      for (const step of leg.steps ?? []) {
-        const maneuver = step.maneuver ?? {};
-        pasos.push({
-          instruccion: buildInstruccion(maneuver.type, maneuver.modifier, step.name),
-          distancia: Math.round(step.distance ?? 0),
-          coordInicio: maneuver.location
-            ? ([maneuver.location[1], maneuver.location[0]] as Coords)
-            : puntos[0],
-        });
-      }
+    const acum: number[] = [0];
+    for (let i = 1; i < puntos.length; i++) {
+      acum.push(acum[i - 1] + distanciaM(puntos[i - 1], puntos[i]));
     }
 
-    return { puntos, pasos };
+    // Ubica cada maniobra en la polilínea avanzando de forma monótona,
+    // para que una calle recorrida dos veces no confunda el orden.
+    const pasos: Paso[] = [];
+    const llegadaParada: number[] = [];
+    let desde = 0;
+    (ruta.legs ?? []).forEach((leg: any, tramo: number) => {
+      for (const step of leg.steps ?? []) {
+        const m = step.maneuver ?? {};
+        const coord: Coords = m.location ? [m.location[1], m.location[0]] : puntos[desde];
+        let polyIdx = -1;
+        let mejor = Infinity;
+        let mejorIdx = desde;
+        for (let j = desde; j < puntos.length; j++) {
+          const d = distanciaM(puntos[j], coord);
+          if (d < 5) {
+            polyIdx = j;
+            break;
+          }
+          if (d < mejor) {
+            mejor = d;
+            mejorIdx = j;
+          }
+        }
+        if (polyIdx < 0) polyIdx = mejorIdx;
+        desde = polyIdx;
+        pasos.push({
+          tipo: m.type ?? "",
+          modificador: m.modifier,
+          salida: m.exit,
+          calle: step.name ?? "",
+          distancia: Math.round(step.distance ?? 0),
+          coord,
+          tramo,
+          polyIdx,
+        });
+      }
+      llegadaParada.push(desde);
+    });
+
+    return {
+      puntos,
+      acum,
+      pasos,
+      llegadaParada,
+      distancia: ruta.distance ?? acum[acum.length - 1],
+      duracion: ruta.duration ?? 0,
+    };
   } catch {
-    return { puntos: [], pasos: [] };
+    return null;
   }
 }
 
-interface OsrmStep {
-  instruccion: string;
-  distancia: number;
-  coordInicio: Coords;
-}
+const DIRECCION: Record<string, string> = {
+  left: "a la izquierda",
+  right: "a la derecha",
+  "sharp left": "cerrado a la izquierda",
+  "sharp right": "cerrado a la derecha",
+  "slight left": "ligeramente a la izquierda",
+  "slight right": "ligeramente a la derecha",
+  straight: "recto",
+  uturn: "en U",
+};
 
-function buildInstruccion(type?: string, modifier?: string, nombre?: string): string {
-  const calle = nombre && nombre !== "" ? ` por ${nombre}` : "";
-  const dirMap: Record<string, string> = {
-    left: "izquierda",
-    right: "derecha",
-    "sharp left": "izquierda pronunciada",
-    "sharp right": "derecha pronunciada",
-    "slight left": "levemente a la izquierda",
-    "slight right": "levemente a la derecha",
-    straight: "recto",
-    uturn: "dar la vuelta",
-  };
-  const dir = dirMap[modifier ?? ""] ?? "";
+const ORDINAL = ["primera", "segunda", "tercera", "cuarta", "quinta", "sexta"];
 
-  switch (type) {
-    case "turn":
-      return `Gire a la ${dir}${calle}`;
-    case "new name":
-      return `Continúe${calle}`;
+/** Acción corta de la maniobra ("Gira a la derecha"). La calle va aparte. */
+function accionPaso(p: Paso, totalParadas: number): string {
+  const dir = DIRECCION[p.modificador ?? ""] ?? "";
+  if (p.modificador === "uturn" && p.tipo !== "arrive") return "Da la vuelta en U";
+  switch (p.tipo) {
     case "depart":
-      return `Inicie el recorrido${calle}`;
+      return p.tramo === 0 ? "Sal del punto de partida" : `Continúa hacia la parada ${p.tramo + 1}`;
     case "arrive":
-      return "Ha llegado al destino";
-    case "merge":
-      return `Incorpore${dir ? " " + dir : ""}${calle}`;
-    case "on ramp":
-      return `Tome la rampa${dir ? " " + dir : ""}${calle}`;
-    case "off ramp":
-      return `Salga por la rampa${dir ? " " + dir : ""}${calle}`;
-    case "fork":
-      return `En el cruce, tome la ${dir}${calle}`;
+      return p.tramo + 1 >= totalParadas - 1
+        ? "Llegada al destino final"
+        : `Llegada a la parada ${p.tramo + 1}`;
+    case "turn":
     case "end of road":
-      return `Al final, gire a la ${dir}${calle}`;
+      return p.modificador === "straight" ? "Continúa recto" : `Gira ${dir}`.trim();
+    case "new name":
+    case "continue":
+      return p.modificador && p.modificador !== "straight" ? `Mantente ${dir}` : "Continúa recto";
+    case "merge":
+      return `Incorpórate ${dir}`.trim();
+    case "on ramp":
+      return `Toma la rampa ${dir}`.trim();
+    case "off ramp":
+      return `Toma la salida ${dir}`.trim();
+    case "fork":
+      return `En la bifurcación, mantente ${dir}`.trim();
     case "roundabout":
-      return `En la rotonda, tome la salida${calle}`;
     case "rotary":
-      return `En la glorieta, continúe${calle}`;
+    case "roundabout turn":
+      return p.salida
+        ? `En la rotonda, toma la ${ORDINAL[p.salida - 1] ?? `${p.salida}.ª`} salida`
+        : "Entra a la rotonda";
+    case "exit roundabout":
+    case "exit rotary":
+      return "Sal de la rotonda";
     default:
-      return dir ? `Dirija ${dir}${calle}` : `Continúe${calle}`;
+      return dir && dir !== "recto" ? `Mantente ${dir}` : "Continúa recto";
   }
+}
+
+function IconoManiobra({ paso, className }: { paso: Paso; className?: string }) {
+  const { tipo, modificador: m } = paso;
+  let Icono = ArrowUp;
+  if (tipo === "arrive") Icono = Flag;
+  else if (tipo === "depart") Icono = Navigation2;
+  else if (tipo.includes("roundabout") || tipo.includes("rotary")) Icono = RotateCw;
+  else if (m === "uturn") Icono = Undo2;
+  else if (m === "left" || m === "sharp left") Icono = CornerUpLeft;
+  else if (m === "right" || m === "sharp right") Icono = CornerUpRight;
+  else if (m === "slight left") Icono = ArrowUpLeft;
+  else if (m === "slight right") Icono = ArrowUpRight;
+  else if (tipo === "merge") Icono = Merge;
+  else if (tipo === "fork") Icono = Split;
+  return <Icono className={className} aria-hidden="true" />;
 }
 
 // ─── Calcular bearing entre dos puntos ───────────────────────────────────────
@@ -395,52 +728,68 @@ function calcularBearing(p1: Coords, p2: Coords): number {
   return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
 }
 
-// ─── Interpolación lineal entre dos coords ───────────────────────────────────
-
-function interpolar(a: Coords, b: Coords, t: number): Coords {
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-}
-
 export interface MultiStop {
   coords: Coords;
   label: string;
+  /** Nombre visible de la parada (cliente o local) */
   sublabel?: string;
-  color: string;
+  /** Obsoleto: el color del marker ahora depende del estado de la parada */
+  color?: string;
+  direccion?: string;
+  /** Estado del pedido ya traducido (p.ej. "En camino") */
+  estadoPedido?: string;
+  /** ETA acumulado ya formateado (p.ej. "+12 min") */
+  eta?: string;
+  /** Enlace al detalle del pedido */
+  href?: string;
 }
 
 interface MultiProps {
   stops: MultiStop[];
-  altura?: number;
+  /** px o cualquier valor CSS de altura (p.ej. "clamp(420px, 72svh, 760px)") */
+  altura?: number | string;
   className?: string;
 }
 
+type PestanaPanel = "indicaciones" | "paradas";
+
 /**
  * Mapa de ruta multi-parada con Leaflet.
- * - Marcadores numerados y ruta real por calles (OSRM).
- * - Avatar animado del repartidor que recorre la ruta.
- * - Agente de navegación GPS con instrucciones de giro.
+ * - Pins numerados con estado (origen, pendiente, siguiente, completada, destino).
+ * - Ruta real por calles (OSRM) y avatar animado que la recorre.
+ * - Navegación tipo app: maniobra actual con icono + distancia, "después",
+ *   resumen restante y lista de indicaciones/paradas.
+ * - Desktop: panel lateral. Móvil/tablet: bottom sheet sobre el mapa.
  * - stops[0] es siempre el depot (punto de origen).
  */
 export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProps) {
+  const raizRef = useRef<HTMLDivElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
-  const leafletRef = useRef<any>(null); // referencia a L (Leaflet) una vez importado
-  const avatarRef = useRef<any>(null); // marcador Leaflet del repartidor
+  const leafletRef = useRef<any>(null);
+  const avatarRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const boundsRef = useRef<any>(null);
   const animFrameRef = useRef<number>(0);
-  const rutaPuntosRef = useRef<Coords[]>([]);
-  const pasosNavRef = useRef<OsrmStep[]>([]);
+  const seguirRef = useRef(true);
+  const ultimoAnunciadoRef = useRef(-1);
+  const listaRef = useRef<HTMLOListElement>(null);
 
   const [estado, setEstado] = useState<Estado>("cargando");
+  const [ruta, setRuta] = useState<RutaCalculada | null>(null);
   const [simulando, setSimulando] = useState(false);
-  const [instruccion, setInstruccion] = useState<string>("");
-  const [distSiguiente, setDistSiguiente] = useState<number>(0);
+  const [llegada, setLlegada] = useState(false);
+  const [posIdx, setPosIdx] = useState(0);
+  const [seguir, setSeguir] = useState(true);
   const [vozActiva, setVozActiva] = useState(true);
-  const [pasoActual, setPasoActual] = useState(0);
-  const [llegadaVisible, setLlegadaVisible] = useState(false);
-  const [historialInstrucciones, setHistorialInstrucciones] = useState<string[]>([]);
-  const historialRef = useRef<HTMLDivElement>(null);
+  const [panelAbierto, setPanelAbierto] = useState(false);
+  const [pestana, setPestana] = useState<PestanaPanel>("paradas");
+  const [seleccion, setSeleccion] = useState<number | null>(null);
+  const [pantallaCompleta, setPantallaCompleta] = usePantallaCompleta(mapaRef);
+  const swipeYRef = useRef<number | null>(null);
+  const swipeHechoRef = useRef(false);
+  useAjusteTamano(raizRef, mapaRef);
 
-  // Hablar instrucción con Web Speech API
   const hablar = useCallback(
     (texto: string) => {
       if (!vozActiva) return;
@@ -465,9 +814,11 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     if (!contenedorRef.current || stops.length < 2) return;
     let activo = true;
     setEstado("cargando");
+    setRuta(null);
     setSimulando(false);
-    setInstruccion("");
-    setLlegadaVisible(false);
+    setLlegada(false);
+    setPosIdx(0);
+    setSeleccion(null);
     cancelAnimationFrame(animFrameRef.current);
 
     async function montar() {
@@ -480,64 +831,62 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         mapaRef.current = null;
       }
 
-      const mapa = L.map(contenedorRef.current, { zoomControl: true }).setView(stops[0].coords, 13);
+      // La atribución se muestra en el panel: en móvil el bottom sheet taparía la nativa
+      const mapa = crearMapaBase(L, contenedorRef.current, stops[0].coords, false);
       mapaRef.current = mapa;
-
-      L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-        {
-          attribution:
-            'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Source: Esri, HERE, Garmin, © OpenStreetMap contributors',
-          maxZoom: 19,
-        },
-      ).addTo(mapa);
+      mapa.on("dragstart", () => {
+        seguirRef.current = false;
+        setSeguir(false);
+      });
 
       setTimeout(() => {
         if (activo && mapaRef.current) mapaRef.current.invalidateSize();
       }, 100);
 
       const bounds = L.latLngBounds(stops.map((s) => s.coords)).pad(0.2);
+      boundsRef.current = bounds;
       mapa.fitBounds(bounds);
 
-      // Marcadores de paradas
-      stops.forEach((stop, idx) => {
-        const icon = markerIcon(L, stop.label, stop.color);
-        const popup =
-          idx === 0
-            ? "<b>Ala K' Rico GO</b><br><small>Punto de partida</small>"
-            : `<b>Parada ${idx}</b><br><small>${stop.sublabel ?? ""}</small>`;
-        L.marker(stop.coords, { icon }).addTo(mapa).bindPopup(popup);
+      markersRef.current = stops.map((stop, idx) => {
+        const variante: Variante =
+          idx === 0 ? "origin" : idx === stops.length - 1 ? "dest" : "pending";
+        const marker = L.marker(stop.coords, {
+          icon: pinIcon(L, stop.label, variante),
+          title: idx === 0 ? "Punto de partida" : `Parada ${idx}: ${stop.sublabel ?? ""}`,
+          keyboard: true,
+        }).addTo(mapa);
+        marker.on("click", () => {
+          setSeleccion(idx);
+          setPanelAbierto(true);
+        });
+        return marker;
       });
 
       if (!activo) return;
 
-      const coords: Coords[] = stops.map((s) => s.coords);
-      const { puntos, pasos } = await obtenerRutaMulti(coords);
+      const calculada = await obtenerRutaMulti(stops.map((s) => s.coords));
 
       if (!activo) return;
 
-      if (puntos.length > 0) {
-        rutaPuntosRef.current = puntos;
-        pasosNavRef.current = pasos;
+      if (calculada) {
+        L.polyline(calculada.puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
+        L.polyline(calculada.puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
+        boundsRef.current = L.latLngBounds(calculada.puntos).pad(0.12);
 
-        L.polyline(puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
-        L.polyline(puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
-
-        // Crear avatar del repartidor en la posición inicial
-        const avatarIcon = crearAvatarRepartidor(L, 0);
-        const avatar = L.marker(puntos[0], {
-          icon: avatarIcon,
+        const avatar = L.marker(calculada.puntos[0], {
+          icon: crearAvatarRepartidor(L, 0),
           zIndexOffset: 1000,
+          interactive: false,
         }).addTo(mapa);
         avatarRef.current = avatar;
 
+        setRuta(calculada);
         setEstado("listo");
       } else {
-        rutaPuntosRef.current = [];
-        const linea: Coords[] = stops.map((s) => s.coords);
-        L.polyline(linea, { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" }).addTo(
-          mapa,
-        );
+        L.polyline(
+          stops.map((s) => s.coords),
+          { color: "#ea580c", weight: 4, opacity: 0.7, dashArray: "10, 8" },
+        ).addTo(mapa);
         setEstado("sin-ruta");
       }
 
@@ -552,6 +901,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       activo = false;
       cancelAnimationFrame(animFrameRef.current);
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+      markersRef.current = [];
+      avatarRef.current = null;
       if (mapaRef.current) {
         mapaRef.current.remove();
         mapaRef.current = null;
@@ -559,109 +910,132 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     };
   }, [stops]);
 
-  // ── Ajustar tamaño del mapa cuando aparece el panel lateral ────────────────
-  useEffect(() => {
-    if (estado === "listo" || estado === "sin-ruta") {
-      setTimeout(() => {
-        mapaRef.current?.invalidateSize();
-      }, 80);
+  // ── Progreso derivado de la posición del avatar ────────────────────────────
+  const enCurso = simulando || llegada;
+  const totalParadas = stops.length;
+  let pasoIdx = 0;
+  if (ruta && enCurso) {
+    for (let i = 0; i < ruta.pasos.length; i++) {
+      if (ruta.pasos[i].polyIdx <= posIdx) pasoIdx = i;
+      else break;
     }
-  }, [estado]);
+  }
+  const proximo = ruta && simulando ? (ruta.pasos[pasoIdx + 1] ?? null) : null;
+  const despues = ruta && simulando ? (ruta.pasos[pasoIdx + 2] ?? null) : null;
+  const distProximo = ruta && proximo ? ruta.acum[proximo.polyIdx] - ruta.acum[posIdx] : 0;
+  const restanteM = ruta
+    ? ruta.distancia * (1 - ruta.acum[posIdx] / ruta.acum[ruta.acum.length - 1])
+    : 0;
+  const restanteMin = ruta
+    ? Math.max(llegada ? 0 : 1, Math.round((ruta.duracion * (restanteM / ruta.distancia)) / 60))
+    : 0;
+  const completadas = ruta && enCurso ? ruta.llegadaParada.filter((pi) => pi <= posIdx).length : 0;
+  const paradaSiguiente = Math.min(completadas + 1, totalParadas - 1);
 
-  // ── Scroll automático del historial ─────────────────────────────────────────
+  const varianteParada = useCallback(
+    (k: number): Variante => {
+      if (k === 0) return "origin";
+      if (enCurso && k <= completadas) return "done";
+      if (simulando && k === completadas + 1) return "current";
+      return k === totalParadas - 1 ? "dest" : "pending";
+    },
+    [enCurso, simulando, completadas, totalParadas],
+  );
+
+  // ── Actualizar pins según estado / selección ───────────────────────────────
   useEffect(() => {
-    if (historialRef.current) {
-      historialRef.current.scrollTop = historialRef.current.scrollHeight;
-    }
-  }, [historialInstrucciones]);
+    const L = leafletRef.current;
+    if (!L) return;
+    markersRef.current.forEach((m, k) => {
+      if (!stops[k]) return;
+      m.setIcon(pinIcon(L, stops[k].label, varianteParada(k), seleccion === k));
+      m.setZIndexOffset(seleccion === k ? 900 : 0);
+    });
+  }, [varianteParada, seleccion, stops, estado]);
+
+  // ── Voz: anunciar la próxima maniobra cada vez que se supera una ──────────
+  useEffect(() => {
+    if (!simulando || !ruta || pasoIdx === ultimoAnunciadoRef.current) return;
+    ultimoAnunciadoRef.current = pasoIdx;
+    const prox = ruta.pasos[pasoIdx + 1];
+    if (!prox) return;
+    const dist = ruta.acum[prox.polyIdx] - ruta.acum[posIdx];
+    const accion = accionPaso(prox, totalParadas);
+    const calle = prox.calle && prox.tipo !== "arrive" ? ` en ${prox.calle}` : "";
+    const prefijo =
+      dist > 30
+        ? `En ${formatDist(dist).replace(" m", " metros").replace(" km", " kilómetros")}, `
+        : "";
+    hablar(
+      `${prefijo}${prefijo ? accion.charAt(0).toLowerCase() + accion.slice(1) : accion}${calle}`,
+    );
+  }, [simulando, ruta, pasoIdx, posIdx, totalParadas, hablar]);
+
+  // ── Mantener visible la indicación actual en la lista ─────────────────────
+  useEffect(() => {
+    if (!simulando || pestana !== "indicaciones") return;
+    const el = listaRef.current?.querySelector<HTMLElement>("[data-actual='true']");
+    el?.scrollIntoView({ block: "nearest" });
+  }, [pasoIdx, simulando, pestana]);
 
   // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
   function iniciarSimulacion() {
-    const puntos = rutaPuntosRef.current;
-    const pasos = pasosNavRef.current;
-    const L = leafletRef.current;
-    if (!puntos.length || !avatarRef.current || !L) return;
+    const r = ruta;
+    const mapa = mapaRef.current;
+    if (!r || !avatarRef.current || !mapa) return;
+    cancelAnimationFrame(animFrameRef.current);
 
+    ultimoAnunciadoRef.current = -1;
+    seguirRef.current = true;
+    setSeguir(true);
     setSimulando(true);
-    setLlegadaVisible(false);
-    setPasoActual(0);
-    setHistorialInstrucciones([]);
-    setInstruccion("");
+    setLlegada(false);
+    setPosIdx(0);
+    setSeleccion(null);
+    setPestana("indicaciones");
+
+    avatarRef.current.setLatLng(r.puntos[0]);
+    mapa.setView(r.puntos[0], Math.max(mapa.getZoom(), 16), { animate: true });
 
     // Un punto de ruta por cada FRAMES_POR_PUNTO frames (≈60fps).
     // Con 6 frames/punto: ~10 pts/s → ~30-60 s para una ruta urbana típica.
     const FRAMES_POR_PUNTO = 6;
     let frameCount = 0;
     let idx = 0;
-    let ultimaInstruccion = "";
-
-    const pasoNavCercano = (pos: Coords): OsrmStep | null => {
-      if (!pasos.length) return null;
-      let minDist = Infinity;
-      let cercano: OsrmStep | null = null;
-      for (const p of pasos) {
-        const d = distanciaM(pos, p.coordInicio);
-        if (d < minDist) {
-          minDist = d;
-          cercano = p;
-        }
-      }
-      return minDist < 80 ? cercano : null;
-    };
 
     const frame = () => {
       if (!avatarRef.current || !mapaRef.current) return;
-
       frameCount++;
 
-      // Solo avanzar un punto cada FRAMES_POR_PUNTO frames
       if (frameCount % FRAMES_POR_PUNTO === 0) {
         idx++;
 
-        if (idx >= puntos.length - 1) {
-          avatarRef.current.setLatLng(puntos[puntos.length - 1]);
+        if (idx >= r.puntos.length - 1) {
+          idx = r.puntos.length - 1;
+          avatarRef.current.setLatLng(r.puntos[idx]);
+          setPosIdx(idx);
           setSimulando(false);
-          const msg = "Ha llegado al destino final";
-          setInstruccion(msg);
-          setHistorialInstrucciones((prev) => [...prev, msg]);
-          setLlegadaVisible(true);
-          hablar(msg);
+          setLlegada(true);
+          hablar("Has llegado al destino final");
           return;
         }
 
-        const siguiente = Math.min(idx + 1, puntos.length - 1);
-        const bearing = calcularBearing(puntos[idx], puntos[siguiente]);
+        avatarRef.current.setLatLng(r.puntos[idx]);
+        rotarAvatar(avatarRef.current, calcularBearing(r.puntos[idx], r.puntos[idx + 1]));
+        setPosIdx(idx);
 
-        avatarRef.current.setLatLng(puntos[idx]);
-        avatarRef.current.setIcon(crearAvatarRepartidorImport(L, bearing));
-
-        // El mapa sigue al avatar suavemente cada 15 puntos
-        if (idx % 15 === 0) {
-          mapaRef.current.panTo(puntos[idx], { animate: true, duration: 0.8, easeLinearity: 0.4 });
-        }
-
-        // Instrucción de navegación si hay paso cercano
-        const pasoNav = pasoNavCercano(puntos[idx]);
-        if (pasoNav && pasoNav.instruccion !== ultimaInstruccion) {
-          ultimaInstruccion = pasoNav.instruccion;
-          setInstruccion(pasoNav.instruccion);
-          setDistSiguiente(pasoNav.distancia);
-          setHistorialInstrucciones((prev) => [...prev.slice(-19), pasoNav.instruccion]);
-          hablar(pasoNav.instruccion);
-          setPasoActual((prev) => prev + 1);
+        // El mapa sigue al avatar mientras el usuario no lo haya movido
+        if (seguirRef.current && idx % 15 === 0) {
+          mapaRef.current.panTo(r.puntos[idx], {
+            animate: true,
+            duration: 0.8,
+            easeLinearity: 0.4,
+          });
         }
       }
 
       animFrameRef.current = requestAnimationFrame(frame);
     };
-
-    // Primera instrucción al arrancar
-    if (pasos.length > 0) {
-      setInstruccion(pasos[0].instruccion);
-      setDistSiguiente(pasos[0].distancia);
-      setHistorialInstrucciones([pasos[0].instruccion]);
-      hablar(pasos[0].instruccion);
-    }
 
     animFrameRef.current = requestAnimationFrame(frame);
   }
@@ -669,157 +1043,472 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   function detenerSimulacion() {
     cancelAnimationFrame(animFrameRef.current);
     setSimulando(false);
-    setInstruccion("");
-    setHistorialInstrucciones([]);
-    if (avatarRef.current && rutaPuntosRef.current.length) {
-      avatarRef.current.setLatLng(rutaPuntosRef.current[0]);
-    }
+    setLlegada(false);
+    setPosIdx(0);
+    if (avatarRef.current && ruta) avatarRef.current.setLatLng(ruta.puntos[0]);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   }
 
-  const puedeComentar = estado === "listo" && rutaPuntosRef.current.length > 0;
+  function ajustarRuta() {
+    seguirRef.current = false;
+    setSeguir(false);
+    if (boundsRef.current) mapaRef.current?.fitBounds(boundsRef.current);
+  }
+
+  function centrarRepartidor() {
+    seguirRef.current = true;
+    setSeguir(true);
+    const pos = avatarRef.current?.getLatLng();
+    if (pos) mapaRef.current?.setView(pos, Math.max(mapaRef.current.getZoom(), 16));
+  }
+
+  function enfocarParada(k: number) {
+    setSeleccion(k);
+    seguirRef.current = false;
+    setSeguir(false);
+    mapaRef.current?.setView(stops[k].coords, Math.max(mapaRef.current.getZoom(), 16));
+  }
+
+  // Asa del bottom sheet: tap/teclado alternan (onClick); un swipe vertical abre o cierra
+  function onAsaPointerDown(e: React.PointerEvent) {
+    swipeYRef.current = e.clientY;
+    swipeHechoRef.current = false;
+  }
+  function onAsaPointerUp(e: React.PointerEvent) {
+    const inicio = swipeYRef.current;
+    swipeYRef.current = null;
+    if (inicio === null) return;
+    const dy = e.clientY - inicio;
+    if (Math.abs(dy) <= 24) return;
+    swipeHechoRef.current = true;
+    setPanelAbierto(dy < 0);
+  }
+  function onAsaClick() {
+    // Tras un swipe el navegador también emite click: no volver a alternar
+    if (swipeHechoRef.current) {
+      swipeHechoRef.current = false;
+      return;
+    }
+    setPanelAbierto((v) => !v);
+  }
+
+  const top = pantallaCompleta ? "calc(env(safe-area-inset-top) + 0.75rem)" : "0.75rem";
+  const paradaSel = seleccion !== null ? stops[seleccion] : null;
+  const calleProximo = proximo
+    ? proximo.tipo === "arrive"
+      ? (stops[proximo.tramo + 1]?.sublabel ?? "")
+      : proximo.calle
+    : "";
 
   return (
     <div
-      className={`relative flex flex-col sm:flex-row overflow-hidden rounded-xl border border-border ${className}`}
+      ref={raizRef}
+      className={`isolate flex flex-col overflow-hidden lg:flex-row ${
+        pantallaCompleta
+          ? "fixed inset-0 z-1100 bg-background"
+          : `relative rounded-xl border border-border ${className}`
+      }`}
+      style={{ height: alturaCss(altura, pantallaCompleta) }}
     >
-      {/* ── IZQUIERDA: Mapa Leaflet ── */}
-      <div className="relative min-w-0 flex-1" style={{ height: altura }}>
-        {/* Banner instrucción GPS actual (overlay superior) */}
-        {simulando && instruccion && (
+      {/* ── Mapa ── */}
+      <div className="relative h-full min-w-0 flex-1">
+        {/* Maniobra actual (overlay superior) */}
+        {simulando && proximo && (
           <div
-            className="absolute left-2 right-2 top-2 z-1001 flex items-center gap-2 rounded-lg bg-card/95 px-3 py-2 shadow-md"
-            style={{ backdropFilter: "blur(8px)" }}
+            className="absolute left-3 right-[4.25rem] z-1001 overflow-hidden rounded-2xl bg-coal text-cream shadow-lg"
+            style={{ top }}
           >
-            <Navigation2 className="h-4 w-4 shrink-0 text-accent" />
-            <p className="flex-1 min-w-0 text-xs font-semibold leading-snug text-foreground truncate">
-              {instruccion}
-            </p>
+            <div className="flex items-center gap-3 px-3 py-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
+                <IconoManiobra paso={proximo} className="h-7 w-7" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-2xl font-bold leading-none tabular-nums">
+                  {formatDist(distProximo)}
+                </p>
+                <p className="mt-1 text-[15px] font-semibold leading-tight">
+                  {accionPaso(proximo, totalParadas)}
+                </p>
+                {calleProximo && (
+                  <p className="break-words text-sm leading-snug text-cream/75">{calleProximo}</p>
+                )}
+              </div>
+            </div>
+            {despues && (
+              <div className="flex items-center gap-2 border-t border-white/10 bg-black/25 px-3 py-1.5 text-xs">
+                <span className="text-cream/65">Después</span>
+                <IconoManiobra paso={despues} className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate font-medium">
+                  {accionPaso(despues, totalParadas)}
+                </span>
+              </div>
+            )}
           </div>
         )}
+        {/* Anuncio accesible: solo cambia con cada maniobra, no con la distancia */}
+        <p className="sr-only" aria-live="polite">
+          {simulando && proximo ? `${accionPaso(proximo, totalParadas)} ${calleProximo}` : ""}
+          {llegada ? "Llegada al destino final. Todas las paradas completadas." : ""}
+        </p>
 
-        {/* Overlay llegada */}
-        {llegadaVisible && (
+        {llegada && (
           <div
-            className="absolute inset-x-2 top-2 z-1002 flex items-center gap-3 rounded-xl bg-emerald-600/95 px-4 py-3 text-white shadow-lg"
-            style={{ backdropFilter: "blur(8px)" }}
+            className="absolute left-3 right-[4.25rem] z-1001 flex items-center gap-3 rounded-2xl bg-green-700/95 px-4 py-3 text-white shadow-lg"
+            style={{ top }}
           >
-            <span className="text-2xl">🏁</span>
+            <Flag className="h-6 w-6 shrink-0" aria-hidden="true" />
             <div>
               <p className="text-sm font-bold">¡Llegada al destino!</p>
-              <p className="text-xs opacity-80">Todas las paradas completadas.</p>
+              <p className="text-xs opacity-85">Todas las paradas completadas.</p>
             </div>
           </div>
         )}
 
-        {/* Overlay carga */}
-        {estado === "cargando" && (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted"
-            style={{ zIndex: 1000 }}
-          >
-            <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-accent border-t-transparent" />
-            <p className="text-sm text-muted-foreground">Trazando ruta…</p>
-          </div>
-        )}
+        {estado === "cargando" && <OverlayCarga texto="Trazando ruta…" />}
 
         {estado === "sin-ruta" && (
           <div
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow"
-            style={{ zIndex: 1000 }}
+            className="absolute left-3 right-[4.25rem] z-1000 rounded-lg bg-card/95 px-3 py-2 text-xs text-muted-foreground shadow"
+            style={{ top }}
           >
             Ruta aproximada — servicio de calles no disponible
           </div>
         )}
 
-        <div ref={contenedorRef} className="h-full w-full" />
+        {estado !== "cargando" && (
+          <ControlesMapa
+            mapaRef={mapaRef}
+            top={top}
+            onAjustar={ajustarRuta}
+            onCentrar={ruta ? centrarRepartidor : undefined}
+            centrado={simulando && seguir}
+            pantallaCompleta={pantallaCompleta}
+            onPantallaCompleta={() => setPantallaCompleta((v) => !v)}
+          />
+        )}
+
+        <div
+          ref={contenedorRef}
+          className="h-full w-full"
+          role="region"
+          aria-label="Mapa de la ruta de reparto"
+        />
       </div>
 
-      {/* ── DERECHA: Panel de instrucciones GPS ── */}
-      {puedeComentar && (
-        <div className="flex w-full sm:w-56 sm:shrink-0 flex-col border-t sm:border-t-0 sm:border-l border-border bg-card h-44 sm:h-auto">
-          {/* Cabecera del panel */}
-          <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <span className="text-sm">🛵</span>
-              Navegación GPS
-            </div>
-            <button
-              onClick={() => setVozActiva((v) => !v)}
-              className="shrink-0 rounded-full p-1 text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={vozActiva ? "Silenciar voz" : "Activar voz"}
-            >
-              {vozActiva ? (
-                <Volume2 className="h-3.5 w-3.5" />
+      {/* ── Panel: bottom sheet en móvil/tablet, lateral en desktop ── */}
+      {estado !== "cargando" && (
+        <section
+          aria-label="Panel de navegación"
+          className={`akr-sheet absolute inset-x-0 bottom-0 z-1001 flex flex-col rounded-t-2xl bg-card shadow-[0_-10px_30px_-12px_rgb(0_0_0/0.35)] lg:static lg:z-auto lg:max-h-none lg:w-80 lg:shrink-0 lg:rounded-none lg:border-l lg:border-border lg:shadow-none xl:w-96 ${
+            panelAbierto ? "max-h-[68%]" : "max-h-[60%]"
+          } ${pantallaCompleta ? "pb-safe-3 lg:pb-0" : ""}`}
+        >
+          {/* Asa (solo móvil/tablet) */}
+          <button
+            type="button"
+            aria-expanded={panelAbierto}
+            aria-label={panelAbierto ? "Contraer panel de ruta" : "Expandir panel de ruta"}
+            onPointerDown={onAsaPointerDown}
+            onPointerUp={onAsaPointerUp}
+            onClick={onAsaClick}
+            className="flex h-7 min-h-7 w-full shrink-0 touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:hidden"
+          >
+            <span className="h-1.5 w-10 rounded-full bg-muted-foreground/35" />
+          </button>
+
+          {/* Resumen de la ruta (siempre visible) */}
+          <div className="flex shrink-0 items-center gap-3 px-4 pb-3 lg:border-b lg:border-border lg:pt-4">
+            <div className="min-w-0 flex-1">
+              {enCurso && ruta ? (
+                <>
+                  <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="whitespace-nowrap text-2xl font-bold leading-none tabular-nums text-accent">
+                      {restanteMin} min
+                    </span>
+                    <span className="whitespace-nowrap text-sm font-medium tabular-nums text-muted-foreground">
+                      {formatDist(restanteM)}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">
+                    {llegada
+                      ? `${totalParadas - 1} de ${totalParadas - 1} paradas completadas`
+                      : `Parada ${paradaSiguiente} de ${totalParadas - 1}`}
+                  </p>
+                </>
               ) : (
-                <VolumeX className="h-3.5 w-3.5" />
+                <>
+                  <p className="text-sm font-semibold">
+                    {totalParadas - 1} parada{totalParadas - 1 !== 1 ? "s" : ""}
+                  </p>
+                  <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                    {ruta
+                      ? `${formatDist(ruta.distancia)} por calles · ${Math.max(1, Math.round(ruta.duracion / 60))} min`
+                      : "Ruta aproximada en línea recta"}
+                  </p>
+                </>
               )}
-            </button>
+            </div>
+            {ruta && (
+              <button
+                type="button"
+                onClick={() => setVozActiva((v) => !v)}
+                aria-label={
+                  vozActiva ? "Silenciar instrucciones de voz" : "Activar instrucciones de voz"
+                }
+                aria-pressed={vozActiva}
+                title={vozActiva ? "Silenciar voz" : "Activar voz"}
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {vozActiva ? (
+                  <Volume2 className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <VolumeX className="h-5 w-5" aria-hidden="true" />
+                )}
+              </button>
+            )}
+            {ruta &&
+              (simulando ? (
+                <button
+                  type="button"
+                  onClick={detenerSimulacion}
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-destructive px-4 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                  Detener
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={iniciarSimulacion}
+                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Navigation2 className="h-4 w-4" aria-hidden="true" />
+                  {llegada ? "Reiniciar" : "Iniciar"}
+                </button>
+              ))}
           </div>
 
-          {/* Lista de instrucciones */}
-          <div ref={historialRef} className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
-            {historialInstrucciones.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 px-2 py-8 text-center">
-                <Navigation2 className="h-8 w-8 text-muted-foreground/20" />
-                <p className="text-xs text-muted-foreground leading-snug">
-                  Presiona «Iniciar recorrido» para ver las instrucciones paso a paso
-                </p>
+          {/* Parada seleccionada en el mapa */}
+          {paradaSel && seleccion !== null && (
+            <div className="mx-3 mb-3 shrink-0 rounded-xl border border-border bg-background p-3 lg:mt-3">
+              <div className="flex items-start gap-3">
+                <span
+                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${VARIANTE_BG[varianteParada(seleccion)]}`}
+                >
+                  {paradaSel.label}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {seleccion === 0
+                      ? "Punto de partida"
+                      : `Parada ${seleccion} de ${totalParadas - 1}`}
+                    {" · "}
+                    {VARIANTE_TEXTO[varianteParada(seleccion)]}
+                  </p>
+                  <p className="break-words font-semibold leading-tight">
+                    {paradaSel.sublabel ?? `Parada ${seleccion}`}
+                  </p>
+                  {paradaSel.direccion && (
+                    <p className="mt-0.5 break-words text-sm text-muted-foreground">
+                      {paradaSel.direccion}
+                    </p>
+                  )}
+                  {(paradaSel.estadoPedido || paradaSel.eta) && (
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      {paradaSel.estadoPedido && (
+                        <span className="rounded-md bg-secondary px-2 py-0.5 font-medium">
+                          {paradaSel.estadoPedido}
+                        </span>
+                      )}
+                      {paradaSel.eta && (
+                        <span className="font-semibold text-accent">{paradaSel.eta}</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSeleccion(null)}
+                  aria-label="Cerrar detalle de parada"
+                  className="-mr-1 -mt-1 grid h-9 min-h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
-            ) : (
-              historialInstrucciones.map((inst, i) => {
-                const esActual = i === historialInstrucciones.length - 1;
-                return (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs transition-all ${
-                      esActual
-                        ? "border border-accent/30 bg-accent/15 font-semibold text-foreground"
-                        : "text-muted-foreground"
-                    }`}
+              {seleccion > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {paradaSel.href ? (
+                    <a
+                      href={paradaSel.href}
+                      className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card text-sm font-semibold transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Ver pedido
+                    </a>
+                  ) : (
+                    <span />
+                  )}
+                  <a
+                    href={urlNavegar(paradaSel.coords)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-accent text-sm font-semibold text-accent-foreground transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <Navigation2
-                      className={`mt-0.5 h-3 w-3 shrink-0 ${esActual ? "text-accent" : "text-muted-foreground/40"}`}
-                    />
-                    <span className="leading-snug">{inst}</span>
-                    {esActual && distSiguiente > 0 && !inst.includes("destino") && (
-                      <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
-                        {distSiguiente < 1000
-                          ? `${distSiguiente} m`
-                          : `${(distSiguiente / 1000).toFixed(1)} km`}
-                      </span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+                    <Navigation2 className="h-4 w-4" aria-hidden="true" />
+                    Navegar
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Controles */}
-          <div className="border-t border-border px-3 py-2.5 space-y-1.5">
-            {simulando ? (
-              <button
-                onClick={detenerSimulacion}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-destructive/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Detener
-              </button>
-            ) : (
-              <button
-                onClick={iniciarSimulacion}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Navigation2 className="h-3.5 w-3.5" />
-                {historialInstrucciones.length > 0 ? "Reiniciar" : "Iniciar recorrido"}
-              </button>
-            )}
-            {pasoActual > 0 && (
-              <p className="text-center text-[10px] text-muted-foreground">
-                {pasoActual} instrucciones
-              </p>
-            )}
+          {/* Pestañas + listas (expandido en móvil; siempre en desktop) */}
+          <div
+            className={`${panelAbierto ? "flex" : "hidden"} min-h-0 flex-1 flex-col border-t border-border lg:flex`}
+          >
+            <div role="tablist" aria-label="Detalle de la ruta" className="flex shrink-0 gap-1 p-2">
+              {(
+                [
+                  ["paradas", `Paradas (${totalParadas - 1})`],
+                  ["indicaciones", "Indicaciones"],
+                ] as const
+              ).map(([id, texto]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={pestana === id}
+                  disabled={id === "indicaciones" && !ruta}
+                  onClick={() => setPestana(id)}
+                  className={`h-10 min-h-10 flex-1 rounded-lg text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${
+                    pestana === id
+                      ? "bg-accent/15 text-accent"
+                      : "text-muted-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+
+            <ol
+              ref={listaRef}
+              className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 pb-2"
+            >
+              {pestana === "paradas" || !ruta
+                ? stops.map((s, k) => {
+                    const v = varianteParada(k);
+                    return (
+                      <li key={k}>
+                        <button
+                          type="button"
+                          onClick={() => enfocarParada(k)}
+                          className={`flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                            v === "current" ? "bg-accent/10" : ""
+                          } ${seleccion === k ? "ring-1 ring-accent/40" : ""}`}
+                        >
+                          <span
+                            className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${VARIANTE_BG[v]}`}
+                          >
+                            {s.label}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-baseline justify-between gap-2">
+                              <span
+                                className={`min-w-0 break-words text-sm font-medium ${v === "done" ? "text-muted-foreground line-through decoration-1" : ""}`}
+                              >
+                                {s.sublabel ?? (k === 0 ? "Punto de partida" : `Parada ${k}`)}
+                              </span>
+                              {s.eta && (
+                                <span className="shrink-0 text-xs font-semibold tabular-nums text-accent">
+                                  {s.eta}
+                                </span>
+                              )}
+                            </span>
+                            {s.direccion && (
+                              <span className="mt-0.5 block break-words text-xs text-muted-foreground">
+                                {s.direccion}
+                              </span>
+                            )}
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                              <span
+                                className={
+                                  v === "current"
+                                    ? "font-semibold text-accent"
+                                    : v === "done"
+                                      ? "font-medium text-green-700 dark:text-green-400"
+                                      : "text-muted-foreground"
+                                }
+                              >
+                                {VARIANTE_TEXTO[v]}
+                              </span>
+                              {s.estadoPedido && (
+                                <span className="rounded bg-secondary px-1.5 py-0.5 font-medium">
+                                  {s.estadoPedido}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })
+                : ruta.pasos.map((p, i) => {
+                    const pasado = simulando && i <= pasoIdx;
+                    const actual = simulando && i === pasoIdx + 1;
+                    const nuevoTramo = i === 0 || ruta.pasos[i - 1].tramo !== p.tramo;
+                    return (
+                      <li key={i} data-actual={actual ? "true" : undefined}>
+                        {nuevoTramo && (
+                          <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Hacia parada {p.tramo + 1}
+                            {stops[p.tramo + 1]?.sublabel
+                              ? ` · ${stops[p.tramo + 1].sublabel}`
+                              : ""}
+                          </p>
+                        )}
+                        <div
+                          className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
+                            actual
+                              ? "bg-accent/15 ring-1 ring-accent/30"
+                              : pasado
+                                ? "opacity-45"
+                                : ""
+                          }`}
+                        >
+                          <span
+                            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+                              actual ? "bg-accent text-accent-foreground" : "bg-secondary"
+                            }`}
+                          >
+                            <IconoManiobra paso={p} className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={`block text-sm leading-tight ${actual ? "font-semibold" : "font-medium"}`}
+                            >
+                              {accionPaso(p, totalParadas)}
+                            </span>
+                            {p.calle && p.tipo !== "arrive" && (
+                              <span className="block break-words text-xs text-muted-foreground">
+                                {p.calle}
+                              </span>
+                            )}
+                          </span>
+                          {p.distancia > 0 && p.tipo !== "arrive" && (
+                            <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
+                              {formatDist(p.distancia)}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+            </ol>
+            <p className="shrink-0 px-4 pb-2 text-[10px] text-muted-foreground/80">
+              Mapa © Esri, HERE, Garmin · © OpenStreetMap contributors
+            </p>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
@@ -827,30 +1516,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function markerIcon(L: any, label: string, color: string) {
-  return L.divIcon({
-    html: `<div style="
-      background:${color};
-      color:#fff;
-      width:32px;height:32px;
-      border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      font-weight:700;font-size:14px;
-      border:3px solid #fff;
-      box-shadow:0 2px 8px rgba(0,0,0,0.45);
-      font-family:sans-serif;
-    ">${label}</div>`,
-    className: "",
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -20],
-  });
-}
-
-/** SVG del avatar repartidor con rotación por bearing */
+/** SVG del avatar repartidor; la rotación se aplica sobre .akr-avatar */
 function svgRepartidor(bearing: number): string {
   return `
-    <div style="
+    <div class="akr-avatar" style="
       transform: rotate(${bearing}deg);
       transform-origin: center center;
       width: 44px;
@@ -893,14 +1562,10 @@ function crearAvatarRepartidor(L: any, bearing: number) {
   });
 }
 
-function crearAvatarRepartidorImport(L: any, bearing: number) {
-  return L.divIcon({
-    html: svgRepartidor(bearing),
-    className: "",
-    iconSize: [44, 44],
-    iconAnchor: [22, 38],
-    popupAnchor: [0, -42],
-  });
+/** Rota el avatar sin recrear el icono (evita reconstruir el DOM en cada frame). */
+function rotarAvatar(marker: any, bearing: number) {
+  const el: HTMLElement | null = marker.getElement?.()?.querySelector(".akr-avatar") ?? null;
+  if (el) el.style.transform = `rotate(${bearing}deg)`;
 }
 
 /** Distancia en metros entre dos Coords */

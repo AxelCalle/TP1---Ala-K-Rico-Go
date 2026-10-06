@@ -16,7 +16,7 @@ import { Route as ClienteRouteImport } from './routes/cliente'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeguimientoOrderIdRouteImport } from './routes/seguimiento.$orderId'
-import { Route as DriverOrderIdRouteImport } from './routes/driver.$orderId'
+import { Route as DriverOrderIdRouteImport } from './routes/driver_.$orderId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -54,16 +54,16 @@ const SeguimientoOrderIdRoute = SeguimientoOrderIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const DriverOrderIdRoute = DriverOrderIdRouteImport.update({
-  id: '/$orderId',
-  path: '/$orderId',
-  getParentRoute: () => DriverRoute,
+  id: '/driver_/$orderId',
+  path: '/driver/$orderId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/cliente': typeof ClienteRoute
-  '/driver': typeof DriverRouteWithChildren
+  '/driver': typeof DriverRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/driver/$orderId': typeof DriverOrderIdRoute
@@ -73,7 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/cliente': typeof ClienteRoute
-  '/driver': typeof DriverRouteWithChildren
+  '/driver': typeof DriverRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/driver/$orderId': typeof DriverOrderIdRoute
@@ -84,10 +84,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/cliente': typeof ClienteRoute
-  '/driver': typeof DriverRouteWithChildren
+  '/driver': typeof DriverRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/driver/$orderId': typeof DriverOrderIdRoute
+  '/driver_/$orderId': typeof DriverOrderIdRoute
   '/seguimiento/$orderId': typeof SeguimientoOrderIdRoute
 }
 export interface FileRouteTypes {
@@ -119,7 +119,7 @@ export interface FileRouteTypes {
     | '/driver'
     | '/forgot-password'
     | '/login'
-    | '/driver/$orderId'
+    | '/driver_/$orderId'
     | '/seguimiento/$orderId'
   fileRoutesById: FileRoutesById
 }
@@ -127,9 +127,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   ClienteRoute: typeof ClienteRoute
-  DriverRoute: typeof DriverRouteWithChildren
+  DriverRoute: typeof DriverRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  DriverOrderIdRoute: typeof DriverOrderIdRoute
   SeguimientoOrderIdRoute: typeof SeguimientoOrderIdRoute
 }
 
@@ -184,34 +185,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SeguimientoOrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/driver/$orderId': {
-      id: '/driver/$orderId'
-      path: '/$orderId'
+    '/driver_/$orderId': {
+      id: '/driver_/$orderId'
+      path: '/driver/$orderId'
       fullPath: '/driver/$orderId'
       preLoaderRoute: typeof DriverOrderIdRouteImport
-      parentRoute: typeof DriverRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
-
-interface DriverRouteChildren {
-  DriverOrderIdRoute: typeof DriverOrderIdRoute
-}
-
-const DriverRouteChildren: DriverRouteChildren = {
-  DriverOrderIdRoute: DriverOrderIdRoute,
-}
-
-const DriverRouteWithChildren =
-  DriverRoute._addFileChildren(DriverRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   ClienteRoute: ClienteRoute,
-  DriverRoute: DriverRouteWithChildren,
+  DriverRoute: DriverRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  DriverOrderIdRoute: DriverOrderIdRoute,
   SeguimientoOrderIdRoute: SeguimientoOrderIdRoute,
 }
 export const routeTree = rootRouteImport

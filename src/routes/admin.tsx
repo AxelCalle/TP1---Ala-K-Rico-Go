@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   BarChart,
   Bar,
@@ -62,6 +62,16 @@ type SeccionAdmin =
   | "configuracion"
   | "alertas";
 
+/** Etiqueta visible de cada tab (también se usa para enlazar tab ↔ panel por id) */
+const SECCION_LABEL: Record<SeccionAdmin, string> = {
+  dashboard: "Dashboard",
+  pedidos: "Pedidos",
+  repartidores: "Repartidores",
+  reportes: "Reportes",
+  configuracion: "Configuración",
+  alertas: "Alertas",
+};
+
 // ─── Traducciones ─────────────────────────────────────────────────────────────
 
 const ESTADO_PEDIDO = ESTADO_PEDIDO_ES;
@@ -73,6 +83,23 @@ function fmtMin(min: number | null | undefined): string {
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem === 0 ? `${h}h` : `${h}h ${rem}min`;
+}
+
+// ─── Responsive helpers ───────────────────────────────────────────────────────
+
+/** true si el viewport es < sm (640px). Se actualiza al rotar/redimensionar. */
+function useEsMovil(): boolean {
+  const [esMovil, setEsMovil] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const onChange = () => setEsMovil(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return esMovil;
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
@@ -116,94 +143,113 @@ function PaginaAdmin() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
-            <LogoIcon size={32} />
-            <span className="font-display text-base tracking-wide">GO</span>
-            <span className="ml-2 rounded-sm bg-secondary px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-secondary-foreground">
-              Administrador
-            </span>
-          </Link>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">
-              {session?.email ?? "invitado"}
-            </span>
+    <div className="flex min-h-screen min-h-dvh flex-col overflow-x-clip bg-background">
+      {/* Header + tabs: sticky como bloque (safe-area iOS arriba) */}
+      <div className="safe-top sticky top-0 z-40 border-b border-border bg-card">
+        <header>
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-2.5 sm:px-6 sm:py-4">
             <Link
-              to="/driver"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              to="/"
+              aria-label="Ala K' Rico GO — inicio"
+              className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Truck className="h-4 w-4" />
-              <span className="hidden sm:inline">Vista repartidor</span>
-            </Link>
-            <button
-              onClick={cerrarSesion}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Salir</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Navegación de secciones */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl gap-0 overflow-x-auto scrollbar-none px-4 sm:px-6">
-          <NavBtn
-            activo={seccion === "dashboard"}
-            onClick={() => setSeccion("dashboard")}
-            icon={<LayoutDashboard className="h-4 w-4" />}
-            label="Dashboard"
-          />
-          <NavBtn
-            activo={seccion === "pedidos"}
-            onClick={() => setSeccion("pedidos")}
-            icon={<ClipboardList className="h-4 w-4" />}
-            label="Pedidos"
-          />
-          <NavBtn
-            activo={seccion === "repartidores"}
-            onClick={() => setSeccion("repartidores")}
-            icon={<Truck className="h-4 w-4" />}
-            label="Repartidores"
-          />
-          <NavBtn
-            activo={seccion === "reportes"}
-            onClick={() => setSeccion("reportes")}
-            icon={<BarChart2 className="h-4 w-4" />}
-            label="Reportes"
-          />
-          <NavBtn
-            activo={seccion === "configuracion"}
-            onClick={() => setSeccion("configuracion")}
-            icon={<Settings className="h-4 w-4" />}
-            label="Configuración"
-          />
-          <NavBtn
-            activo={seccion === "alertas"}
-            onClick={() => {
-              setSeccion("alertas");
-              setAlertasNoLeidas(0);
-            }}
-            icon={
-              <span className="relative">
-                <Bell className="h-4 w-4" />
-                {alertasNoLeidas > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
-                    {alertasNoLeidas > 9 ? "9+" : alertasNoLeidas}
-                  </span>
-                )}
+              <LogoIcon size={28} />
+              <span className="font-display text-base tracking-wide">GO</span>
+              <span className="ml-1 truncate rounded-sm bg-secondary px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-secondary-foreground sm:ml-2 sm:text-xs">
+                Admin<span className="hidden min-[380px]:inline">istrador</span>
               </span>
-            }
-            label="Alertas"
-          />
-        </div>
+            </Link>
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+              <span className="hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline">
+                {session?.email ?? "invitado"}
+              </span>
+              <Link
+                to="/driver"
+                aria-label="Vista repartidor"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Truck className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Vista repartidor</span>
+              </Link>
+              <button
+                type="button"
+                onClick={cerrarSesion}
+                aria-label="Cerrar sesión"
+                className="inline-flex min-w-11 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Salir</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Navegación de secciones: scroll horizontal con snap en móvil */}
+        <nav aria-label="Secciones del panel" className="border-t border-border">
+          <div
+            role="tablist"
+            aria-label="Secciones"
+            className="mx-auto flex max-w-6xl snap-x snap-mandatory scroll-px-4 overflow-x-auto scrollbar-none px-2 sm:px-6"
+          >
+            <NavBtn
+              activo={seccion === "dashboard"}
+              onClick={() => setSeccion("dashboard")}
+              icon={<LayoutDashboard className="h-4 w-4" />}
+              label="Dashboard"
+            />
+            <NavBtn
+              activo={seccion === "pedidos"}
+              onClick={() => setSeccion("pedidos")}
+              icon={<ClipboardList className="h-4 w-4" />}
+              label="Pedidos"
+            />
+            <NavBtn
+              activo={seccion === "repartidores"}
+              onClick={() => setSeccion("repartidores")}
+              icon={<Truck className="h-4 w-4" />}
+              label="Repartidores"
+            />
+            <NavBtn
+              activo={seccion === "reportes"}
+              onClick={() => setSeccion("reportes")}
+              icon={<BarChart2 className="h-4 w-4" />}
+              label="Reportes"
+            />
+            <NavBtn
+              activo={seccion === "configuracion"}
+              onClick={() => setSeccion("configuracion")}
+              icon={<Settings className="h-4 w-4" />}
+              label="Configuración"
+            />
+            <NavBtn
+              activo={seccion === "alertas"}
+              onClick={() => {
+                setSeccion("alertas");
+                setAlertasNoLeidas(0);
+              }}
+              icon={
+                <span className="relative">
+                  <Bell className="h-4 w-4" />
+                  {alertasNoLeidas > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
+                      {alertasNoLeidas > 9 ? "9+" : alertasNoLeidas}
+                    </span>
+                  )}
+                </span>
+              }
+              label="Alertas"
+              extraLabel={alertasNoLeidas > 0 ? `(${alertasNoLeidas} sin leer)` : undefined}
+            />
+          </div>
+        </nav>
       </div>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <main
+        id="admin-panel"
+        role="tabpanel"
+        aria-labelledby={`tab-${SECCION_LABEL[seccion]}`}
+        className="mx-auto w-full min-w-0 max-w-6xl px-4 py-5 sm:px-6 sm:py-8"
+      >
         {seccion === "dashboard" && <SeccionDashboard />}
         {seccion === "pedidos" && <SeccionPedidos />}
         {seccion === "repartidores" && <SeccionRepartidores />}
@@ -212,7 +258,7 @@ function PaginaAdmin() {
         {seccion === "alertas" && <SeccionAlertas />}
       </main>
 
-      <footer className="mt-auto border-t border-border bg-card">
+      <footer className="safe-bottom mt-auto border-t border-border bg-card">
         <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-center gap-2">
             <LogoIcon size={18} />
@@ -237,6 +283,10 @@ function SeccionDashboard() {
   const [dash, setDash] = useState<import("@/lib/api").DashboardApi | null>(null);
   const [pedidos, setPedidos] = useState<import("@/lib/api").PedidoApi[]>([]);
   const [cargando, setCargando] = useState(true);
+  // Gráficos: más bajos y con menos ticks en móvil
+  const esMovil = useEsMovil();
+  const altoGrafico = esMovil ? 220 : 260;
+  const tickEje = { fontSize: 11 };
 
   useEffect(() => {
     Promise.all([
@@ -351,7 +401,7 @@ function SeccionDashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold sm:text-2xl">Dashboard</h1>
         <p className="mt-1 text-sm text-muted-foreground">Resumen operativo en tiempo real.</p>
       </div>
 
@@ -363,7 +413,7 @@ function SeccionDashboard() {
         ) : (
           <div className="space-y-6">
             {/* KPIs principales */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
               <KpiCard titulo="Pedidos hoy" valor={kpis?.total_hoy ?? 0} sufijo="" highlight />
               <KpiCard titulo="Activos ahora" valor={kpis?.activos ?? 0} sufijo="" />
               <KpiCard
@@ -373,7 +423,7 @@ function SeccionDashboard() {
               />
               <KpiCard titulo="Entregados hoy" valor={kpis?.entregados ?? 0} sufijo="" highlight />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <KpiCard
                 titulo={
                   kpis?.avg_minutos != null ? "Tiempo promedio hoy" : "Tiempo promedio histórico"
@@ -391,13 +441,16 @@ function SeccionDashboard() {
             </div>
 
             {/* Distribución por estado */}
-            <div className="rounded-xl border border-border bg-card p-6">
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h2 className="mb-4 text-base font-semibold">Distribución por estado</h2>
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
                 {pedidosPorEstado.map((e) => (
-                  <div key={e.label} className={`rounded-xl px-4 py-3 text-center ${e.color}`}>
-                    <div className="text-2xl font-bold">{e.count}</div>
-                    <div className="mt-0.5 text-xs font-medium">{e.label}</div>
+                  <div
+                    key={e.label}
+                    className={`min-w-0 rounded-xl px-3 py-3 text-center sm:px-4 ${e.color}`}
+                  >
+                    <div className="text-2xl font-bold tabular-nums">{e.count}</div>
+                    <div className="mt-0.5 break-words text-xs font-medium">{e.label}</div>
                   </div>
                 ))}
               </div>
@@ -406,7 +459,7 @@ function SeccionDashboard() {
             {/* Totales históricos */}
             <div>
               <h2 className="mb-3 text-base font-semibold">Totales históricos</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
                 <KpiCard titulo="Total en sistema" valor={totalSistema} sufijo="" />
                 <KpiCard titulo="Total entregados" valor={entregadosTotal} sufijo="" />
                 <KpiCard titulo="Total cancelados" valor={canceladosTotal} sufijo="" />
@@ -421,22 +474,24 @@ function SeccionDashboard() {
 
             {/* Evolución mensual */}
             {porMes.length > 0 && (
-              <div className="rounded-xl border border-border bg-card p-6">
+              <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
                 <h2 className="mb-4 text-base font-semibold">Evolución mensual de pedidos</h2>
-                <ResponsiveContainer width="100%" height={240}>
-                  <LineChart data={porMes} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <ResponsiveContainer width="100%" height={altoGrafico}>
+                  <LineChart data={porMes} margin={{ top: 4, right: 8, bottom: 0, left: -4 }}>
                     <XAxis
                       dataKey="mes"
-                      tick={{ fontSize: 12 }}
+                      tick={tickEje}
                       axisLine={false}
                       tickLine={false}
+                      interval="preserveStartEnd"
+                      minTickGap={esMovil ? 12 : 20}
                     />
                     <YAxis
                       allowDecimals={false}
-                      tick={{ fontSize: 12 }}
+                      tick={tickEje}
                       axisLine={false}
                       tickLine={false}
-                      width={28}
+                      width={esMovil ? 26 : 32}
                     />
                     <Tooltip
                       contentStyle={{
@@ -447,14 +502,18 @@ function SeccionDashboard() {
                       }}
                       labelStyle={{ fontWeight: 600 }}
                     />
-                    <Legend wrapperStyle={{ fontSize: "12px" }} />
+                    <Legend
+                      verticalAlign="bottom"
+                      iconSize={10}
+                      wrapperStyle={{ fontSize: "11px", paddingTop: 8 }}
+                    />
                     <Line
                       type="monotone"
                       dataKey="total"
                       name="Total"
                       stroke="var(--accent)"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
+                      dot={{ r: esMovil ? 2 : 3 }}
                       activeDot={{ r: 5 }}
                     />
                     <Line
@@ -463,7 +522,7 @@ function SeccionDashboard() {
                       name="Entregados"
                       stroke="oklch(0.60 0.17 150)"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
+                      dot={{ r: esMovil ? 2 : 3 }}
                       activeDot={{ r: 5 }}
                     />
                     <Line
@@ -472,7 +531,7 @@ function SeccionDashboard() {
                       name="Cancelados"
                       stroke="var(--destructive)"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
+                      dot={{ r: esMovil ? 2 : 3 }}
                       activeDot={{ r: 5 }}
                     />
                   </LineChart>
@@ -482,9 +541,9 @@ function SeccionDashboard() {
 
             {/* Evolución semanal del tiempo promedio */}
             {porSemana.length >= 2 && (
-              <div className="rounded-xl border border-border bg-card p-6">
-                <div className="mb-1 flex items-start justify-between gap-4">
-                  <div>
+              <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+                <div className="mb-1 flex flex-wrap items-start justify-between gap-2 sm:gap-4">
+                  <div className="min-w-0">
                     <h2 className="text-base font-semibold">
                       Tiempo promedio de entrega — por semana
                     </h2>
@@ -496,19 +555,21 @@ function SeccionDashboard() {
                     SLA: 45 min
                   </span>
                 </div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <LineChart data={porSemana} margin={{ top: 16, right: 12, bottom: 0, left: 0 }}>
+                <ResponsiveContainer width="100%" height={altoGrafico}>
+                  <LineChart data={porSemana} margin={{ top: 16, right: 8, bottom: 0, left: -4 }}>
                     <XAxis
                       dataKey="semana"
-                      tick={{ fontSize: 11 }}
+                      tick={tickEje}
                       axisLine={false}
                       tickLine={false}
+                      interval="preserveStartEnd"
+                      minTickGap={esMovil ? 12 : 20}
                     />
                     <YAxis
-                      tick={{ fontSize: 11 }}
+                      tick={tickEje}
                       axisLine={false}
                       tickLine={false}
-                      width={32}
+                      width={esMovil ? 32 : 36}
                       tickFormatter={(v) => `${v}m`}
                     />
                     <Tooltip
@@ -523,7 +584,11 @@ function SeccionDashboard() {
                         name === "Promedio" ? [`${v} min`, name] : [v, name]
                       }
                     />
-                    <Legend wrapperStyle={{ fontSize: "12px" }} />
+                    <Legend
+                      verticalAlign="bottom"
+                      iconSize={10}
+                      wrapperStyle={{ fontSize: "11px", paddingTop: 8 }}
+                    />
                     <ReferenceLine
                       y={45}
                       stroke="var(--destructive)"
@@ -561,22 +626,31 @@ function SeccionDashboard() {
             )}
 
             {/* Gráfico pedidos por estado */}
-            <div className="rounded-xl border border-border bg-card p-6">
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h2 className="mb-4 text-base font-semibold">Pedidos por estado</h2>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={pedidosPorEstado} barCategoryGap="30%">
+              <ResponsiveContainer width="100%" height={altoGrafico}>
+                <BarChart
+                  data={pedidosPorEstado}
+                  barCategoryGap={esMovil ? "20%" : "30%"}
+                  margin={{ top: 4, right: 4, bottom: 0, left: -4 }}
+                >
+                  {/* Las 5 categorías siempre visibles; en móvil se inclinan para no encimarse */}
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 12 }}
+                    tick={tickEje}
                     axisLine={false}
                     tickLine={false}
+                    interval={0}
+                    angle={esMovil ? -35 : 0}
+                    textAnchor={esMovil ? "end" : "middle"}
+                    height={esMovil ? 58 : 30}
                   />
                   <YAxis
                     allowDecimals={false}
-                    tick={{ fontSize: 12 }}
+                    tick={tickEje}
                     axisLine={false}
                     tickLine={false}
-                    width={28}
+                    width={esMovil ? 26 : 32}
                   />
                   <Tooltip
                     cursor={{ fill: "var(--muted)", opacity: 0.4 }}
@@ -601,34 +675,38 @@ function SeccionDashboard() {
             </div>
 
             {/* Últimos pedidos */}
-            <div className="rounded-xl border border-border bg-card p-6">
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h2 className="mb-4 text-base font-semibold">Últimos pedidos</h2>
               {recientes.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Sin pedidos registrados.</p>
               ) : (
-                <div className="space-y-2">
+                <ul className="space-y-2">
                   {recientes.map((p) => (
-                    <div
+                    <li
                       key={p.Id_Pedido}
-                      className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-4 py-2.5 text-sm"
+                      className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2.5 text-sm sm:px-4"
                     >
-                      <span className="font-mono text-xs text-muted-foreground shrink-0">
-                        #{p.Id_Pedido}
-                      </span>
-                      <span className="font-medium min-w-0 truncate">
-                        {p.Nombre_Cliente ?? "Cliente"}
-                      </span>
-                      <span className="hidden text-xs text-muted-foreground sm:inline shrink-0">
-                        {p.Creacion_Pedido?.slice(0, 10)}
-                      </span>
+                      {/* Mobile: nombre arriba, #id · fecha abajo. sm+: todo en una fila */}
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+                        <span className="order-2 font-mono text-xs text-muted-foreground sm:order-1 sm:shrink-0">
+                          #{p.Id_Pedido}
+                          <span className="sm:hidden"> · {p.Creacion_Pedido?.slice(0, 10)}</span>
+                        </span>
+                        <span className="order-1 min-w-0 truncate font-medium sm:order-2 sm:flex-1">
+                          {p.Nombre_Cliente ?? "Cliente"}
+                        </span>
+                        <span className="order-3 hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                          {p.Creacion_Pedido?.slice(0, 10)}
+                        </span>
+                      </div>
                       <span
                         className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}
                       >
                         {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
                       </span>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
             </div>
           </div>
@@ -651,10 +729,14 @@ function KpiCard({
 }) {
   return (
     <div
-      className={`rounded-xl border p-5 ${highlight ? "border-accent/40 bg-accent/5" : "border-border bg-card"}`}
+      className={`min-w-0 rounded-xl border p-3.5 sm:p-5 ${highlight ? "border-accent/40 bg-accent/5" : "border-border bg-card"}`}
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo}</p>
-      <p className={`mt-2 text-3xl font-bold ${highlight ? "text-accent" : ""}`}>
+      <p className="break-words text-[11px] font-medium uppercase leading-tight tracking-wide text-muted-foreground sm:text-xs">
+        {titulo}
+      </p>
+      <p
+        className={`mt-1.5 break-words text-2xl font-bold tabular-nums leading-tight sm:mt-2 sm:text-3xl ${highlight ? "text-accent" : ""}`}
+      >
         {valor}
         {sufijo}
       </p>
@@ -720,6 +802,37 @@ function SeccionReportes() {
 
   const promGlobal = tiempos?.promedio ?? 0;
 
+  // Filas derivadas (se comparten entre la vista de cards móvil y la tabla desktop)
+  const filasRanking = ranking.map((r, i) => ({
+    r,
+    pos: i + 1,
+    bajDesempeno: promGlobal > 0 && r.avg_minutos != null && r.avg_minutos > promGlobal * 1.3,
+  }));
+  const filasHistorial = pedidos.slice(0, 20).map((p) => ({
+    p,
+    tpe:
+      p.Entrega_Pedido && p.Creacion_Pedido
+        ? Math.round(
+            (new Date(p.Entrega_Pedido).getTime() - new Date(p.Creacion_Pedido).getTime()) / 60000,
+          )
+        : null,
+    repNombre: p.Nombre_Repartidor
+      ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim()
+      : null,
+    fecha: new Date(p.Creacion_Pedido).toLocaleDateString("es-PE", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }),
+  }));
+  const fmtTimestamp = (ts: string) =>
+    new Date(ts).toLocaleString("es-PE", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
   const EVENTO_COLOR: Record<string, string> = {
     login_ok: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     login_fallido: "bg-destructive/10 text-destructive",
@@ -731,7 +844,7 @@ function SeccionReportes() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Reportes</h1>
+        <h1 className="text-xl font-semibold sm:text-2xl">Reportes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Estadísticas en tiempo real desde SQL Server.
         </p>
@@ -748,45 +861,50 @@ function SeccionReportes() {
       )}
 
       {errCarga && !cargando && (
-        <p className="rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+        <p
+          role="alert"
+          className="break-words rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
+        >
           Error al cargar datos: {errCarga}
         </p>
       )}
 
-      {/* ── Filtro de fechas ───────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-card p-4">
-        <label className="space-y-1 text-sm">
-          <span className="text-muted-foreground">Desde</span>
+      {/* ── Filtro de fechas: 2 columnas en móvil, fila en sm+ ─────────────── */}
+      <div className="grid grid-cols-2 items-end gap-3 rounded-xl border border-border bg-card p-4 sm:flex sm:flex-wrap sm:gap-4">
+        <label className="min-w-0 space-y-1 text-sm">
+          <span className="block text-muted-foreground">Desde</span>
           <input
             type="date"
             value={desde}
             onChange={(e) => setDesde(e.target.value)}
-            className="block rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            className="block min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 sm:min-h-10 sm:w-auto"
           />
         </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-muted-foreground">Hasta</span>
+        <label className="min-w-0 space-y-1 text-sm">
+          <span className="block text-muted-foreground">Hasta</span>
           <input
             type="date"
             value={hasta}
             onChange={(e) => setHasta(e.target.value)}
-            className="block rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            className="block min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 sm:min-h-10 sm:w-auto"
           />
         </label>
         <button
+          type="button"
           onClick={() => cargarTiempos(desde || undefined, hasta || undefined)}
-          className="rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={`rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:col-span-1 ${desde || hasta ? "" : "col-span-2"}`}
         >
           Aplicar filtro
         </button>
         {(desde || hasta) && (
           <button
+            type="button"
             onClick={() => {
               setDesde("");
               setHasta("");
               cargarTiempos();
             }}
-            className="rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-md border border-border px-3 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:border-transparent"
           >
             Limpiar
           </button>
@@ -794,14 +912,14 @@ function SeccionReportes() {
       </div>
 
       {/* ── Tiempos de entrega (HU026) ─────────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold">Tiempos de entrega (entregas completadas)</h2>
         {!tiempos || tiempos.total === 0 ? (
           <p className="text-sm text-muted-foreground">
             Sin entregas completadas en el período seleccionado.
           </p>
         ) : (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
             {[
               { label: "Total entregas", val: tiempos.total, color: "" },
               { label: "Promedio", val: fmtMin(tiempos.promedio), color: "text-accent" },
@@ -815,10 +933,16 @@ function SeccionReportes() {
             ].map((c) => (
               <div
                 key={c.label}
-                className="rounded-xl border border-border bg-muted/30 p-4 text-center"
+                className="min-w-0 rounded-xl border border-border bg-muted/30 p-3 text-center sm:p-4"
               >
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">{c.label}</p>
-                <p className={`mt-1 text-2xl font-bold ${c.color}`}>{c.val}</p>
+                <p className="break-words text-[11px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                  {c.label}
+                </p>
+                <p
+                  className={`mt-1 break-words text-xl font-bold tabular-nums sm:text-2xl ${c.color}`}
+                >
+                  {c.val}
+                </p>
               </div>
             ))}
           </div>
@@ -827,7 +951,7 @@ function SeccionReportes() {
 
       {/* ── Comparativa FIFO vs ACO (tesis) ───────────────────────────────── */}
       {piloto && (
-        <div className="rounded-xl border border-border bg-card p-6">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
           <h2 className="mb-1 text-base font-semibold">Comparativa piloto — FIFO vs ACO</h2>
           <p className="mb-4 text-xs text-muted-foreground">
             Ambas fases calculadas desde los pedidos entregados · FIFO: despacho manual (AS-IS) ·
@@ -842,10 +966,10 @@ function SeccionReportes() {
             {([piloto.fifo, piloto.aco] as const).map((f) => (
               <div
                 key={f.fase}
-                className={`rounded-xl border p-5 ${f.fase === "ACO" ? "border-accent/40 bg-accent/5" : "border-border bg-muted/20"}`}
+                className={`min-w-0 rounded-xl border p-4 sm:p-5 ${f.fase === "ACO" ? "border-accent/40 bg-accent/5" : "border-border bg-muted/20"}`}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <span
                       className={`rounded-md px-2.5 py-0.5 text-sm font-bold ${f.fase === "ACO" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}
                     >
@@ -853,9 +977,11 @@ function SeccionReportes() {
                     </span>
                     <p className="mt-1.5 text-xs text-muted-foreground">{f.descripcion}</p>
                   </div>
-                  <span className="text-sm text-muted-foreground shrink-0">{f.n} pedidos</span>
+                  <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                    {f.n} pedidos
+                  </span>
                 </div>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-2 text-sm tabular-nums [&>div]:gap-3">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">TPE promedio</span>
                     <span className="font-bold">
@@ -891,7 +1017,7 @@ function SeccionReportes() {
 
           {/* Resumen de mejora */}
           {piloto.mejora && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-3 rounded-xl bg-accent/5 border border-accent/20 p-4">
+            <div className="mt-4 grid gap-3 tabular-nums sm:grid-cols-3 rounded-xl bg-accent/5 border border-accent/20 p-4">
               <div className="text-center">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
                   Reducción TPE
@@ -922,27 +1048,66 @@ function SeccionReportes() {
       )}
 
       {/* ── Ranking repartidores (HU027) ──────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold">Desempeño de repartidores</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary text-secondary-foreground">
-              <tr className="text-left">
-                <Encabezado>#</Encabezado>
-                <Encabezado>Repartidor</Encabezado>
-                <Encabezado>Total asignados</Encabezado>
-                <Encabezado>Entregados</Encabezado>
-                <Encabezado>TPE promedio</Encabezado>
-                <Encabezado>Alerta</Encabezado>
-              </tr>
-            </thead>
-            <tbody>
-              {ranking.map((r, i) => {
-                const bajDesempeno =
-                  promGlobal > 0 && r.avg_minutos != null && r.avg_minutos > promGlobal * 1.3;
-                return (
+
+        {ranking.length === 0 && !cargando && <VacioLista>Sin datos de repartidores.</VacioLista>}
+
+        {/* Mobile: cards */}
+        {filasRanking.length > 0 && (
+          <ul className="space-y-2 sm:hidden">
+            {filasRanking.map(({ r, pos, bajDesempeno }) => (
+              <CardMovil key={r.Id_Usuario}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      <span className="mr-1.5 font-mono text-xs text-muted-foreground">#{pos}</span>
+                      {r.Nombre}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">ID #{r.Id_Usuario}</p>
+                  </div>
+                  <BadgeDesempeno bajo={bajDesempeno} />
+                </div>
+                <dl className="mt-2 grid grid-cols-3 gap-2 tabular-nums">
+                  <DatoCard etiqueta="Asignados">{r.total_pedidos}</DatoCard>
+                  <DatoCard etiqueta="Entregados">
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      {r.entregados}
+                    </span>
+                  </DatoCard>
+                  <DatoCard etiqueta="TPE prom.">
+                    {r.avg_minutos != null ? (
+                      <span className={bajDesempeno ? "font-semibold text-destructive" : ""}>
+                        {fmtMin(r.avg_minutos)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </DatoCard>
+                </dl>
+              </CardMovil>
+            ))}
+          </ul>
+        )}
+
+        {/* sm+: tabla (scroll interno controlado si no entra) */}
+        {filasRanking.length > 0 && (
+          <div className="hidden overflow-x-auto rounded-lg border border-border sm:block">
+            <table className="w-full min-w-[540px] text-sm">
+              <thead className="bg-secondary text-secondary-foreground">
+                <tr className="text-left">
+                  <Encabezado>#</Encabezado>
+                  <Encabezado>Repartidor</Encabezado>
+                  <Encabezado>Total asignados</Encabezado>
+                  <Encabezado>Entregados</Encabezado>
+                  <Encabezado>TPE promedio</Encabezado>
+                  <Encabezado>Alerta</Encabezado>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {filasRanking.map(({ r, pos, bajDesempeno }) => (
                   <tr key={r.Id_Usuario} className="border-t border-border">
-                    <Celda className="font-mono text-xs text-muted-foreground">#{i + 1}</Celda>
+                    <Celda className="font-mono text-xs text-muted-foreground">#{pos}</Celda>
                     <Celda>
                       <div className="font-medium">{r.Nombre}</div>
                       <div className="text-xs text-muted-foreground font-mono">
@@ -965,60 +1130,71 @@ function SeccionReportes() {
                       )}
                     </Celda>
                     <Celda>
-                      {bajDesempeno ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                          <AlertTriangle className="h-3 w-3" /> Atención
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                          OK
-                        </span>
-                      )}
+                      <BadgeDesempeno bajo={bajDesempeno} />
                     </Celda>
                   </tr>
-                );
-              })}
-              {ranking.length === 0 && !cargando && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Sin datos de repartidores.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── Historial de pedidos (HU028) ──────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold">Historial de pedidos (últimos 20)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary text-secondary-foreground">
-              <tr className="text-left">
-                <Encabezado>#</Encabezado>
-                <Encabezado>Cliente</Encabezado>
-                <Encabezado>Repartidor</Encabezado>
-                <Encabezado>Estado</Encabezado>
-                <Encabezado>TPE</Encabezado>
-                <Encabezado>Fecha</Encabezado>
-              </tr>
-            </thead>
-            <tbody>
-              {pedidos.slice(0, 20).map((p) => {
-                const tpe =
-                  p.Entrega_Pedido && p.Creacion_Pedido
-                    ? Math.round(
-                        (new Date(p.Entrega_Pedido).getTime() -
-                          new Date(p.Creacion_Pedido).getTime()) /
-                          60000,
-                      )
-                    : null;
-                const repNombre = p.Nombre_Repartidor
-                  ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim()
-                  : null;
-                return (
+
+        {pedidos.length === 0 && !cargando && <VacioLista>Sin pedidos registrados.</VacioLista>}
+
+        {/* Mobile: cards */}
+        {filasHistorial.length > 0 && (
+          <ul className="space-y-2 sm:hidden">
+            {filasHistorial.map(({ p, tpe, repNombre, fecha }) => (
+              <CardMovil key={p.Id_Pedido}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {p.Nombre_Cliente} {p.Apellido_Cliente}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      #{p.Id_Pedido} · {fecha}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}
+                  >
+                    {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
+                  </span>
+                </div>
+                <dl className="mt-2 grid grid-cols-2 gap-2">
+                  <DatoCard etiqueta="Repartidor">
+                    {repNombre ?? <span className="text-muted-foreground">—</span>}
+                  </DatoCard>
+                  <DatoCard etiqueta="TPE">
+                    {tpe != null ? fmtMin(tpe) : <span className="text-muted-foreground">—</span>}
+                  </DatoCard>
+                </dl>
+              </CardMovil>
+            ))}
+          </ul>
+        )}
+
+        {/* sm+: tabla */}
+        {filasHistorial.length > 0 && (
+          <div className="hidden overflow-x-auto rounded-lg border border-border sm:block">
+            <table className="w-full min-w-[480px] text-sm">
+              <thead className="bg-secondary text-secondary-foreground">
+                <tr className="text-left">
+                  <Encabezado>#</Encabezado>
+                  <Encabezado>Cliente</Encabezado>
+                  <Encabezado>Repartidor</Encabezado>
+                  <Encabezado>Estado</Encabezado>
+                  <Encabezado>TPE</Encabezado>
+                  <Encabezado>Fecha</Encabezado>
+                </tr>
+              </thead>
+              <tbody>
+                {filasHistorial.map(({ p, tpe, repNombre, fecha }) => (
                   <tr key={p.Id_Pedido} className="border-t border-border">
                     <Celda className="font-mono text-xs text-muted-foreground">
                       #{p.Id_Pedido}
@@ -1029,89 +1205,103 @@ function SeccionReportes() {
                     <Celda>{repNombre ?? <span className="text-muted-foreground">—</span>}</Celda>
                     <Celda>
                       <span
-                        className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}
+                        className={`whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-semibold ${ESTADO_COLOR[p.Estado] ?? ""}`}
                       >
                         {ESTADO_PEDIDO[p.Estado] ?? p.Estado}
                       </span>
                     </Celda>
-                    <Celda>
+                    <Celda className="tabular-nums">
                       {tpe != null ? fmtMin(tpe) : <span className="text-muted-foreground">—</span>}
                     </Celda>
                     <Celda className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(p.Creacion_Pedido).toLocaleDateString("es-PE", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {fecha}
                     </Celda>
                   </tr>
-                );
-              })}
-              {pedidos.length === 0 && !cargando && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Sin pedidos registrados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── Log de auditoría (HU019) ──────────────────────────────────────── */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold">Log de auditoría (últimos 50 eventos)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary text-secondary-foreground">
-              <tr className="text-left">
-                <Encabezado>Timestamp</Encabezado>
-                <Encabezado>Usuario</Encabezado>
-                <Encabezado>Evento</Encabezado>
-                <Encabezado>Detalle</Encabezado>
-                <Encabezado>IP</Encabezado>
-              </tr>
-            </thead>
-            <tbody>
-              {auditoria.map((a) => (
-                <tr key={a.Id_Log} className="border-t border-border">
-                  <Celda className="text-xs text-muted-foreground whitespace-nowrap">
-                    {new Date(a.Timestamp).toLocaleString("es-PE", {
-                      day: "2-digit",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Celda>
-                  <Celda className="text-xs">
-                    {a.Nombre_Usuario ?? a.Email_Intento ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </Celda>
-                  <Celda>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${EVENTO_COLOR[a.Evento] ?? "bg-muted text-muted-foreground"}`}
-                    >
-                      {a.Evento}
-                    </span>
-                  </Celda>
-                  <Celda className="max-w-xs text-xs text-muted-foreground truncate">
-                    {a.Detalle ?? "—"}
-                  </Celda>
-                  <Celda className="font-mono text-xs text-muted-foreground">{a.IP ?? "—"}</Celda>
+
+        {auditoria.length === 0 && !cargando && <VacioLista>Sin eventos registrados.</VacioLista>}
+
+        {/* Mobile / tablet: lista compacta (detalle completo, sin truncar) */}
+        {auditoria.length > 0 && (
+          <ul className="space-y-2 md:hidden">
+            {auditoria.map((a) => (
+              <CardMovil key={a.Id_Log}>
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <span
+                    className={`break-all rounded px-1.5 py-0.5 text-xs font-medium ${EVENTO_COLOR[a.Evento] ?? "bg-muted text-muted-foreground"}`}
+                  >
+                    {a.Evento}
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {fmtTimestamp(a.Timestamp)}
+                  </span>
+                </div>
+                <p className="mt-1.5 break-words text-sm">
+                  {a.Nombre_Usuario ?? a.Email_Intento ?? (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </p>
+                {a.Detalle && (
+                  <p className="mt-0.5 break-words text-xs text-muted-foreground">{a.Detalle}</p>
+                )}
+                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                  IP: {a.IP ?? "—"}
+                </p>
+              </CardMovil>
+            ))}
+          </ul>
+        )}
+
+        {/* md+: tabla (detalle truncado con title para ver completo) */}
+        {auditoria.length > 0 && (
+          <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-secondary text-secondary-foreground">
+                <tr className="text-left">
+                  <Encabezado>Timestamp</Encabezado>
+                  <Encabezado>Usuario</Encabezado>
+                  <Encabezado>Evento</Encabezado>
+                  <Encabezado>Detalle</Encabezado>
+                  <Encabezado>IP</Encabezado>
                 </tr>
-              ))}
-              {auditoria.length === 0 && !cargando && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Sin eventos registrados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {auditoria.map((a) => (
+                  <tr key={a.Id_Log} className="border-t border-border">
+                    <Celda className="text-xs text-muted-foreground whitespace-nowrap">
+                      {fmtTimestamp(a.Timestamp)}
+                    </Celda>
+                    <Celda className="text-xs break-words">
+                      {a.Nombre_Usuario ?? a.Email_Intento ?? (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </Celda>
+                    <Celda>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${EVENTO_COLOR[a.Evento] ?? "bg-muted text-muted-foreground"}`}
+                      >
+                        {a.Evento}
+                      </span>
+                    </Celda>
+                    <Celda className="max-w-xs text-xs text-muted-foreground truncate">
+                      <span title={a.Detalle ?? undefined}>{a.Detalle ?? "—"}</span>
+                    </Celda>
+                    <Celda className="font-mono text-xs text-muted-foreground">{a.IP ?? "—"}</Celda>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1191,7 +1381,8 @@ const ACO_AYUDA: Record<
 
 function GuiaACO({ activo }: { activo: keyof AcoConfig | null }) {
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden sticky top-6">
+    // Solo sticky en lg (2 columnas); top-32 deja libre el header+tabs sticky
+    <div className="rounded-xl border border-border bg-card overflow-hidden lg:sticky lg:top-32">
       <div className="border-b border-border bg-muted/40 px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Guía de parámetros
@@ -1318,44 +1509,50 @@ function SeccionConfiguracion() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Configuración ACO</h1>
+        <h1 className="text-xl font-semibold sm:text-2xl">Configuración ACO</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Ajusta los parámetros del algoritmo de optimización de rutas (Ant Colony Optimization).
         </p>
       </div>
 
       {cargando ? (
-        <div className="rounded-xl border border-border bg-card p-10 flex items-center justify-center gap-3 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
+        <div
+          role="status"
+          className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-6 text-center text-muted-foreground sm:flex-row sm:p-10"
+        >
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
           <span className="text-sm">Cargando configuración desde el servidor…</span>
         </div>
       ) : (
-        <div className={`grid gap-6 items-start ${guiaVisible ? "lg:grid-cols-[1fr_290px]" : ""}`}>
+        <div
+          className={`grid min-w-0 gap-6 items-start ${guiaVisible ? "lg:grid-cols-[minmax(0,1fr)_290px]" : ""}`}
+        >
           {/* ── Formulario ── */}
           <form
             onSubmit={handleGuardar}
-            className="rounded-xl border border-border bg-card p-6 space-y-6"
+            className="min-w-0 rounded-xl border border-border bg-card p-4 space-y-6 sm:p-6"
           >
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 Haz clic en un campo para ver su descripción.
               </p>
               <button
                 type="button"
                 onClick={() => setGuiaVisible((v) => !v)}
-                className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={guiaVisible}
+                className="w-full shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
               >
                 {guiaVisible ? "Ocultar guía" : "Ver guía de parámetros"}
               </button>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 sm:gap-6">
               {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((campo) => {
                 const rango = ACO_RANGOS[campo];
                 const porcentaje = ((local[campo] - rango.min) / (rango.max - rango.min)) * 100;
                 return (
                   <div
                     key={campo}
-                    className={`rounded-lg border p-4 space-y-3 cursor-pointer transition-colors ${
+                    className={`min-w-0 rounded-lg border p-4 space-y-3 cursor-pointer transition-colors ${
                       campoActivo === campo
                         ? "border-accent bg-accent/5"
                         : "border-border hover:border-accent/40"
@@ -1364,19 +1561,26 @@ function SeccionConfiguracion() {
                   >
                     {/* Encabezado: label + valor actual */}
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium leading-tight">
+                      <span
+                        id={`aco-label-${campo}`}
+                        className="min-w-0 break-words text-sm font-medium leading-tight"
+                      >
                         {ACO_AYUDA[campo]?.icono} {rango.label}
                       </span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex shrink-0 items-center gap-1">
                         <input
                           type="number"
+                          inputMode="decimal"
                           step={rango.step}
                           min={rango.min}
                           max={rango.max}
                           value={local[campo]}
                           onChange={(e) => handleChange(campo, e.target.value)}
                           onFocus={() => setCampoActivo(campo)}
-                          className={`w-20 rounded-md border px-2 py-1 text-right text-sm font-semibold tabular-nums bg-background focus:outline-none focus:ring-2 focus:ring-ring ${
+                          aria-labelledby={`aco-label-${campo}`}
+                          aria-invalid={errores[campo] ? true : undefined}
+                          aria-describedby={errores[campo] ? `aco-error-${campo}` : undefined}
+                          className={`min-h-10 w-24 rounded-md border px-2 py-1 text-right text-sm font-semibold tabular-nums bg-background focus:outline-none focus:ring-2 focus:ring-ring sm:min-h-0 sm:w-20 ${
                             errores[campo]
                               ? "border-destructive text-destructive"
                               : "border-border text-accent"
@@ -1395,6 +1599,7 @@ function SeccionConfiguracion() {
                         value={local[campo]}
                         onChange={(e) => handleChange(campo, e.target.value)}
                         onFocus={() => setCampoActivo(campo)}
+                        aria-labelledby={`aco-label-${campo}`}
                         className="w-full h-2 rounded-full appearance-none cursor-pointer bg-border accent-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
                         style={{
                           background: `linear-gradient(to right, var(--accent) ${porcentaje}%, var(--border) ${porcentaje}%)`,
@@ -1406,36 +1611,47 @@ function SeccionConfiguracion() {
                       </div>
                     </div>
 
-                    {errores[campo] && <p className="text-xs text-destructive">{errores[campo]}</p>}
+                    {errores[campo] && (
+                      <p
+                        id={`aco-error-${campo}`}
+                        role="alert"
+                        className="text-xs text-destructive"
+                      >
+                        {errores[campo]}
+                      </p>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {errorApi && (
-              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {errorApi}
-              </p>
-            )}
+            {errorApi && <MensajeError>{errorApi}</MensajeError>}
 
-            <div className="flex items-center justify-between gap-4 pt-2">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               {guardado && (
-                <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                <span
+                  role="status"
+                  className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
+                >
                   ✓ Guardado. Se aplica en el próximo cálculo ACO.
                 </span>
               )}
-              <div className="ml-auto flex gap-3">
-                <button type="button" onClick={handleReset} className={clsBtnSecundario}>
+              <div className="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row sm:gap-3">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className={`${clsBtnSecundario} w-full sm:w-auto`}
+                >
                   Restaurar
                 </button>
                 <button
                   type="submit"
                   disabled={guardando}
-                  className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}
+                  className={`${clsBtnAccent} inline-flex w-full items-center justify-center gap-2 disabled:opacity-60 sm:w-auto`}
                 >
                   {guardando ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Guardando…
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Guardando…
                     </>
                   ) : (
                     "Guardar configuración"
@@ -1451,15 +1667,18 @@ function SeccionConfiguracion() {
       )}
 
       {/* Valores actuales en sistema */}
-      <div className="rounded-xl border border-border bg-muted/30 p-5 text-sm">
+      <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm sm:p-5">
         <p className="mb-3 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
           Valores en uso
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {(Object.keys(ACO_RANGOS) as (keyof AcoConfig)[]).map((k) => (
-            <div key={k} className="rounded-lg border border-border bg-card px-3 py-2 text-center">
-              <p className="text-xs text-muted-foreground">{k}</p>
-              <p className="font-semibold">{acoConfig[k]}</p>
+            <div
+              key={k}
+              className="min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-center"
+            >
+              <p className="break-words text-xs text-muted-foreground">{k}</p>
+              <p className="break-words font-semibold tabular-nums">{acoConfig[k]}</p>
             </div>
           ))}
         </div>
@@ -1542,7 +1761,7 @@ function SeccionPedidos() {
         setConteoSistema({ activos, completados, total });
       })
       .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     cargar(page, grupoFiltro, sortBy, sortDir, pageSize);
@@ -1655,57 +1874,121 @@ function SeccionPedidos() {
     { key: "todos", label: "Todos", count: conteoSistema.total },
   ];
 
+  // Helpers de presentación compartidos por cards (móvil/tablet) y tabla (lg+)
+  const fmtFechaPedido = (iso: string) => {
+    const d = new Date(iso);
+    return (
+      d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" }) +
+      " " +
+      d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })
+    );
+  };
+  const nombreRepartidor = (p: import("@/lib/api").PedidoApi) =>
+    p.Nombre_Repartidor ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim() : "—";
+
+  // Render helpers (funciones, no componentes, para no re-montar el <select> en cada render)
+  function renderSelectRepartidor(p: import("@/lib/api").PedidoApi) {
+    return (
+      <select
+        aria-label={`Asignar repartidor para pedido ${p.Id_Pedido}`}
+        value={p.Id_Repartidor ?? ""}
+        onChange={(e) => {
+          const rid = e.target.value ? Number(e.target.value) : null;
+          const rep = repsActivos.find((r) => r.Id_Usuario === rid);
+          const nombre = rep
+            ? `${rep.Nombre_Usuario} ${rep.Apellido_Usuario?.split(" ")[0] ?? ""}`.trim()
+            : undefined;
+          asignarRepartidor(p.Id_Pedido, rid, nombre);
+        }}
+        className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 lg:min-h-0"
+      >
+        <option value="">Sin asignar</option>
+        {repsActivos.map((r) => (
+          <option key={r.Id_Usuario} value={r.Id_Usuario}>
+            {r.Nombre_Usuario} {r.Apellido_Usuario?.split(" ")[0]}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function renderBadgeCompletado(estado: string) {
+    return (
+      <span
+        className={`inline-block whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ${
+          estado === "entregado"
+            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            : "bg-muted text-muted-foreground"
+        }`}
+      >
+        {estado === "entregado" ? "Entregado" : "Cancelado"}
+      </span>
+    );
+  }
+
   return (
     <>
       {/* Encabezado */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Tablero de pedidos</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Tablero de pedidos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {cargando
               ? "Cargando…"
               : `${conteoSistema.activos} activo${conteoSistema.activos !== 1 ? "s" : ""} · ${conteoSistema.completados} completado${conteoSistema.completados !== 1 ? "s" : ""} · ${conteoSistema.total} total`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center gap-2 sm:justify-end">
           {conteoSistema.activos > 0 && (
             <button
+              type="button"
               onClick={confirmarLimpiarAtascados}
-              className="inline-flex items-center gap-2 rounded-md border border-destructive/40 px-4 py-2.5 text-sm font-semibold text-destructive transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Cancelar todos los pedidos activos (${conteoSistema.activos})`}
+              className="inline-flex min-w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-destructive/40 px-3 py-2.5 text-sm font-semibold text-destructive transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
               title="Cancela todos los pedidos activos (limpieza de pruebas)"
             >
-              <ShieldOff className="h-4 w-4" />
+              <ShieldOff className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Cancelar activos</span>
-              <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+              <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-destructive">
                 {conteoSistema.activos}
               </span>
             </button>
           )}
           <button
+            type="button"
             onClick={() => setAbierto(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none"
           >
-            <Plus className="h-4 w-4" /> Nuevo pedido
+            <Plus className="h-4 w-4" aria-hidden="true" /> Nuevo pedido
           </button>
         </div>
       </div>
 
       {errCarga && !cargando && (
-        <p className="rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+        <p
+          role="alert"
+          className="mt-4 break-words rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
+        >
           {errCarga}
         </p>
       )}
 
-      {/* Tabs de filtro */}
-      <div className="mt-5 flex gap-1 rounded-lg border border-border bg-secondary p-1 w-fit">
+      {/* Filtros (segmented control): ancho completo en móvil */}
+      <div
+        role="group"
+        aria-label="Filtrar pedidos"
+        className="mt-5 flex w-full gap-1 rounded-lg border border-border bg-secondary p-1 sm:w-fit"
+      >
         {TABS.map((tab) => (
           <button
             key={tab.key}
+            type="button"
+            aria-pressed={filtro === tab.key}
             onClick={() => {
               setFiltro(tab.key);
               setPage(1);
             }}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-md px-1.5 py-1.5 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:flex-nowrap sm:px-3 sm:text-sm ${
               filtro === tab.key
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -1713,7 +1996,7 @@ function SeccionPedidos() {
           >
             {tab.label}
             <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
                 filtro === tab.key ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
               }`}
             >
@@ -1723,8 +2006,110 @@ function SeccionPedidos() {
         ))}
       </div>
 
-      {/* Tabla */}
-      <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
+      {/* Vista de cards (móvil y tablet, < lg): 1 col en móvil, 2 en md.
+          9 columnas no entran sin scroll por debajo de lg, así que la tabla solo va en lg+. */}
+      <div className="mt-4 lg:hidden" aria-busy={cargando}>
+        {cargando ? (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-12 text-sm text-muted-foreground"
+          >
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Cargando pedidos…
+          </div>
+        ) : pedidosFiltrados.length === 0 ? (
+          <VacioLista>
+            {filtro === "activos"
+              ? "No hay pedidos activos en este momento."
+              : "No hay pedidos en esta categoría."}
+          </VacioLista>
+        ) : (
+          <ul className="grid gap-3 md:grid-cols-2">
+            {pedidosFiltrados.map((p) => {
+              const completado = ESTADOS_COMPLETADOS.includes(p.Estado);
+              return (
+                <li
+                  key={p.Id_Pedido}
+                  className={`flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 ${completado ? "opacity-70" : ""}`}
+                >
+                  {/* Identificador + fecha */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      AKA-{String(p.Id_Pedido).padStart(4, "0")}
+                    </span>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {fmtFechaPedido(p.Creacion_Pedido)}
+                    </span>
+                  </div>
+                  {/* Cliente + dirección */}
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-medium">
+                      {p.Nombre_Cliente} {p.Apellido_Cliente}
+                    </p>
+                    {p.Direccion_Destino && (
+                      <p className="mt-0.5 break-words text-xs text-muted-foreground">
+                        {p.Direccion_Destino}
+                      </p>
+                    )}
+                  </div>
+                  {/* Productos */}
+                  <div className="min-w-0 text-xs">
+                    <ResumenProductos raw={p.Productos} />
+                  </div>
+                  {/* Estado + repartidor (acción principal) */}
+                  {completado ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {renderBadgeCompletado(p.Estado)}
+                      <span className="min-w-0 break-words text-xs text-muted-foreground">
+                        {nombreRepartidor(p)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">
+                      <label className="min-w-0 space-y-1">
+                        <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Estado
+                        </span>
+                        <SelectEstado
+                          estado={p.Estado}
+                          onChange={(s) => cambiarEstado(p.Id_Pedido, s, p.Estado)}
+                        />
+                      </label>
+                      <label className="min-w-0 space-y-1">
+                        <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Repartidor
+                        </span>
+                        {renderSelectRepartidor(p)}
+                      </label>
+                    </div>
+                  )}
+                  {/* Acción secundaria */}
+                  <button
+                    type="button"
+                    onClick={() => copiarSeguimiento(p.Id_Pedido)}
+                    aria-label={`Copiar enlace de seguimiento del pedido ${p.Id_Pedido}`}
+                    className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {copiado === p.Id_Pedido ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />{" "}
+                        Copiado
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copiar enlace de
+                        seguimiento
+                      </>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Tabla (desktop lg+) */}
+      <div className="mt-4 hidden overflow-x-auto rounded-xl border border-border bg-card lg:block">
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-secondary text-secondary-foreground">
             <tr className="text-left">
@@ -1761,7 +2146,10 @@ function SeccionPedidos() {
             {cargando ? (
               <tr>
                 <td colSpan={9} className="px-4 py-12 text-center">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+                  <Loader2
+                    className="mx-auto h-5 w-5 animate-spin text-muted-foreground"
+                    aria-label="Cargando pedidos"
+                  />
                 </td>
               </tr>
             ) : pedidosFiltrados.length === 0 ? (
@@ -1775,14 +2163,7 @@ function SeccionPedidos() {
             ) : (
               pedidosFiltrados.map((p, idx) => {
                 const completado = ESTADOS_COMPLETADOS.includes(p.Estado);
-                const fechaStr = (() => {
-                  const d = new Date(p.Creacion_Pedido);
-                  return (
-                    d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" }) +
-                    " " +
-                    d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })
-                  );
-                })();
+                const fechaStr = fmtFechaPedido(p.Creacion_Pedido);
                 return (
                   <tr
                     key={p.Id_Pedido}
@@ -1816,15 +2197,7 @@ function SeccionPedidos() {
                     </Celda>
                     <Celda className="w-36">
                       {completado ? (
-                        <span
-                          className={`inline-block rounded-md px-2.5 py-1 text-xs font-semibold ${
-                            p.Estado === "entregado"
-                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                              : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {p.Estado === "entregado" ? "Entregado" : "Cancelado"}
-                        </span>
+                        renderBadgeCompletado(p.Estado)
                       ) : (
                         <SelectEstado
                           estado={p.Estado}
@@ -1834,32 +2207,9 @@ function SeccionPedidos() {
                     </Celda>
                     <Celda className="w-52">
                       {completado ? (
-                        <span className="text-xs text-muted-foreground">
-                          {p.Nombre_Repartidor
-                            ? `${p.Nombre_Repartidor} ${p.Apellido_Repartidor ?? ""}`.trim()
-                            : "—"}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{nombreRepartidor(p)}</span>
                       ) : (
-                        <select
-                          aria-label={`Asignar repartidor para pedido ${p.Id_Pedido}`}
-                          value={p.Id_Repartidor ?? ""}
-                          onChange={(e) => {
-                            const rid = e.target.value ? Number(e.target.value) : null;
-                            const rep = repsActivos.find((r) => r.Id_Usuario === rid);
-                            const nombre = rep
-                              ? `${rep.Nombre_Usuario} ${rep.Apellido_Usuario?.split(" ")[0] ?? ""}`.trim()
-                              : undefined;
-                            asignarRepartidor(p.Id_Pedido, rid, nombre);
-                          }}
-                          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                        >
-                          <option value="">Sin asignar</option>
-                          {repsActivos.map((r) => (
-                            <option key={r.Id_Usuario} value={r.Id_Usuario}>
-                              {r.Nombre_Usuario} {r.Apellido_Usuario?.split(" ")[0]}
-                            </option>
-                          ))}
-                        </select>
+                        renderSelectRepartidor(p)
                       )}
                     </Celda>
                     <Celda className="w-32 whitespace-nowrap text-xs text-muted-foreground">
@@ -1867,16 +2217,19 @@ function SeccionPedidos() {
                     </Celda>
                     <Celda>
                       <button
+                        type="button"
                         onClick={() => copiarSeguimiento(p.Id_Pedido)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`Copiar enlace de seguimiento del pedido ${p.Id_Pedido}`}
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {copiado === p.Id_Pedido ? (
                           <>
-                            <Check className="h-3.5 w-3.5 text-emerald-600" /> Copiado
+                            <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />{" "}
+                            Copiado
                           </>
                         ) : (
                           <>
-                            <Copy className="h-3.5 w-3.5" /> Copiar
+                            <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copiar
                           </>
                         )}
                       </button>
@@ -1890,9 +2243,12 @@ function SeccionPedidos() {
       </div>
 
       {/* Paginación */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span aria-live="polite" aria-atomic="true">
+      <nav
+        aria-label="Paginación de pedidos"
+        className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-start">
+          <span aria-live="polite" aria-atomic="true" className="tabular-nums">
             {totalItems} pedido{totalItems !== 1 ? "s" : ""}
             {totalPages > 1 && ` · página ${page} de ${totalPages}`}
           </span>
@@ -1905,7 +2261,7 @@ function SeccionPedidos() {
                 setPageSize(ps);
                 setPage(1);
               }}
-              className="rounded-md border border-input bg-background px-2 py-1 text-xs outline-none ring-ring/30 transition focus:border-ring focus:ring-2"
+              className="min-h-11 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none ring-ring/30 transition focus:border-ring focus:ring-2 sm:min-h-0"
             >
               {[10, 20, 50, 100].map((n) => (
                 <option key={n} value={n}>
@@ -1918,22 +2274,24 @@ function SeccionPedidos() {
         {totalPages > 1 && (
           <div className="flex gap-2">
             <button
+              type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none"
             >
               ← Anterior
             </button>
             <button
+              type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-secondary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none"
             >
               Siguiente →
             </button>
           </div>
         )}
-      </div>
+      </nav>
 
       {abierto && (
         <DialogNuevoPedido
@@ -1987,24 +2345,104 @@ function SeccionRepartidores() {
   return (
     <>
       {/* Encabezado */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Gestión de repartidores</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Gestión de repartidores</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {activos} activo{activos !== 1 ? "s" : ""} · {total} registrado{total !== 1 ? "s" : ""}{" "}
             en total.
           </p>
         </div>
         <button
+          type="button"
           onClick={() => setModalNuevo(true)}
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-[var(--shadow-amber)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
         >
-          <Plus className="h-4 w-4" /> Nuevo repartidor
+          <Plus className="h-4 w-4" aria-hidden="true" /> Nuevo repartidor
         </button>
       </div>
 
-      {/* Tabla de repartidores */}
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card">
+      {/* Vista de cards (móvil/tablet < lg) — repartidores. 1 col móvil, 2 en md */}
+      <div className="mt-6 lg:hidden" aria-busy={cargando}>
+        {cargando ? (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-12 text-sm text-muted-foreground"
+          >
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Cargando repartidores…
+          </div>
+        ) : repartidores.length === 0 ? (
+          <VacioLista>Aún no hay repartidores registrados.</VacioLista>
+        ) : (
+          <ul className="grid gap-3 md:grid-cols-2">
+            {repartidores.map((r) => {
+              const activo = r.Activo_Usuario;
+              const nombre = `${r.Nombre_Usuario} ${r.Apellido_Usuario}`.trim();
+              return (
+                <li
+                  key={r.Id_Usuario}
+                  className={`flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 ${activo ? "" : "opacity-70"}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar nombre={nombre} activo={activo} />
+                      <div className="min-w-0">
+                        <div className="break-words font-medium leading-tight">{nombre}</div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          ID #{r.Id_Usuario}
+                        </div>
+                      </div>
+                    </div>
+                    <PastillaActivo activo={activo} />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2">
+                    <DatoCard etiqueta="DNI">{r.DNI_Usuario ?? "—"}</DatoCard>
+                    <DatoCard etiqueta="Teléfono">{r.Telf_Usuario ?? "—"}</DatoCard>
+                    <DatoCard etiqueta="Correo" completo>
+                      <span className="break-all">{r.Email_Usuario}</span>
+                    </DatoCard>
+                  </dl>
+                  <div className="mt-auto flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditando(r)}
+                      aria-label={`Editar repartidor ${nombre}`}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" aria-hidden="true" /> Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
+                      aria-label={
+                        activo ? `Desactivar repartidor ${nombre}` : `Activar repartidor ${nombre}`
+                      }
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        activo
+                          ? "border border-destructive/40 text-destructive hover:bg-destructive/10"
+                          : "border border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+                      }`}
+                    >
+                      {activo ? (
+                        <>
+                          <UserX className="h-3.5 w-3.5" aria-hidden="true" /> Desactivar
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck className="h-3.5 w-3.5" aria-hidden="true" /> Activar
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Tabla de repartidores (desktop lg+) */}
+      <div className="mt-6 hidden overflow-x-auto rounded-xl border border-border bg-card lg:block">
         <table className="w-full min-w-[800px] text-sm">
           <thead className="bg-secondary text-secondary-foreground">
             <tr className="text-left">
@@ -2021,7 +2459,10 @@ function SeccionRepartidores() {
             {cargando ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+                  <Loader2
+                    className="mx-auto h-5 w-5 animate-spin text-muted-foreground"
+                    aria-label="Cargando repartidores"
+                  />
                 </td>
               </tr>
             ) : (
@@ -2067,6 +2508,7 @@ function SeccionRepartidores() {
                     <Celda>
                       <div className="flex items-center gap-2">
                         <button
+                          type="button"
                           onClick={() => setEditando(r)}
                           aria-label={`Editar repartidor ${nombre}`}
                           className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -2074,6 +2516,7 @@ function SeccionRepartidores() {
                           <Edit2 className="h-3.5 w-3.5" aria-hidden="true" /> Editar
                         </button>
                         <button
+                          type="button"
                           onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
                           aria-label={
                             activo
@@ -2190,11 +2633,13 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={onClose} tituloId="dlg-nuevo-repartidor">
       {!credenciales ? (
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <h2 className="text-xl font-semibold">Nuevo repartidor</h2>
+            <h2 id="dlg-nuevo-repartidor" className="text-xl font-semibold">
+              Nuevo repartidor
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Completa los datos. El sistema generará las credenciales de acceso.
             </p>
@@ -2253,40 +2698,38 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
             </Campo>
           </div>
 
-          {error && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          {error && <MensajeError>{error}</MensajeError>}
 
-          <div className="flex justify-end gap-3 pt-1">
+          <PieDialog>
             <button type="button" onClick={onClose} className={clsBtnSecundario}>
               Cancelar
             </button>
             <button
               type="submit"
               disabled={enviando}
-              className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}
+              className={`${clsBtnAccent} inline-flex items-center justify-center gap-2 disabled:opacity-60`}
             >
               {enviando ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Registrando…
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Registrando…
                 </>
               ) : (
                 "Registrar repartidor"
               )}
             </button>
-          </div>
+          </PieDialog>
         </form>
       ) : (
         /* Pantalla de credenciales generadas */
         <div className="space-y-5">
           <div className="flex items-center gap-3">
-            <span className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/15 text-emerald-600">
-              <KeyRound className="h-6 w-6" />
+            <span className="grid h-12 w-12 flex-none place-items-center rounded-full bg-emerald-500/15 text-emerald-600">
+              <KeyRound className="h-6 w-6" aria-hidden="true" />
             </span>
-            <div>
-              <h2 className="text-xl font-semibold">Repartidor registrado</h2>
+            <div className="min-w-0">
+              <h2 id="dlg-nuevo-repartidor" className="text-xl font-semibold">
+                Repartidor registrado
+              </h2>
               <p className="text-sm text-muted-foreground">
                 Comparte estas credenciales de acceso.
               </p>
@@ -2300,7 +2743,9 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-1">
               <span className="text-muted-foreground shrink-0">Contraseña inicial</span>
-              <span className="font-mono font-semibold text-accent">{credenciales.password}</span>
+              <span className="font-mono font-semibold break-all text-accent">
+                {credenciales.password}
+              </span>
             </div>
           </div>
 
@@ -2309,11 +2754,11 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
             de sesión.
           </p>
 
-          <div className="flex justify-end">
+          <PieDialog>
             <button onClick={onClose} className={clsBtnAccent}>
               Entendido
             </button>
-          </div>
+          </PieDialog>
         </div>
       )}
     </Overlay>
@@ -2371,8 +2816,8 @@ function DialogEditarRepartidor({
   }
 
   return (
-    <Overlay onClose={onClose}>
-      <div className="space-y-6">
+    <Overlay onClose={onClose} tituloId="dlg-editar-repartidor">
+      <div className="space-y-6 pb-safe-3">
         {/* Encabezado */}
         <div className="flex items-center gap-3">
           <Avatar
@@ -2380,8 +2825,10 @@ function DialogEditarRepartidor({
             activo={activo}
             size="lg"
           />
-          <div>
-            <h2 className="text-xl font-semibold">Editar repartidor</h2>
+          <div className="min-w-0">
+            <h2 id="dlg-editar-repartidor" className="text-xl font-semibold">
+              Editar repartidor
+            </h2>
             <p className="text-sm text-muted-foreground font-mono">ID #{r.Id_Usuario}</p>
           </div>
         </div>
@@ -2435,24 +2882,31 @@ function DialogEditarRepartidor({
             </Campo>
           </div>
 
-          <div className="flex items-center justify-between gap-4 pt-1">
+          <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             {guardado && (
-              <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+              <span
+                role="status"
+                className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
+              >
                 ✓ Cambios guardados
               </span>
             )}
-            <div className="ml-auto flex gap-3">
-              <button type="button" onClick={onClose} className={clsBtnSecundario}>
+            <div className="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row sm:gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className={`${clsBtnSecundario} w-full sm:w-auto`}
+              >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={guardando}
-                className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}
+                className={`${clsBtnAccent} inline-flex w-full items-center justify-center gap-2 disabled:opacity-60 sm:w-auto`}
               >
                 {guardando ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Guardando…
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Guardando…
                   </>
                 ) : (
                   "Guardar cambios"
@@ -2465,12 +2919,12 @@ function DialogEditarRepartidor({
         {/* Zona de peligro */}
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
-            <ShieldOff className="h-4 w-4" />
+            <ShieldOff className="h-4 w-4" aria-hidden="true" />
             Zona de peligro
           </div>
 
           {!confirmarDesactivar ? (
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <p className="text-xs text-muted-foreground">
                 {activo
                   ? "Desactivar la cuenta impide que el repartidor inicie sesión. Sus pedidos asignados no se modifican."
@@ -2479,7 +2933,7 @@ function DialogEditarRepartidor({
               <button
                 type="button"
                 onClick={() => setConfirmarDesactivar(true)}
-                className={`flex-none rounded-md px-3 py-2 text-xs font-semibold transition ${
+                className={`w-full flex-none rounded-md px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto ${
                   activo
                     ? "bg-destructive text-destructive-foreground hover:opacity-90"
                     : "bg-emerald-600 text-white hover:opacity-90 dark:bg-emerald-500"
@@ -2497,18 +2951,18 @@ function DialogEditarRepartidor({
                 </span>
                 ?
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => setConfirmarDesactivar(false)}
-                  className={clsBtnSecundario}
+                  className={`${clsBtnSecundario} w-full sm:w-auto`}
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleToggleActivo}
-                  className={`rounded-md px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 ${
+                  className={`w-full rounded-md px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto ${
                     activo ? "bg-destructive" : "bg-emerald-600"
                   }`}
                 >
@@ -2584,10 +3038,12 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={onClose} tituloId="dlg-nuevo-pedido">
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <h2 className="text-xl font-semibold">Nuevo pedido de alitas</h2>
+          <h2 id="dlg-nuevo-pedido" className="text-xl font-semibold">
+            Nuevo pedido de alitas
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Completa los datos del cliente y la salsa.
           </p>
@@ -2650,10 +3106,12 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
         {/* Selector de ubicación en mapa */}
         <div className="space-y-2">
           <p className="text-sm font-medium">Punto de entrega</p>
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <span className="text-accent">📍</span>
+          <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <span className="text-accent" aria-hidden="true">
+              📍
+            </span>
             {coords ? (
-              <span className="text-foreground">
+              <span className="min-w-0 break-words text-foreground">
                 {direccion || `${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}`}
               </span>
             ) : (
@@ -2663,28 +3121,26 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
           <MapaSelectorUbicacion onSeleccion={handleSeleccionMapa} altura={280} />
         </div>
 
-        {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
-        )}
+        {error && <MensajeError>{error}</MensajeError>}
 
-        <div className="flex justify-end gap-3">
+        <PieDialog>
           <button type="button" onClick={onClose} disabled={enviando} className={clsBtnSecundario}>
             Cancelar
           </button>
           <button
             type="submit"
             disabled={enviando}
-            className={`${clsBtnAccent} inline-flex items-center gap-2 disabled:opacity-60`}
+            className={`${clsBtnAccent} inline-flex items-center justify-center gap-2 disabled:opacity-60`}
           >
             {enviando ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Guardando…
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Guardando…
               </>
             ) : (
               "Registrar pedido"
             )}
           </button>
-        </div>
+        </PieDialog>
       </form>
     </Overlay>
   );
@@ -2694,31 +3150,87 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
 // COMPONENTES COMPARTIDOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Contenedor de modal con fondo oscuro */
+/**
+ * Contenedor de modal con fondo oscuro.
+ * Mobile: bottom sheet (pegado abajo, esquinas superiores redondeadas, máx 92dvh).
+ * sm+: diálogo centrado. El cuerpo hace scroll interno; los botones de acción
+ * van en <PieDialog>, que queda sticky al fondo del panel.
+ * Cierra con Escape y con click en el backdrop.
+ */
 function Overlay({
   children,
   onClose,
   titulo,
+  tituloId,
 }: {
   children: React.ReactNode;
   onClose: () => void;
+  /** Etiqueta accesible si el diálogo no tiene un encabezado visible con id */
   titulo?: string;
+  /** id del <h2> visible del diálogo (aria-labelledby) */
+  tituloId?: string;
 }) {
+  // Ref para no re-suscribir el listener en cada render (onClose suele ser inline)
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCloseRef.current();
+    }
+    document.addEventListener("keydown", onKey);
+    // Bloquea el scroll del body mientras el modal está abierto
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflowPrevio;
+    };
+  }, []);
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={titulo}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 py-8"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={tituloId}
+        aria-label={tituloId ? undefined : titulo}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-elegant)]"
+        className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:max-w-lg sm:rounded-2xl"
       >
-        {children}
+        {/* Asa visual del bottom sheet (solo móvil) */}
+        <div aria-hidden="true" className="flex justify-center pt-2 sm:hidden">
+          <span className="h-1 w-10 rounded-full bg-muted-foreground/30" />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 sm:px-6 sm:pt-6">
+          {children}
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Pie de acciones de un diálogo: sticky al fondo del área scrolleable del Overlay.
+ * Mobile: botones full-width apilados (primario arriba); sm+: alineados a la derecha.
+ */
+function PieDialog({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky bottom-0 -mx-4 mt-5 flex flex-col-reverse gap-2 border-t border-border bg-card px-4 pt-3 pb-safe-3 sm:-mx-6 sm:flex-row sm:justify-end sm:gap-3 sm:px-6 [&>button]:w-full sm:[&>button]:w-auto">
+      {children}
+    </div>
+  );
+}
+
+/** Mensaje de error de formulario/diálogo (anunciado por lectores de pantalla) */
+function MensajeError({ children }: { children: React.ReactNode }) {
+  return (
+    <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {children}
+    </p>
   );
 }
 
@@ -2739,26 +3251,28 @@ function ConfirmDialog({
   onCancelar: () => void;
 }) {
   return (
-    <Overlay onClose={onCancelar} titulo="Confirmación">
+    <Overlay onClose={onCancelar} tituloId="confirm-dialog-titulo">
       <div className="space-y-4">
-        <p className="text-base font-semibold">{mensaje}</p>
+        <h2 id="confirm-dialog-titulo" className="text-base font-semibold">
+          {mensaje}
+        </h2>
         {detalle && <p className="text-sm text-muted-foreground">{detalle}</p>}
-        <div className="flex justify-end gap-3 pt-1">
-          <button onClick={onCancelar} className={clsBtnSecundario}>
-            Cancelar
-          </button>
-          <button
-            onClick={onConfirmar}
-            className={
-              destructivo
-                ? "rounded-md bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                : clsBtnAccent
-            }
-          >
-            {labelConfirmar}
-          </button>
-        </div>
       </div>
+      <PieDialog>
+        <button onClick={onCancelar} className={clsBtnSecundario}>
+          Cancelar
+        </button>
+        <button
+          onClick={onConfirmar}
+          className={
+            destructivo
+              ? "rounded-md bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              : clsBtnAccent
+          }
+        >
+          {labelConfirmar}
+        </button>
+      </PieDialog>
     </Overlay>
   );
 }
@@ -2837,7 +3351,7 @@ function SelectEstado({
       value={estado}
       aria-label="Cambiar estado del pedido"
       onChange={(e) => onChange(e.target.value as OrderStatus)}
-      className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+      className={`min-h-11 w-full min-w-0 rounded-md border px-2 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-ring/40 lg:min-h-0 lg:w-auto ${
         ESTADO_COLOR[estado] ?? "bg-muted text-muted-foreground border-border"
       }`}
     >
@@ -2850,31 +3364,51 @@ function SelectEstado({
   );
 }
 
-/** Botón de navegación entre secciones — responsive: ícono+texto en md+, solo ícono en mobile */
+/**
+ * Tab de navegación entre secciones. Siempre muestra ícono + texto completo (sin truncar);
+ * en móvil la barra hace scroll horizontal con snap y la tab activa se auto-desplaza a la vista.
+ */
 function NavBtn({
   activo,
   onClick,
   icon,
   label,
+  extraLabel,
 }: {
   activo: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  /** Texto adicional solo para lectores de pantalla (p.ej. contador de no leídas) */
+  extraLabel?: string;
 }) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  // Al activarse, asegura que la tab quede visible dentro del scroller horizontal
+  useEffect(() => {
+    if (activo) ref.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activo]);
+
   return (
     <button
+      ref={ref}
+      type="button"
+      role="tab"
+      id={`tab-${label}`}
       onClick={onClick}
-      aria-current={activo ? "page" : undefined}
-      title={label}
-      className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4 sm:gap-2 ${
+      aria-selected={activo}
+      aria-controls="admin-panel"
+      className={`inline-flex shrink-0 snap-start items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:gap-2 sm:px-4 ${
         activo
           ? "border-accent text-accent"
           : "border-transparent text-muted-foreground hover:text-foreground"
       }`}
     >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
+      <span aria-hidden="true" className="inline-flex">
+        {icon}
+      </span>
+      <span>{label}</span>
+      {extraLabel && <span className="sr-only">{extraLabel}</span>}
     </button>
   );
 }
@@ -2893,28 +3427,90 @@ function Encabezado({
   sorted?: "asc" | "desc" | null;
 }) {
   if (onClick) {
+    // Ordenable: botón dentro del th para que sea accesible por teclado
     return (
       <th
-        className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-foreground ${className}`}
-        onClick={onClick}
+        scope="col"
+        aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}
+        className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className}`}
       >
-        <span className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onClick}
+          className="inline-flex min-h-8 items-center gap-1 rounded-sm uppercase tracking-wide select-none hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           {children}
-          <span className="text-[10px] leading-none text-muted-foreground/70">
+          <span aria-hidden="true" className="text-[10px] leading-none text-muted-foreground/70">
             {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}
           </span>
-        </span>
+        </button>
       </th>
     );
   }
   return (
-    <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className}`}>
+    <th
+      scope="col"
+      className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${className}`}
+    >
       {children}
     </th>
   );
 }
 function Celda({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-4 py-3 align-middle ${className}`}>{children}</td>;
+}
+
+// ─── Helpers de vista móvil (cards en lugar de tablas) ───────────────────────
+
+/** Card de una fila de tabla en móvil */
+function CardMovil({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="min-w-0 rounded-lg border border-border bg-background/60 p-3 text-sm">
+      {children}
+    </li>
+  );
+}
+
+/** Par etiqueta/valor dentro de una CardMovil (usar dentro de un <dl>) */
+function DatoCard({
+  etiqueta,
+  children,
+  completo,
+}: {
+  etiqueta: string;
+  children: React.ReactNode;
+  completo?: boolean;
+}) {
+  return (
+    <div className={`min-w-0 ${completo ? "col-span-full" : ""}`}>
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {etiqueta}
+      </dt>
+      <dd className="mt-0.5 break-words text-sm">{children}</dd>
+    </div>
+  );
+}
+
+/** Estado vacío de una lista/tabla */
+function VacioLista({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+/** Badge de alerta de desempeño del ranking */
+function BadgeDesempeno({ bajo }: { bajo: boolean }) {
+  return bajo ? (
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" /> Atención
+    </span>
+  ) : (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+      OK
+    </span>
+  );
 }
 
 function ResumenProductos({ raw }: { raw: string | null | undefined }) {
@@ -2931,7 +3527,7 @@ function ResumenProductos({ raw }: { raw: string | null | undefined }) {
         <div className="space-y-0.5">
           <div className="text-xs font-medium">{texto}</div>
           {p0.notas && (
-            <div className="text-[10px] text-muted-foreground truncate max-w-[10rem]">
+            <div className="text-[10px] text-muted-foreground break-words lg:max-w-[10rem] lg:truncate">
               {p0.notas}
             </div>
           )}
@@ -2942,9 +3538,11 @@ function ResumenProductos({ raw }: { raw: string | null | undefined }) {
     if (p0.nombre) {
       return (
         <div className="space-y-0.5">
-          <div className="text-xs font-medium truncate max-w-[10rem]">{p0.nombre}</div>
+          <div className="text-xs font-medium break-words lg:max-w-[10rem] lg:truncate">
+            {p0.nombre}
+          </div>
           {p0.notas && (
-            <div className="text-[10px] text-muted-foreground truncate max-w-[10rem]">
+            <div className="text-[10px] text-muted-foreground break-words lg:max-w-[10rem] lg:truncate">
               {p0.notas}
             </div>
           )}
@@ -2957,19 +3555,24 @@ function ResumenProductos({ raw }: { raw: string | null | undefined }) {
       .map(([k, v]) => `${k}: ${v}`)
       .join(" · ");
     return (
-      <div className="text-xs truncate max-w-[10rem]" title={resumen}>
+      <div className="text-xs break-words lg:max-w-[10rem] lg:truncate" title={resumen}>
         {resumen || "—"}
       </div>
     );
   } catch {
-    return <span className="text-[10px] text-muted-foreground truncate max-w-[10rem]">{raw}</span>;
+    return (
+      <span className="text-[10px] text-muted-foreground break-words lg:max-w-[10rem] lg:truncate">
+        {raw}
+      </span>
+    );
   }
 }
 
 // ─── Helpers de formulario ────────────────────────────────────────────────────
 
+// min-h-11 en móvil (target táctil 44px), min-h-10 en sm+
 const clsInput =
-  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2";
+  "min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2 sm:min-h-10";
 const clsBtnAccent =
   "rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const clsBtnSecundario =
@@ -2985,8 +3588,8 @@ function Campo({
   completo?: boolean;
 }) {
   return (
-    <label className={`space-y-1.5 ${completo ? "col-span-2" : ""}`}>
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+    <label className={`block min-w-0 space-y-1.5 ${completo ? "sm:col-span-2" : ""}`}>
+      <span className="block text-xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -3028,40 +3631,59 @@ function SeccionAlertas() {
 
   if (cargando) {
     return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando alertas…
+      <div role="status" className="flex items-center justify-center py-16 text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" /> Cargando alertas…
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-        <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+      <div
+        role="alert"
+        className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+      >
+        <span className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {error}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            cargar();
+          }}
+          className={`${clsBtnSecundario} w-full text-foreground sm:w-auto`}
+        >
+          Reintentar
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Alertas de desempeño</h2>
-          <p className="text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Alertas de desempeño</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Alertas automáticas por calificación baja del repartidor
             {noLeidas > 0 && (
-              <span className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+              <span className="ml-2 inline-block whitespace-nowrap rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
                 {noLeidas} sin leer
               </span>
             )}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={cargar} className={clsBtnSecundario}>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <button type="button" onClick={cargar} className={`${clsBtnSecundario} w-full sm:w-auto`}>
             Actualizar
           </button>
           {noLeidas > 0 && (
-            <button onClick={marcarTodas} className={clsBtnAccent}>
+            <button
+              type="button"
+              onClick={marcarTodas}
+              className={`${clsBtnAccent} w-full sm:w-auto`}
+            >
               Marcar todas como leídas
             </button>
           )}
@@ -3070,27 +3692,31 @@ function SeccionAlertas() {
 
       {alertas.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          <Bell className="mx-auto mb-3 h-8 w-8 opacity-30" />
+          <Bell className="mx-auto mb-3 h-8 w-8 opacity-30" aria-hidden="true" />
           No hay alertas registradas.
         </div>
       ) : (
-        <div className="space-y-2">
+        <ul className="space-y-2">
           {alertas.map((alerta) => (
-            <div
+            <li
               key={alerta.Id_Alerta}
-              className={`rounded-lg border p-4 transition ${
+              className={`rounded-lg border p-3 transition sm:p-4 ${
                 alerta.Leida
-                  ? "border-border bg-card opacity-60"
+                  ? "border-border bg-card opacity-70"
                   : "border-destructive/40 bg-destructive/5"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
                   <Bell
+                    aria-hidden="true"
                     className={`mt-0.5 h-4 w-4 shrink-0 ${alerta.Leida ? "text-muted-foreground" : "text-destructive"}`}
                   />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium leading-snug">{alerta.Mensaje}</p>
+                    <p className="break-words text-sm font-medium leading-snug">
+                      {!alerta.Leida && <span className="sr-only">No leída: </span>}
+                      {alerta.Mensaje}
+                    </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {new Date(alerta.Creacion).toLocaleString("es-PE", {
                         day: "2-digit",
@@ -3104,17 +3730,19 @@ function SeccionAlertas() {
                 </div>
                 {!alerta.Leida && (
                   <button
+                    type="button"
                     onClick={() => marcarUna(alerta.Id_Alerta)}
                     title="Marcar como leída"
-                    className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    aria-label="Marcar alerta como leída"
+                    className="inline-flex min-w-11 shrink-0 items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <Check className="h-3.5 w-3.5" />
+                    <Check className="h-4 w-4" aria-hidden="true" />
                   </button>
                 )}
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

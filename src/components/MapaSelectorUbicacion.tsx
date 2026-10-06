@@ -216,7 +216,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-border"
+      className="relative isolate overflow-hidden rounded-xl border border-border"
       style={{ height: altura }}
     >
       {/* Overlay de carga */}
