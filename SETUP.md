@@ -56,13 +56,23 @@ DB_DATABASE=ALAKRICO_GO_DB
 DB_USER=sa
 DB_PASSWORD=tu_password_aqui
 
-JWT_SECRET=AlaKRicoGO_JWT_Secret_2024_X9kP2mN
+JWT_SECRET=genera_uno_propio_ver_abajo
 
 PORT=3001
 FRONTEND_URL=http://localhost:8081
 ```
 
 > **Nota:** Para encontrar el nombre de tu instancia, abre SQL Server Management Studio y copia el nombre del servidor que aparece en la pantalla de conexión.
+
+### 3.3 Generar tu propio `JWT_SECRET`
+
+Cada entorno (tu PC, producción) debe tener **su propio** secreto aleatorio de al menos 32 caracteres. El servidor no arranca si falta o es más corto. Genéralo con:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+> ⚠️ **Nunca subas `server/.env` ni pegues secretos reales (JWT, contraseñas de BD, perfiles de publicación) en este repositorio, en documentación ni en issues.** En producción los valores se configuran en Azure App Service → *Configuración → Variables de entorno*, y los de CI en GitHub → *Settings → Secrets and variables → Actions*.
 
 ---
 
@@ -81,9 +91,9 @@ cd ..
 ```
 
 La semilla crea automáticamente:
-- 1 usuario administrador: `admin@alakrico.com` / `Admin2026#`
-- 1 repartidor: `pquispe@alakrico.com` / `Pedro.5678`
-- 10 clientes de prueba: `*@piloto.test` / `Cliente2026`
+- 1 usuario administrador: `admin@alakrico.com`
+- 1 repartidor: `pquispe@alakrico.com`
+- 10 clientes de prueba: `*@piloto.test`
 - 89 pedidos distribuidos en 12 jornadas (6 FIFO + 6 ACO)
 - Parámetros ACO calibrados del paper: α=2, β=3, ρ=0.1, T=100 iter
 
@@ -110,11 +120,13 @@ npm run dev
 
 ## 6. Accesos del sistema
 
-| Rol           | Email                    | Contraseña   |
-|---------------|--------------------------|--------------|
-| Administrador | admin@alakrico.com       | Admin2026#   |
-| Repartidor    | pquispe@alakrico.com     | Pedro.5678   |
-| Cliente       | cmendoza@piloto.test     | Cliente2026  |
+| Rol           | Email                    |
+|---------------|--------------------------|
+| Administrador | admin@alakrico.com       |
+| Repartidor    | pquispe@alakrico.com     |
+| Cliente       | cmendoza@piloto.test     |
+
+Las contraseñas de los usuarios de prueba **no se publican en el repositorio**: pídelas al equipo por un canal privado o cámbialas en tu base de datos local. Nunca reutilices estas cuentas ni sus contraseñas en producción.
 
 ---
 

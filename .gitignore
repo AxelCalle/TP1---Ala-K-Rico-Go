@@ -17,8 +17,20 @@ dist-ssr
 *.local
 
 # Variables de entorno con credenciales — NO subir al repositorio
-server/.env
+# (solo se versionan las plantillas *.env.example, sin valores reales)
 .env
+.env.*
+server/.env
+server/.env.*
+!.env.example
+!server/.env.example
+
+# Credenciales y perfiles de publicación
+*.pem
+*.key
+*.pfx
+*.PublishSettings
+*.publishsettings
 
 # Carpetas internas de herramientas (tienen su propio .git — no son submódulos)
 .workspace/
