@@ -65,7 +65,7 @@ const STATUS_ES: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   sin_asignar: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
-  asignado: "bg-accent/20 text-accent-foreground",
+  asignado: "bg-accent/20 text-accent",
   en_camino: "bg-primary text-primary-foreground",
   entregado: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   cancelado: "bg-destructive/15 text-destructive",
@@ -110,16 +110,23 @@ function ClientePage() {
     setMontado(true);
   }, []);
 
-  // Cerrar dropdown de notificaciones al hacer clic fuera
+  // Cerrar dropdown de notificaciones al tocar/hacer clic fuera o con Escape
   useEffect(() => {
     if (!mostrarNotifs) return;
-    function handleClickOutside(e: MouseEvent) {
+    function handleClickOutside(e: PointerEvent) {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setMostrarNotifs(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setMostrarNotifs(false);
+    }
+    document.addEventListener("pointerdown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, [mostrarNotifs]);
 
   // Redirigir si no hay sesión de cliente (solo después de montar)
@@ -139,32 +146,43 @@ function ClientePage() {
   const noLeidas = misNotifs.filter((n) => !n.Leida).length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
+    <div className="flex min-h-dvh flex-col overflow-x-clip bg-background">
+      {/* Header sticky: compacto en móvil, respeta el notch con .safe-top */}
+      <header className="safe-top sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85">
+        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-2 px-3 sm:h-16 sm:px-6">
+          <Link
+            to="/"
+            aria-label="Ala K' Rico GO — inicio"
+            className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <LogoIcon size={28} />
-            <span className="hidden text-lg font-semibold tracking-tight sm:inline">
+            <span className="hidden truncate text-lg font-semibold tracking-tight sm:inline">
               Ala K' Rico GO
             </span>
           </Link>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-none items-center gap-1 sm:gap-3">
             {/* Botón principal: hacer pedido */}
             <button
               onClick={() => setModalPedido(true)}
               aria-label="Hacer pedido"
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+              className="inline-flex h-11 items-center gap-1.5 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Hacer pedido</span>
             </button>
-            <span className="hidden text-sm text-muted-foreground sm:inline">
+            <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground md:inline">
               Hola, <span className="font-medium text-foreground">{nombre.split(" ")[0]}</span>
             </span>
             {/* Campana de notificaciones */}
             <div className="relative" ref={notifRef}>
               <button
+                type="button"
+                aria-label={
+                  noLeidas > 0 ? `Notificaciones (${noLeidas} sin leer)` : "Notificaciones"
+                }
+                aria-haspopup="dialog"
+                aria-expanded={mostrarNotifs}
+                aria-controls="panel-notificaciones"
                 onClick={async () => {
                   setMostrarNotifs((v) => !v);
                   if (!mostrarNotifs && noLeidas > 0) {
@@ -176,32 +194,39 @@ function ClientePage() {
                     qcPage.invalidateQueries({ queryKey: ["notificaciones"] });
                   }
                 }}
-                className="relative inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                title="Notificaciones"
+                className="relative inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {noLeidas > 0 ? (
-                  <BellRing className="h-5 w-5 text-accent-foreground" />
+                  <BellRing className="h-5 w-5 text-accent" />
                 ) : (
                   <Bell className="h-5 w-5" />
                 )}
                 {noLeidas > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-accent-foreground">
+                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-accent-foreground">
                     {noLeidas > 9 ? "9+" : noLeidas}
                   </span>
                 )}
               </button>
               {mostrarNotifs && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:w-80">
-                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                // Móvil: panel anclado a todo el ancho bajo el header. ≥sm: dropdown clásico.
+                <div
+                  id="panel-notificaciones"
+                  role="dialog"
+                  aria-label="Notificaciones"
+                  className="fixed inset-x-2 top-[calc(env(safe-area-inset-top)+3.75rem)] z-50 flex max-h-[calc(100dvh-env(safe-area-inset-top)-5rem)] flex-col rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[28rem] sm:w-80"
+                >
+                  <div className="flex flex-none items-center justify-between border-b border-border py-1 pl-4 pr-1">
                     <span className="text-sm font-semibold">Notificaciones</span>
                     <button
+                      type="button"
+                      aria-label="Cerrar notificaciones"
                       onClick={() => setMostrarNotifs(false)}
-                      className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="max-h-72 overflow-y-auto">
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                     {misNotifs.length === 0 ? (
                       <p className="px-4 py-8 text-center text-sm text-muted-foreground">
                         Sin notificaciones
@@ -223,8 +248,8 @@ function ClientePage() {
                                     ? "🍗"
                                     : "ℹ️"}
                           </span>
-                          <div className="flex-1">
-                            <p>{n.Mensaje}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words">{n.Mensaje}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {new Date(n.Creacion).toLocaleTimeString("es-PE", {
                                 hour: "2-digit",
@@ -247,7 +272,10 @@ function ClientePage() {
                 store.logout();
                 navigate({ to: "/" });
               }}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -255,26 +283,33 @@ function ClientePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
-        {/* Tabs */}
-        <div className="mb-5 flex gap-1 rounded-xl border border-border bg-card p-1 sm:mb-8">
+      <main className="mx-auto w-full min-w-0 max-w-4xl px-3 py-5 sm:px-6 sm:py-8">
+        {/* Tabs: segmented control de 3 columnas iguales (icono + etiqueta corta en móvil) */}
+        <div
+          role="tablist"
+          aria-label="Secciones de mi cuenta"
+          className="mb-5 grid grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 sm:mb-8"
+        >
           <TabBtn
             active={tab === "pedidos"}
             onClick={() => setTab("pedidos")}
             icon={<ShoppingBag className="h-4 w-4" />}
             label="Mis Pedidos"
+            labelCorto="Pedidos"
           />
           <TabBtn
             active={tab === "seguimiento"}
             onClick={() => setTab("seguimiento")}
             icon={<MapPin className="h-4 w-4" />}
             label="Seguimiento"
+            labelCorto="Rastreo"
           />
           <TabBtn
             active={tab === "perfil"}
             onClick={() => setTab("perfil")}
             icon={<User className="h-4 w-4" />}
             label="Mi Perfil"
+            labelCorto="Perfil"
           />
         </div>
 
@@ -299,7 +334,7 @@ function ClientePage() {
       )}
 
       <footer className="mt-auto border-t border-border bg-card">
-        <div className="mx-auto flex max-w-4xl flex-col gap-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="pb-safe-3 mx-auto flex max-w-4xl flex-col gap-1 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-center gap-2">
             <LogoIcon size={16} />
             <span className="text-xs text-muted-foreground">Ala K' Rico GO</span>
@@ -338,6 +373,20 @@ function ModalNuevoPedido({
   // Estado del selector de mapa
   const [mostrarMapa, setMostrarMapa] = useState(false);
   const [coordsPin, setCoordsPin] = useState<[number, number] | null>(null);
+
+  // Escape cierra el modal (salvo mientras se envía) y bloquea el scroll del fondo
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape" && !enviando) onClose();
+    }
+    document.addEventListener("keydown", handleEscape);
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = overflowPrevio;
+    };
+  }, [onClose, enviando]);
 
   /** El cliente seleccionó un punto en el mapa */
   function handleSeleccionMapa(coords: [number, number], dir: string) {
@@ -395,202 +444,254 @@ function ModalNuevoPedido({
   }
 
   return (
+    // Móvil: bottom sheet (items-end). ≥sm: diálogo centrado. dvh para que el teclado
+    // virtual no deje el footer fuera de la pantalla.
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 py-8"
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
       style={{ background: "rgba(0,0,0,0.55)" }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !enviando) onClose();
       }}
     >
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-[var(--shadow-elegant)]">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-pedido-titulo"
+        aria-describedby="modal-pedido-desc"
+        className="relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:max-w-lg sm:rounded-2xl"
+      >
         {/* ── Cabecera fija ──────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent/15 text-accent-foreground">
+        <div className="flex flex-none items-center justify-between gap-3 border-b border-border py-3 pl-4 pr-2 sm:py-4 sm:pl-6 sm:pr-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-accent/15 text-accent">
               <UtensilsCrossed className="h-5 w-5" />
             </span>
-            <div>
-              <h2 className="text-lg font-semibold">Hacer un pedido</h2>
-              <p className="text-sm text-muted-foreground">Elige tu salsa y punto de entrega.</p>
+            <div className="min-w-0">
+              <h2 id="modal-pedido-titulo" className="text-lg font-semibold">
+                Hacer un pedido
+              </h2>
+              <p id="modal-pedido-desc" className="text-sm text-muted-foreground">
+                Elige tu salsa y punto de entrega.
+              </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            disabled={enviando}
+            aria-label="Cerrar"
+            className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* ── Cuerpo con scroll ──────────────────────────────────────────── */}
-        <form onSubmit={handleSubmit} className="space-y-5 p-6">
-          {/* Cantidad + Salsa */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Cantidad de alitas</label>
-              <input
-                type="number"
-                required
-                min={6}
-                max={200}
-                step={6}
-                value={alitas}
-                onChange={(e) => setAlitas(parseInt(e.target.value || "6", 10))}
-                className={clsInput}
-              />
-              <p className="text-xs text-muted-foreground">Mínimo 6, en múltiplos de 6</p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Salsa</label>
-              <select
-                value={salsa}
-                onChange={(e) => setSalsa(e.target.value as Sauce)}
-                className={clsInput}
-              >
-                {SAUCES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* ── Dirección de entrega ─────────────────────────────────────── */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Dirección de entrega <span className="text-destructive">*</span>
-              </label>
-              {/* Botón para abrir/cerrar el mapa */}
-              <button
-                type="button"
-                onClick={() => setMostrarMapa((v) => !v)}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
-                  mostrarMapa
-                    ? "bg-accent/20 text-accent-foreground"
-                    : "border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <Map className="h-3.5 w-3.5" />
-                {mostrarMapa ? "Ocultar mapa" : "Seleccionar en mapa"}
-              </button>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          {/* ── Cuerpo con scroll ──────────────────────────────────────────── */}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4 sm:p-6">
+            {/* Cantidad + Salsa */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor="np-alitas" className="text-sm font-medium">
+                  Cantidad de alitas
+                </label>
+                <input
+                  id="np-alitas"
+                  aria-describedby="np-alitas-ayuda"
+                  inputMode="numeric"
+                  type="number"
+                  required
+                  min={6}
+                  max={200}
+                  step={6}
+                  value={alitas}
+                  onChange={(e) => setAlitas(parseInt(e.target.value || "6", 10))}
+                  className={clsInput}
+                />
+                <p id="np-alitas-ayuda" className="text-xs text-muted-foreground">
+                  Mínimo 6, en múltiplos de 6
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="np-salsa" className="text-sm font-medium">
+                  Salsa
+                </label>
+                <select
+                  id="np-salsa"
+                  value={salsa}
+                  onChange={(e) => setSalsa(e.target.value as Sauce)}
+                  className={clsInput}
+                >
+                  {SAUCES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Campo de texto */}
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                required
-                maxLength={200}
-                value={direccion}
-                onChange={(e) => handleCambioDireccion(e.target.value)}
-                className={`${clsInput} pl-9 ${coordsPin ? "border-accent/60 bg-accent/5" : ""}`}
-                placeholder="Jr. Ejemplo 123, San Martín de Porres, Lima"
-              />
-              {/* Badge "pin fijado" */}
+            {/* ── Dirección de entrega ─────────────────────────────────────── */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <label htmlFor="np-direccion" className="text-sm font-medium">
+                  Dirección de entrega <span className="text-destructive">*</span>
+                </label>
+                {/* Botón para abrir/cerrar el mapa */}
+                <button
+                  type="button"
+                  onClick={() => setMostrarMapa((v) => !v)}
+                  aria-expanded={mostrarMapa}
+                  aria-controls="np-mapa"
+                  className={`inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 ${
+                    mostrarMapa
+                      ? "bg-accent/20 text-accent"
+                      : "border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  }`}
+                >
+                  <Map className="h-3.5 w-3.5" />
+                  {mostrarMapa ? "Ocultar mapa" : "Seleccionar en mapa"}
+                </button>
+              </div>
+
+              {/* Campo de texto */}
+              <div className="relative">
+                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="np-direccion"
+                  type="text"
+                  required
+                  maxLength={200}
+                  autoComplete="street-address"
+                  value={direccion}
+                  onChange={(e) => handleCambioDireccion(e.target.value)}
+                  aria-invalid={!!error && !direccion.trim()}
+                  aria-describedby={error ? "np-error" : undefined}
+                  className={`${clsInput} pl-9 ${coordsPin ? "border-accent/60 bg-accent/5" : ""}`}
+                  placeholder="Jr. Ejemplo 123, San Martín de Porres, Lima"
+                />
+              </div>
+              {/* Badge "pin fijado": fuera del input para no tapar el texto en 320px */}
               {coordsPin && (
                 <button
                   type="button"
                   onClick={() => setCoordsPin(null)}
-                  title="Quitar pin del mapa"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent-foreground transition hover:bg-destructive/20 hover:text-destructive"
+                  aria-label="Quitar ubicación fijada en el mapa"
+                  className="inline-flex min-h-9 items-center gap-1 rounded-full bg-accent/20 px-3 text-xs font-semibold text-accent transition hover:bg-destructive/20 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  📍 Mapa ×
+                  📍 Ubicación del mapa <X className="h-3 w-3" />
                 </button>
+              )}
+
+              {/* Mapa interactivo (desplegable) */}
+              {mostrarMapa && (
+                <div
+                  id="np-mapa"
+                  className="isolate overflow-hidden rounded-xl border border-accent/30"
+                >
+                  <div className="flex items-center gap-2 bg-accent/10 px-3 py-2">
+                    <MapPin className="h-3.5 w-3.5 flex-none text-accent" />
+                    <p className="min-w-0 text-xs font-medium text-accent">
+                      Toca el mapa o arrastra el pin para fijar tu punto de entrega exacto
+                    </p>
+                  </div>
+                  <MapaSelectorUbicacion
+                    onSeleccion={handleSeleccionMapa}
+                    coordsIniciales={coordsPin ?? undefined}
+                    altura={300}
+                  />
+                </div>
               )}
             </div>
 
-            {/* Mapa interactivo (desplegable) */}
-            {mostrarMapa && (
-              <div className="overflow-hidden rounded-xl border border-accent/30">
-                <div className="flex items-center gap-2 bg-accent/10 px-3 py-2">
-                  <MapPin className="h-3.5 w-3.5 text-accent-foreground" />
-                  <p className="text-xs font-medium text-accent-foreground">
-                    Toca el mapa o arrastra el pin para fijar tu punto de entrega exacto
-                  </p>
-                </div>
-                <MapaSelectorUbicacion
-                  onSeleccion={handleSeleccionMapa}
-                  coordsIniciales={coordsPin ?? undefined}
-                  altura={300}
+            {/* Teléfono */}
+            <div className="space-y-1.5">
+              <label htmlFor="np-telefono" className="text-sm font-medium">
+                Teléfono de contacto
+              </label>
+              <div className="relative">
+                <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="np-telefono"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  maxLength={20}
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  className={`${clsInput} pl-9`}
+                  placeholder="+51 999 999 999"
                 />
               </div>
+            </div>
+
+            {/* Notas */}
+            <div className="space-y-1.5">
+              <label htmlFor="np-notas" className="text-sm font-medium">
+                Notas <span className="text-xs text-muted-foreground">(opcional)</span>
+              </label>
+              <input
+                id="np-notas"
+                type="text"
+                maxLength={200}
+                value={notas}
+                onChange={(e) => setNotas(e.target.value)}
+                className={clsInput}
+                placeholder="Sin picante extra, ranch aparte…"
+              />
+            </div>
+
+            {error && (
+              <p
+                id="np-error"
+                role="alert"
+                className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {error}
+              </p>
             )}
           </div>
 
-          {/* Teléfono */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Teléfono de contacto</label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="tel"
-                maxLength={20}
-                value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-                className={`${clsInput} pl-9`}
-                placeholder="+51 999 999 999"
-              />
-            </div>
-          </div>
-
-          {/* Notas */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">
-              Notas <span className="text-xs text-muted-foreground">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              maxLength={200}
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              className={clsInput}
-              placeholder="Sin picante extra, ranch aparte…"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-
-          {/* Resumen */}
-          <div className="rounded-xl bg-muted/50 px-4 py-3 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">
+          {/* ── Footer siempre visible: resumen + acciones ──────────────────── */}
+          <div className="pb-safe-3 flex-none space-y-3 border-t border-border bg-card px-4 pt-3 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
+              <span className="min-w-0 text-muted-foreground">
                 {alitas} alitas · {salsa}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {coordsPin && (
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                     📍 Ubicación exacta
                   </span>
                 )}
-                <span className="font-semibold text-accent-foreground">
+                <span className="font-semibold text-accent" aria-live="polite">
                   {enviando ? "Procesando…" : "Listo para pedir"}
                 </span>
               </div>
             </div>
-          </div>
 
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className={clsBtnSec} disabled={enviando}>
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={enviando}
-              className="flex-1 rounded-md bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60"
-            >
-              {enviando
-                ? coordsPin
-                  ? "Registrando pedido…"
-                  : "Verificando dirección…"
-                : "Confirmar pedido"}
-            </button>
+            {/* Móvil: botón primario arriba y a todo el ancho; ≥sm: en fila */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className={`${clsBtnSec} w-full sm:w-auto`}
+                disabled={enviando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={enviando}
+                className="min-h-11 w-full flex-1 rounded-md bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              >
+                {enviando
+                  ? coordsPin
+                    ? "Registrando pedido…"
+                    : "Verificando dirección…"
+                  : "Confirmar pedido"}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -625,7 +726,7 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
 
   if (orders.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card p-14 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center sm:p-14">
         <UtensilsCrossed className="mx-auto h-12 w-12 text-muted-foreground/30" />
         <h2 className="mt-4 text-base font-semibold">Aún no has pedido nada</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -646,9 +747,9 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
   return (
     <div className="space-y-5">
       {activo && (
-        <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-accent-foreground">
+        <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-accent">
               Pedido en curso
             </span>
             <span
@@ -658,10 +759,10 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
             </span>
           </div>
           <BarraProgreso status={activo.Estado} />
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="font-mono text-xs text-muted-foreground">
+          <div className="mt-3 min-w-0 text-sm">
+            <p className="break-words font-mono text-xs text-muted-foreground">
               AKA-{String(activo.Id_Pedido).padStart(4, "0")} · {activo.Direccion_Destino}
-            </span>
+            </p>
           </div>
         </div>
       )}
@@ -681,37 +782,49 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
             })();
             const p0 = productos[0] ?? {};
             return (
+              // Card mobile-first: identificador + estado → info → acción → secundaria.
+              // ≥sm: info a la izquierda, estado/acciones alineados a la derecha.
               <div
                 key={o.Id_Pedido}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card px-5 py-4"
+                className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-5"
               >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      AKA-{String(o.Id_Pedido).padStart(4, "0")}
-                    </span>
-                    {o.Estado !== "entregado" && o.Estado !== "cancelado" && (
-                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-foreground">
-                        Activo
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-muted-foreground">
+                        AKA-{String(o.Id_Pedido).padStart(4, "0")}
                       </span>
-                    )}
+                      {o.Estado !== "entregado" && o.Estado !== "cancelado" && (
+                        <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent">
+                          Activo
+                        </span>
+                      )}
+                    </div>
+                    {/* Estado: visible junto al ID en móvil */}
+                    <span
+                      className={`flex-none rounded-md px-2.5 py-1 text-xs font-semibold sm:hidden ${STATUS_COLOR[o.Estado] ?? ""}`}
+                    >
+                      {STATUS_ES[o.Estado] ?? o.Estado}
+                    </span>
                   </div>
                   {p0.alitas && (
                     <div className="font-medium">
                       {p0.alitas} alitas{p0.salsa ? ` · ${p0.salsa}` : ""}
                     </div>
                   )}
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <MapPin className="h-3 w-3 flex-none" />
-                    {o.Direccion_Destino}
+                  <div className="flex items-start gap-1 text-sm text-muted-foreground">
+                    <MapPin className="mt-1 h-3 w-3 flex-none" />
+                    <span className="min-w-0 break-words">{o.Direccion_Destino}</span>
                   </div>
                   {p0.notas && (
-                    <div className="text-xs text-muted-foreground">Nota: {p0.notas}</div>
+                    <div className="break-words text-xs text-muted-foreground">
+                      Nota: {p0.notas}
+                    </div>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 sm:flex-none sm:flex-col sm:items-end sm:border-0 sm:pt-0">
                   <span
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_COLOR[o.Estado] ?? ""}`}
+                    className={`hidden rounded-md px-2.5 py-1 text-xs font-semibold sm:inline-block ${STATUS_COLOR[o.Estado] ?? ""}`}
                   >
                     {STATUS_ES[o.Estado] ?? o.Estado}
                   </span>
@@ -724,33 +837,38 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
                   </span>
                   {o.Estado === "sin_asignar" &&
                     (confirmandoCancelar === o.Id_Pedido ? (
-                      <div className="flex items-center gap-1.5">
+                      <div
+                        className="flex items-center gap-1.5"
+                        role="group"
+                        aria-label="Confirmar cancelación"
+                      >
                         <span className="text-xs text-muted-foreground">¿Cancelar?</span>
                         <button
+                          type="button"
                           onClick={() => cancelar(o.Id_Pedido)}
-                          className="rounded-md bg-destructive px-2.5 py-1 text-xs font-semibold text-destructive-foreground transition hover:opacity-90"
+                          className="min-w-11 rounded-md bg-destructive px-3 text-xs font-semibold text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
                         >
                           Sí
                         </button>
                         <button
+                          type="button"
                           onClick={() => setConfirmandoCancelar(null)}
-                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-secondary"
+                          className="min-w-11 rounded-md border border-border px-3 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
                         >
                           No
                         </button>
                       </div>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => setConfirmandoCancelar(o.Id_Pedido)}
-                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
                       >
                         <XCircle className="h-3 w-3" /> Cancelar
                       </button>
                     ))}
                   {o.Estado === "en_camino" && (
-                    <span className="text-[10px] text-muted-foreground">
-                      No cancelable en tránsito
-                    </span>
+                    <span className="text-xs text-muted-foreground">No cancelable en tránsito</span>
                   )}
                 </div>
               </div>
@@ -826,32 +944,41 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
           e.preventDefault();
           setBuscado(codigo.trim());
         }}
+        role="search"
         className="flex gap-2"
       >
+        <label htmlFor="buscar-codigo" className="sr-only">
+          Buscar pedido por código
+        </label>
         <input
-          type="text"
+          id="buscar-codigo"
+          type="search"
+          autoCapitalize="characters"
+          autoComplete="off"
           value={codigo}
           onChange={(e) => {
             setCodigo(e.target.value);
             if (!e.target.value) setBuscado("");
           }}
-          placeholder="Buscar por código  Ej: AKA-0001"
-          className="flex-1 rounded-md border border-input bg-background px-3 py-2.5 font-mono text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2"
+          placeholder="Ej: AKA-0001"
+          className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2"
         />
         <button
           type="submit"
-          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+          aria-label="Buscar pedido"
+          className="inline-flex h-11 flex-none items-center gap-1.5 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
         >
-          <Search className="h-4 w-4" /> Buscar
+          <Search className="h-4 w-4" /> <span className="hidden min-[360px]:inline">Buscar</span>
         </button>
         {buscado && (
           <button
             type="button"
+            aria-label="Limpiar búsqueda"
             onClick={() => {
               setCodigo("");
               setBuscado("");
             }}
-            className="rounded-md border border-border px-3 py-2.5 text-sm text-muted-foreground transition hover:bg-secondary"
+            className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-md border border-border text-sm text-muted-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X className="h-4 w-4" />
           </button>
@@ -860,7 +987,10 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
 
       {/* ── Resultado de búsqueda ─────────────────────────────────────────── */}
       {buscado && !pedidoBuscado && (
-        <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        <div
+          role="status"
+          className="break-words rounded-xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground sm:p-8"
+        >
           No se encontró el pedido <span className="font-mono font-semibold">{buscado}</span>.
         </div>
       )}
@@ -875,7 +1005,7 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
 
       {/* ── Pedidos activos ───────────────────────────────────────────────── */}
       {!buscado && pedidosActivos.length === 0 && (
-        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center">
+        <div className="rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center sm:p-12">
           <PackageCheck className="mx-auto h-10 w-10 text-muted-foreground/30" />
           <p className="mt-3 text-sm text-muted-foreground">
             No tienes pedidos en curso. ¡Haz uno nuevo para rastrear tu entrega!
@@ -939,10 +1069,10 @@ function TarjetaSeguimiento({ order }: { order: any }) {
       }`}
     >
       {/* ── Stepper ─────────────────────────────────────────────────────── */}
-      <div className="rounded-xl bg-card p-5">
+      <div className="rounded-xl bg-card p-4 sm:p-5">
         {/* Cabecera */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-mono text-sm font-semibold">{orderId}</span>
             <span className="text-xs text-muted-foreground">
               {new Date(createdAt).toLocaleDateString("es-PE", {
@@ -983,7 +1113,11 @@ function TarjetaSeguimiento({ order }: { order: any }) {
             const Icon = step.icon;
             const esUltimo = i === STEPS.length - 1;
             return (
-              <li key={step.key} className="flex gap-4 pb-5 last:pb-0">
+              <li
+                key={step.key}
+                className="flex gap-3 pb-5 last:pb-0 sm:gap-4"
+                aria-current={active ? "step" : undefined}
+              >
                 <div className="flex flex-col items-center">
                   <span
                     className={`grid h-9 w-9 flex-none place-items-center rounded-full border-2 transition ${
@@ -1002,13 +1136,13 @@ function TarjetaSeguimiento({ order }: { order: any }) {
                     />
                   )}
                 </div>
-                <div className="pt-1 pb-1">
+                <div className="min-w-0 pt-1 pb-1">
                   <p
-                    className={`text-sm font-semibold ${done ? "text-foreground" : "text-muted-foreground"}`}
+                    className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold ${done ? "text-foreground" : "text-muted-foreground"}`}
                   >
                     {step.label}
                     {active && (
-                      <span className="ml-2 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent-foreground">
+                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold text-accent">
                         Ahora
                       </span>
                     )}
@@ -1024,7 +1158,7 @@ function TarjetaSeguimiento({ order }: { order: any }) {
       {/* ── Info del pedido + repartidor ─────────────────────────────────── */}
       <div className="grid gap-3 px-1 sm:grid-cols-2">
         {/* Detalle del pedido */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1.5 text-sm">
+        <div className="min-w-0 space-y-1.5 rounded-xl border border-border bg-card p-4 text-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Tu pedido
           </p>
@@ -1042,13 +1176,19 @@ function TarjetaSeguimiento({ order }: { order: any }) {
           )}
           <div className="flex items-start gap-1.5">
             <MapPin className="mt-0.5 h-3.5 w-3.5 flex-none text-muted-foreground" />
-            <span className="text-muted-foreground leading-snug">{address}</span>
+            <span className="min-w-0 break-words leading-snug text-muted-foreground">
+              {address}
+            </span>
           </div>
-          {p0.notas && <p className="rounded-md bg-muted px-3 py-1.5 text-xs">{p0.notas}</p>}
+          {p0.notas && (
+            <p className="break-words rounded-md bg-muted px-3 py-1.5 text-xs">{p0.notas}</p>
+          )}
           {/* ETA */}
           <div className="flex items-center gap-1.5 border-t border-border pt-1.5">
             <Timer className="h-3.5 w-3.5 flex-none text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
+            <span
+              className={`text-xs ${estado === "en_camino" ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+            >
               {estado === "sin_asignar" || estado === "asignado"
                 ? "Calculando tiempo estimado…"
                 : estado === "en_camino"
@@ -1067,13 +1207,13 @@ function TarjetaSeguimiento({ order }: { order: any }) {
         </div>
 
         {/* Repartidor */}
-        <div className="rounded-xl border border-border bg-card p-4 text-sm">
+        <div className="min-w-0 rounded-xl border border-border bg-card p-4 text-sm">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Repartidor
           </p>
           {driverNombre ? (
-            <div className="flex items-center gap-3">
-              <span className="grid h-12 w-12 flex-none place-items-center rounded-full bg-accent/15 text-base font-bold text-accent-foreground">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-12 w-12 flex-none place-items-center rounded-full bg-accent/15 text-base font-bold text-accent">
                 {driverNombre
                   .split(" ")
                   .map((n: string) => n[0])
@@ -1081,8 +1221,8 @@ function TarjetaSeguimiento({ order }: { order: any }) {
                   .slice(0, 2)
                   .toUpperCase()}
               </span>
-              <div>
-                <p className="font-medium">{driverNombre}</p>
+              <div className="min-w-0">
+                <p className="break-words font-medium">{driverNombre}</p>
               </div>
             </div>
           ) : (
@@ -1096,11 +1236,12 @@ function TarjetaSeguimiento({ order }: { order: any }) {
 
       {/* ── Mini-mapa cuando está en camino ─────────────────────────────── */}
       {estado === "en_camino" && coords && (
-        <div className="overflow-hidden rounded-xl border border-border bg-card mx-1 mb-1">
-          <div className="flex items-center gap-2 border-b border-border px-5 py-3">
-            <Truck className="h-4 w-4 text-accent" />
-            <span className="text-sm font-medium">Tu repartidor está en camino</span>
-            <span className="ml-auto rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+        // isolate: los z-index de Leaflet quedan contenidos y no tapan el header sticky
+        <div className="isolate mx-1 mb-1 overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3 sm:px-5">
+            <Truck className="h-4 w-4 flex-none text-accent" />
+            <span className="min-w-0 text-sm font-medium">Tu repartidor está en camino</span>
+            <span className="ml-auto flex-none rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               En ruta
             </span>
           </div>
@@ -1109,7 +1250,7 @@ function TarjetaSeguimiento({ order }: { order: any }) {
             coordsOrigen={COORDS_RESTAURANTE}
             destino={address}
             coordsDestino={coords}
-            altura={260}
+            altura="clamp(240px, 45svh, 380px)"
           />
         </div>
       )}
@@ -1212,7 +1353,7 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
 
       <form
         onSubmit={handleSubmit}
-        className="rounded-xl border border-border bg-card p-6 space-y-5"
+        className="space-y-5 rounded-xl border border-border bg-card p-4 sm:p-6"
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -1262,8 +1403,11 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Correo electrónico</label>
+            <label htmlFor="p-email" className="text-sm font-medium">
+              Correo electrónico
+            </label>
             <input
+              id="p-email"
               type="email"
               disabled
               value={perfil?.Email_Usuario ?? ""}
@@ -1306,9 +1450,12 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           {guardado && (
-            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            <span
+              role="status"
+              className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
+            >
               ✓ Datos guardados correctamente
             </span>
           )}
@@ -1319,7 +1466,7 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
           )}
           <button
             type="submit"
-            className="ml-auto rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105"
+            className="min-h-11 w-full rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:ml-auto sm:w-auto"
           >
             Guardar cambios
           </button>
@@ -1334,7 +1481,7 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
         </div>
         <form
           onSubmit={handleCambiarPass}
-          className="rounded-xl border border-border bg-card p-6 space-y-4"
+          className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6"
         >
           <div className="space-y-1.5">
             <label htmlFor="pass-actual" className="text-sm font-medium">
@@ -1382,22 +1529,27 @@ function TabPerfil({ customerId: _customerId }: { customerId: string }) {
                 autoComplete="new-password"
                 value={passConfirm}
                 onChange={(e) => setPassConfirm(e.target.value)}
+                aria-invalid={!!passConfirm && passNuevo !== passConfirm}
                 className={`${clsInput} ${passConfirm && passNuevo !== passConfirm ? "border-destructive" : ""}`}
                 placeholder="Repite la contraseña"
               />
             </div>
           </div>
-          {passError && <p className="text-sm text-destructive">{passError}</p>}
+          {passError && (
+            <p role="alert" className="text-sm text-destructive">
+              {passError}
+            </p>
+          )}
           {passOk && (
-            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            <p role="status" className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
               ✓ Contraseña actualizada correctamente
             </p>
           )}
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <button
               type="submit"
               disabled={passLoading}
-              className="rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 sm:w-auto"
             >
               {passLoading ? "Guardando…" : "Actualizar contraseña"}
             </button>
@@ -1428,31 +1580,40 @@ function BarraProgreso({ status }: { status: string }) {
 // ─── Helpers visuales ─────────────────────────────────────────────────────────
 
 const clsInput =
-  "w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2";
+  "h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-ring/30 transition focus:border-ring focus:ring-2";
 const clsBtnSec =
-  "rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium transition hover:bg-secondary";
+  "min-h-11 rounded-md border border-border bg-background px-4 py-2.5 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60";
 
 function TabBtn({
   active,
   onClick,
   icon,
   label,
+  labelCorto,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  /** Etiqueta abreviada para móvil (evita depender solo del icono) */
+  labelCorto: string;
 }) {
   return (
     <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-label={label}
       onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition ${
+      className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:gap-2 sm:py-2.5 sm:text-sm ${
         active
           ? "bg-accent text-accent-foreground shadow-[var(--shadow-card)]"
           : "text-muted-foreground hover:text-foreground"
       }`}
     >
-      {icon} <span className="hidden sm:inline">{label}</span>
+      {icon}
+      <span className="max-w-full truncate sm:hidden">{labelCorto}</span>
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

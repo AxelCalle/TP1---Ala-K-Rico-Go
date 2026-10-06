@@ -249,6 +249,138 @@
   padding-top: env(safe-area-inset-top);
 }
 
+/* Safe area inferior (home indicator iOS / barra de gestos Android) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pb-safe-3 {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+
+/*
+ * iOS hace zoom automático al enfocar campos con font-size < 16px.
+ * Va fuera de @layer para ganarle a las utilidades text-xs / text-sm.
+ */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ─── Leaflet: legibilidad y targets táctiles ───────────────────────── */
+.leaflet-container {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+.leaflet-touch .leaflet-bar a,
+.leaflet-bar a {
+  width: 40px;
+  height: 40px;
+  line-height: 40px;
+  font-size: 20px;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
+  line-height: 30px;
+}
+
+/* ─── Markers de ruta (pin con número + estado) ─────────────────────── */
+.akr-pin-wrap {
+  position: relative;
+  width: 44px;
+  height: 52px;
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+  cursor: pointer;
+}
+.akr-pin {
+  --pin: #78716c;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--pin);
+  border: 3px solid #fff;
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.4);
+  transition: transform 0.2s ease;
+}
+.akr-pin > span {
+  transform: rotate(45deg);
+  color: #fff;
+  font:
+    700 14px/1 "Inter",
+    sans-serif;
+}
+.akr-pin--origin {
+  --pin: oklch(0.2 0.032 30);
+}
+.akr-pin--pending {
+  --pin: #b45309;
+}
+.akr-pin--current {
+  --pin: var(--flame);
+}
+.akr-pin--done {
+  --pin: #16a34a;
+}
+.akr-pin--dest {
+  --pin: #d97706;
+}
+.akr-pin-wrap--selected .akr-pin {
+  transform: rotate(-45deg) scale(1.18);
+}
+.akr-pin-wrap--current::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--flame);
+  opacity: 0.35;
+  animation: akr-ping 1.6s ease-out infinite;
+}
+@keyframes akr-ping {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .akr-pin-wrap--current::before {
+    animation: none;
+  }
+}
+
+/* ─── Bottom sheet (mapa móvil) ─────────────────────────────────────── */
+.akr-sheet {
+  transition: max-height 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .akr-sheet {
+    transition: none;
+  }
+}
+
 /* ─── Sliders de rango (ACO config) ────────────────────────────────────── */
 input[type="range"] {
   -webkit-appearance: none;
@@ -316,8 +448,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   border-radius: 9999px;
 }
 
-/* ─── Excepción: botones pequeños dentro de tablas ─────────────────── */
+/* ─── Botones pequeños dentro de tablas: target táctil reducido pero usable ── */
 table button,
 .btn-sm {
-  min-height: unset;
+  min-height: 32px;
 }

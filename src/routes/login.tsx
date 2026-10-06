@@ -25,9 +25,11 @@ function LoginPage() {
   const [modo, setModo] = useState<"login" | "registro">("login");
 
   return (
-    <div className="grid min-h-screen md:grid-cols-2">
-      {/* Panel lateral decorativo */}
-      <div className="login-panel relative hidden overflow-hidden flex-col justify-between p-10 text-white md:flex">
+    // min-h-dvh: altura real del viewport (respeta barras del navegador y teclado virtual en móvil)
+    <div className="grid min-h-dvh md:grid-cols-2">
+      {/* Panel lateral decorativo — solo md+. En móvil se reemplaza por la cabecera compacta.
+          overflow-hidden contiene el watermark (13rem, nowrap) y las brasas. */}
+      <div className="login-panel relative hidden min-w-0 flex-col justify-between overflow-hidden p-8 text-white md:flex lg:p-10">
         {/* Watermark diagonal */}
         <div className="login-watermark" aria-hidden="true">
           ALITAS
@@ -61,7 +63,11 @@ function LoginPage() {
         ))}
 
         {/* Logo — top */}
-        <Link to="/" className="relative z-10 flex items-center gap-2.5">
+        <Link
+          to="/"
+          aria-label="Ala K' Rico GO — ir al inicio"
+          className="relative z-10 flex w-fit items-center gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+        >
           <LogoIcon size={38} />
           <span
             className="font-display text-2xl"
@@ -80,7 +86,7 @@ function LoginPage() {
             Delivery de alitas ·
           </p>
 
-          <h2 className="text-5xl font-bold leading-[1.05] tracking-tight text-white">
+          <h2 className="text-4xl font-bold leading-[1.05] tracking-tight text-white lg:text-5xl">
             {modo === "login" ? (
               <>
                 Caliente.
@@ -107,18 +113,41 @@ function LoginPage() {
         <p className="relative z-10 text-xs text-white/30"></p>
       </div>
 
-      {/* Panel del formulario */}
-      <div className="flex flex-col items-center justify-center gap-5 bg-background p-4 sm:p-6">
-        {/* Branding — solo visible en mobile (el panel decorativo lo oculta en md+) */}
-        <Link to="/" className="flex items-center gap-2 md:hidden">
-          <LogoIcon size={28} />
-          <span className="font-display text-lg tracking-wide">Ala K' Rico GO</span>
-        </Link>
-        {modo === "login" ? (
-          <FormLogin onCambiarModo={() => setModo("registro")} />
-        ) : (
-          <FormRegistro onCambiarModo={() => setModo("login")} />
-        )}
+      {/* Columna del formulario. En móvil: cabecera compacta de marca + formulario
+          arriba (sin centrar verticalmente, así entra sin scroll en 375×667). */}
+      <div className="flex min-w-0 flex-col bg-background">
+        {/* Cabecera compacta — solo móvil (conserva marca y paleta del panel) */}
+        <header className="login-panel safe-top relative overflow-hidden text-white md:hidden">
+          <div className="mx-auto flex w-full max-w-sm items-center justify-between gap-3 px-4 py-3">
+            <Link
+              to="/"
+              aria-label="Ala K' Rico GO — ir al inicio"
+              className="flex min-w-0 items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <LogoIcon size={28} />
+              <span
+                className="font-display text-xl"
+                style={{ color: "var(--amber)", letterSpacing: "0.08em" }}
+              >
+                GO
+              </span>
+            </Link>
+            <p
+              className="truncate text-[0.7rem] font-bold uppercase tracking-[0.2em]"
+              style={{ color: "var(--amber)" }}
+            >
+              Delivery de alitas
+            </p>
+          </div>
+        </header>
+
+        <main className="pb-safe-3 flex flex-1 flex-col items-center px-4 pt-5 sm:px-6 sm:pt-8 md:justify-center">
+          {modo === "login" ? (
+            <FormLogin onCambiarModo={() => setModo("registro")} />
+          ) : (
+            <FormRegistro onCambiarModo={() => setModo("login")} />
+          )}
+        </main>
       </div>
     </div>
   );
@@ -213,10 +242,13 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-card p-5 sm:p-8 shadow-(--shadow-elegant)"
+      aria-labelledby="login-titulo"
+      className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-5 shadow-(--shadow-elegant) sm:space-y-5 sm:p-8"
     >
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Bienvenido</h1>
+        <h1 id="login-titulo" className="text-2xl font-semibold tracking-tight">
+          Bienvenido
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Usa tu correo y contraseña para entrar.
         </p>
@@ -229,8 +261,14 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
         <input
           id="email"
           type="email"
+          inputMode="email"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          enterKeyHint="next"
           required
+          aria-invalid={!!error && !bloqueado}
+          aria-describedby={error ? "login-error" : undefined}
           maxLength={120}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -240,13 +278,14 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
+        {/* flex-wrap: a 320px o con zoom el enlace baja de línea en vez de desbordar */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <label htmlFor="password" className="text-sm font-medium">
             Contraseña
           </label>
           <Link
             to="/forgot-password"
-            className="text-xs text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            className="-my-1 rounded-sm py-1 text-xs text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             ¿Olvidaste tu contraseña?
           </Link>
@@ -256,26 +295,36 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
             id="password"
             type={verPass ? "text" : "password"}
             autoComplete="current-password"
+            enterKeyHint="go"
             required
             maxLength={120}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={`${inputCls} pr-10`}
+            aria-invalid={!!error && !bloqueado}
+            aria-describedby={error ? "login-error" : undefined}
+            className={`${inputCls} pr-11`}
             placeholder="••••••••"
           />
-          <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} />
+          <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} controls="password" />
         </div>
       </div>
 
       {error && (
         <div
+          id="login-error"
+          role="alert"
+          aria-live="assertive"
           className={`rounded-md px-3 py-2 text-sm ${
             bloqueado
               ? "bg-orange-500/10 text-orange-700 dark:text-orange-400"
               : "bg-destructive/10 text-destructive"
           }`}
         >
-          {bloqueado && <span className="mr-1.5">🔒</span>}
+          {bloqueado && (
+            <span className="mr-1.5" aria-hidden="true">
+              🔒
+            </span>
+          )}
           {error}
         </div>
       )}
@@ -283,9 +332,10 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
       <button
         type="submit"
         disabled={bloqueado || cargando}
+        aria-busy={cargando}
         className={`${btnPrimary} inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
-        {cargando && <Loader2 className="h-4 w-4 animate-spin" />}
+        {cargando && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
         {cargando ? "Verificando…" : "Iniciar sesión"}
       </button>
 
@@ -296,8 +346,11 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
       </button>
 
       <p className="text-center text-xs text-muted-foreground">
-        <Link to="/" className="hover:text-foreground">
-          ← Volver al inicio
+        <Link
+          to="/"
+          className="inline-block rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span aria-hidden="true">← </span>Volver al inicio
         </Link>
       </p>
     </form>
@@ -377,17 +430,20 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-5 sm:p-8 shadow-(--shadow-elegant)"
+      aria-labelledby="registro-titulo"
+      className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-5 shadow-(--shadow-elegant) sm:p-8"
     >
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Crear cuenta</h1>
+        <h1 id="registro-titulo" className="text-2xl font-semibold tracking-tight">
+          Crear cuenta
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Regístrate para hacer pedidos y rastrear tus alitas.
         </p>
       </div>
 
-      {/* Nombre + Apellido */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* Nombre + Apellido — 1 columna en móvil, 2 desde sm (min-w-0 evita desborde) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
         <div className="space-y-1.5">
           <label htmlFor="reg-nombre" className="text-sm font-medium">
             Nombres <Req />
@@ -396,6 +452,8 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
             id="reg-nombre"
             type="text"
             autoComplete="given-name"
+            autoCapitalize="words"
+            enterKeyHint="next"
             required
             maxLength={80}
             value={nombre}
@@ -412,6 +470,8 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
             id="reg-apellido"
             type="text"
             autoComplete="family-name"
+            autoCapitalize="words"
+            enterKeyHint="next"
             maxLength={80}
             value={apellido}
             onChange={(e) => setApellido(e.target.value)}
@@ -429,7 +489,11 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         <input
           id="reg-email"
           type="email"
+          inputMode="email"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          enterKeyHint="next"
           required
           maxLength={120}
           value={email}
@@ -447,7 +511,9 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
         <input
           id="reg-phone"
           type="tel"
+          inputMode="tel"
           autoComplete="tel"
+          enterKeyHint="next"
           maxLength={20}
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
@@ -466,15 +532,16 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
             id="reg-password"
             type={verPass ? "text" : "password"}
             autoComplete="new-password"
+            enterKeyHint="next"
             required
             minLength={8}
             maxLength={100}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={`${inputCls} pr-10`}
+            className={`${inputCls} pr-11`}
             placeholder="Mínimo 8 caracteres"
           />
-          <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} />
+          <TogglePass ver={verPass} toggle={() => setVerPass((v) => !v)} controls="reg-password" />
         </div>
       </div>
 
@@ -487,15 +554,20 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
           id="reg-confirmar"
           type={verPass ? "text" : "password"}
           autoComplete="new-password"
+          enterKeyHint="done"
           required
           maxLength={100}
           value={confirmar}
           onChange={(e) => setConfirmar(e.target.value)}
-          className={`${inputCls} ${confirmar && password !== confirmar ? "border-destructive" : ""}`}
+          aria-invalid={!!confirmar && password !== confirmar}
+          aria-describedby={confirmar && password !== confirmar ? "reg-confirmar-msg" : undefined}
+          className={inputCls}
           placeholder="Repite tu contraseña"
         />
         {confirmar && password !== confirmar && (
-          <p className="text-xs text-destructive">Las contraseñas no coinciden.</p>
+          <p id="reg-confirmar-msg" className="text-xs text-destructive">
+            Las contraseñas no coinciden.
+          </p>
         )}
       </div>
 
@@ -504,9 +576,10 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       <button
         type="submit"
         disabled={cargando}
+        aria-busy={cargando}
         className={`${btnAccent} inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
-        {cargando && <Loader2 className="h-4 w-4 animate-spin" />}
+        {cargando && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
         {cargando ? "Creando cuenta…" : "Crear cuenta"}
       </button>
 
@@ -517,8 +590,11 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       </button>
 
       <p className="text-center text-xs text-muted-foreground">
-        <Link to="/" className="hover:text-foreground">
-          ← Volver al inicio
+        <Link
+          to="/"
+          className="inline-block rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span aria-hidden="true">← </span>Volver al inicio
         </Link>
       </p>
     </form>
@@ -528,22 +604,29 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
 // ─── Helpers visuales ────────────────────────────────────────────────────────
 
 const btnPrimary =
-  "w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90";
+  "w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 const btnAccent =
-  "w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105";
+  "w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 const btnSecondary =
-  "w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary";
+  "w-full rounded-md border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function Req() {
-  return <span className="text-destructive">*</span>;
+  return (
+    <>
+      <span className="text-destructive" aria-hidden="true">
+        *
+      </span>
+      <span className="sr-only">(obligatorio)</span>
+    </>
+  );
 }
 
 function Divider({ label }: { label: string }) {
   return (
     <div className="relative flex items-center gap-3 py-1">
-      <div className="h-px flex-1 bg-border" />
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <div className="h-px flex-1 bg-border" />
+      <div className="h-px flex-1 bg-border" aria-hidden="true" />
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      <div className="h-px flex-1 bg-border" aria-hidden="true" />
     </div>
   );
 }

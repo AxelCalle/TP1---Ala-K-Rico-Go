@@ -1,17 +1,24 @@
 interface LogoProps {
   size?: number;
   className?: string;
+  /**
+   * Texto accesible. Si se omite, el logo es decorativo (aria-hidden) y se
+   * asume que hay texto visible al lado (p. ej. "Ala K' Rico GO").
+   */
+  title?: string;
 }
 
-export function LogoIcon({ size = 36, className = "" }: LogoProps) {
+export function LogoIcon({ size = 36, className = "", title }: LogoProps) {
   return (
     <svg
       width={size}
       height={Math.round(size * 1.25)}
       viewBox="0 0 160 200"
       xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={className}
+      {...(title ? { role: "img", "aria-label": title } : { "aria-hidden": true })}
+      focusable="false"
+      // shrink-0: evita que el logo se deforme dentro de contenedores flex estrechos
+      className={`shrink-0 ${className}`}
     >
       {/* Silueta de llama — fondo transparente */}
       <path

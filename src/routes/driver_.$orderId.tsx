@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Drumstick,
+  ExternalLink,
   Loader2,
   MapPin,
   Navigation,
@@ -20,7 +21,7 @@ import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/li
 import { MapaRuta } from "@/components/MapaRuta";
 import { api } from "@/lib/api";
 
-export const Route = createFileRoute("/driver/$orderId")({
+export const Route = createFileRoute("/driver_/$orderId")({
   beforeLoad: () => {
     const session = store.get().session;
     if (!session || !["driver", "admin"].includes(session.role)) {
@@ -171,6 +172,16 @@ function PaginaRuta() {
     redibujar();
   }, [redibujar]);
 
+  // Redibujar el grafo si cambia el ancho (rotación del móvil, resize de ventana)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => redibujar());
+    ro.observe(canvas);
+    return () => ro.disconnect();
+    // isLoading: el canvas recién existe cuando termina de cargar el pedido
+  }, [redibujar, isLoading]);
+
   const ejecutarOptimizacion = useCallback(() => {
     setCalculandoACO(true);
     setTimeout(() => {
@@ -274,41 +285,85 @@ function PaginaRuta() {
 
   const etaMin = resultadoACO ? resultadoACO.etaMin : 5 + (pedido.Id_Pedido % 8);
 
+  const entregado = estado === "entregado";
+
+  /** Botones de cambio de estado: barra fija inferior en móvil, columna lateral en desktop */
+  const botonesEstado = (
+    <div className={`grid gap-2 ${estado === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}>
+      {estado !== "en_camino" && (
+        <button
+          onClick={() => cambiarEstado("en_camino")}
+          disabled={cambioEstadoLoading}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold transition hover:bg-secondary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {cambioEstadoLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Truck className="h-4 w-4" aria-hidden="true" />
+          )}
+          Iniciar entrega
+        </button>
+      )}
+      <button
+        onClick={() => cambiarEstado("entregado")}
+        disabled={cambioEstadoLoading}
+        className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {cambioEstadoLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        )}
+        Marcar entregado
+      </button>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+    <div className={`min-h-dvh bg-background ${entregado ? "" : "pb-28 lg:pb-0"}`}>
+      <header className="safe-top sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-2 py-2 sm:px-6">
           <Link
             to="/driver"
-            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+            className="inline-flex h-11 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ArrowLeft className="h-4 w-4" /> Volver a pedidos
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+            <span className="hidden sm:inline">Volver a pedidos</span>
+            <span className="sm:hidden">Pedidos</span>
           </Link>
-          <Link to="/" className="flex items-center gap-2">
+          <p className="min-w-0 truncate font-mono text-sm font-semibold">{woId}</p>
+          <Link
+            to="/"
+            className="flex h-11 items-center gap-2 rounded-md px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Ala K' Rico GO — inicio"
+          >
             <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-accent-foreground">
-              <Drumstick className="h-4 w-4" />
+              <Drumstick className="h-4 w-4" aria-hidden="true" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">Ala K' Rico GO</span>
+            <span className="hidden text-sm font-semibold tracking-tight sm:inline">
+              Ala K' Rico GO
+            </span>
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[1fr_360px]">
+      <main className="mx-auto grid max-w-6xl gap-4 px-0 py-0 sm:gap-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* Mapa */}
-        <div className="flex flex-col gap-6">
-          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant)">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Navigation className="h-4 w-4 text-accent" />
+        <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
+          <section className="overflow-hidden border-b border-border bg-card sm:rounded-xl sm:border sm:shadow-(--shadow-elegant)">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5 sm:px-5">
+              <h2 className="flex items-center gap-2 font-sans text-sm font-medium tracking-normal">
+                <Navigation className="h-4 w-4 text-accent" aria-hidden="true" />
                 Mejor ruta al destino
-              </div>
+              </h2>
               <a
                 href={urlNavegacion}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                Google Maps →
+                Abrir en Google Maps
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             </div>
             <MapaRuta
@@ -316,17 +371,17 @@ function PaginaRuta() {
               coordsOrigen={PICKUP.coords}
               destino={pedido.Direccion_Destino}
               coordsDestino={coordsDestino}
-              altura={400}
+              altura="clamp(320px, 55svh, 560px)"
             />
           </section>
 
           {/* ACO */}
-          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant)">
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <RouteIcon className="h-4 w-4 text-accent" />
+          <section className="mx-4 overflow-hidden rounded-xl border border-border bg-card shadow-(--shadow-elegant) sm:mx-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
+              <h2 className="flex items-center gap-2 font-sans text-sm font-medium tracking-normal">
+                <RouteIcon className="h-4 w-4 text-accent" aria-hidden="true" />
                 Optimización de ruta (ACO)
-              </div>
+              </h2>
               {resultadoACO && (
                 <span className="rounded-md bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
                   {resultadoACO.path.length - 1} segmentos · {resultadoACO.distanceKm.toFixed(1)} km
@@ -338,8 +393,14 @@ function PaginaRuta() {
                 ref={canvasRef}
                 className="w-full rounded-lg bg-muted"
                 style={{ height: 220 }}
+                role="img"
+                aria-label={
+                  resultadoACO
+                    ? `Grafo de colonia de hormigas con la ruta óptima de ${resultadoACO.distanceKm.toFixed(1)} km`
+                    : "Grafo de colonia de hormigas sin calcular"
+                }
               />
-              <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
                   {resultadoACO
                     ? `Ruta óptima en ${resultadoACO.iterations} iteraciones · ${resultadoACO.path.length} nodos.`
@@ -348,7 +409,7 @@ function PaginaRuta() {
                 <button
                   onClick={ejecutarOptimizacion}
                   disabled={calculandoACO}
-                  className="inline-flex flex-none items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-11 w-full flex-none items-center justify-center gap-1.5 rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
                 >
                   {calculandoACO ? (
                     <>
@@ -367,8 +428,8 @@ function PaginaRuta() {
         </div>
 
         {/* Sidebar */}
-        <aside className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-5">
+        <aside className="mx-4 space-y-4 pb-6 sm:mx-0 sm:pb-0">
+          <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-muted-foreground">{woId}</span>
               {p0.salsa && (
@@ -377,24 +438,25 @@ function PaginaRuta() {
                 </span>
               )}
             </div>
-            <h2 className="mt-2 text-xl font-semibold">{nombreCliente}</h2>
+            <h1 className="mt-2 break-words text-2xl font-semibold">{nombreCliente}</h1>
             <div className="mt-3 space-y-2 text-sm">
+              <div className="flex items-start gap-2 text-foreground">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+                <span className="min-w-0 break-words">{pedido.Direccion_Destino}</span>
+              </div>
               {telefonoCliente ? (
                 <a
                   href={`tel:${telefonoCliente}`}
-                  className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border font-semibold transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Phone className="h-4 w-4" /> {telefonoCliente}
+                  <Phone className="h-4 w-4 text-accent" aria-hidden="true" /> Llamar al cliente
+                  <span className="font-normal text-muted-foreground">· {telefonoCliente}</span>
                 </a>
               ) : (
                 <span className="flex items-center gap-2 text-muted-foreground">
-                  <Phone className="h-4 w-4" /> Sin teléfono registrado
+                  <Phone className="h-4 w-4" aria-hidden="true" /> Sin teléfono registrado
                 </span>
               )}
-              <div className="flex items-start gap-2 text-foreground">
-                <MapPin className="mt-0.5 h-4 w-4 text-accent" />
-                <span>{pedido.Direccion_Destino}</span>
-              </div>
             </div>
             {p0.notas && (
               <p className="mt-3 rounded-md bg-secondary px-3 py-2 text-xs text-secondary-foreground">
@@ -456,60 +518,39 @@ function PaginaRuta() {
                   {errorEstado}
                 </p>
               )}
-              <div
-                className={`grid gap-2 ${estado === "en_camino" ? "grid-cols-1" : "grid-cols-2"}`}
-              >
-                {estado !== "en_camino" && (
-                  <button
-                    onClick={() => cambiarEstado("en_camino")}
-                    disabled={cambioEstadoLoading}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-sm font-semibold transition hover:bg-secondary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {cambioEstadoLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Truck className="h-4 w-4" />
-                    )}
-                    Iniciar entrega
-                  </button>
-                )}
-                <button
-                  onClick={() => cambiarEstado("entregado")}
-                  disabled={cambioEstadoLoading}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {cambioEstadoLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                  Marcar entregado
-                </button>
-              </div>
+              {/* En móvil los botones viven en la barra fija inferior */}
+              <div className="hidden lg:block">{botonesEstado}</div>
 
               {!incidenciaEnviada ? (
                 !mostrarIncidencia ? (
                   <button
                     onClick={() => setMostrarIncidencia(true)}
-                    className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="mt-1 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <AlertTriangle className="h-3.5 w-3.5" /> Reportar incidencia
+                    <AlertTriangle className="h-4 w-4" aria-hidden="true" /> Reportar incidencia
                   </button>
                 ) : (
                   <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-destructive">Reportar incidencia</p>
+                      <p id="titulo-incidencia" className="text-sm font-semibold text-destructive">
+                        Reportar incidencia
+                      </p>
                       <button
                         onClick={() => setMostrarIncidencia(false)}
-                        className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label="Cerrar reporte de incidencia"
+                        className="-mr-2 grid h-10 min-h-10 w-10 place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-4 w-4" aria-hidden="true" />
                       </button>
                     </div>
+                    <label htmlFor="incidencia-tipo" className="sr-only">
+                      Tipo de incidencia
+                    </label>
                     <select
+                      id="incidencia-tipo"
                       value={incidenciaTipo}
                       onChange={(e) => setIncidenciaTipo(e.target.value)}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option>Dirección no encontrada</option>
                       <option>Cliente no disponible</option>
@@ -517,7 +558,11 @@ function PaginaRuta() {
                       <option>Pedido dañado</option>
                       <option>Otro</option>
                     </select>
+                    <label htmlFor="incidencia-detalle" className="sr-only">
+                      Detalle de la incidencia
+                    </label>
                     <textarea
+                      id="incidencia-detalle"
                       value={incidenciaDetalle}
                       onChange={(e) => setIncidenciaDetalle(e.target.value)}
                       rows={2}
@@ -532,7 +577,7 @@ function PaginaRuta() {
                     <button
                       onClick={enviarIncidencia}
                       disabled={enviandoIncidencia}
-                      className="w-full rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="h-11 w-full rounded-md bg-destructive px-3 text-sm font-semibold text-destructive-foreground transition hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {enviandoIncidencia ? (
                         <Loader2 className="inline h-4 w-4 animate-spin mr-1" />
@@ -557,6 +602,18 @@ function PaginaRuta() {
           )}
         </aside>
       </main>
+
+      {/* Barra de acciones fija (móvil/tablet): siempre al alcance del pulgar */}
+      {!entregado && (
+        <div className="pb-safe-3 fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-4 pt-3 shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.3)] backdrop-blur lg:hidden">
+          {errorEstado && (
+            <p role="alert" className="mb-2 text-xs text-destructive">
+              {errorEstado}
+            </p>
+          )}
+          {botonesEstado}
+        </div>
+      )}
     </div>
   );
 }
@@ -575,9 +632,7 @@ function Estadistica({
       className={`rounded-xl border p-3 text-center ${highlight ? "border-accent/40 bg-accent/10" : "border-border bg-card"}`}
     >
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${highlight ? "text-accent-foreground" : ""}`}>
-        {value}
-      </div>
+      <div className={`mt-1 text-lg font-semibold ${highlight ? "text-accent" : ""}`}>{value}</div>
     </div>
   );
 }
