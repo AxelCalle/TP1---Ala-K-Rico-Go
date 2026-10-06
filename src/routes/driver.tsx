@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -76,6 +76,26 @@ function PaginaRepartidor() {
       .catch(() => setPedidos([]))
       .finally(() => setCargando(false));
   }, [montado, session]);
+
+  // Ubicación GPS real → backend (el admin ve dónde está el repartidor).
+  // Como máximo cada 15 s, o cada 5 s si avanzó 50 m o más.
+  const ultimoEnvioRef = useRef<{ t: number; lat: number; lng: number } | null>(null);
+  const enviarUbicacion = useCallback((lat: number, lng: number) => {
+    const id = Number(store.get().session?.driverId);
+    if (!id) return; // un admin viendo la ruta no tiene ubicación propia
+    const ahora = Date.now();
+    const prev = ultimoEnvioRef.current;
+    if (prev) {
+      const t = ahora - prev.t;
+      const movido = metrosEntre(prev.lat, prev.lng, lat, lng);
+      if (t < 5000 || (t < 15000 && movido < 50)) return;
+    }
+    ultimoEnvioRef.current = { t: ahora, lat, lng };
+    api.actualizarUbicacion(id, lat, lng).catch(() => {
+      /* sin conexión: se reintenta con la próxima posición */
+      ultimoEnvioRef.current = prev;
+    });
+  }, []);
 
   // Stops para MapaRutaMulti memorizados: si cambiaran en cada render el mapa se reiniciaría
   const mapaStops: MultiStop[] = useMemo(
@@ -252,11 +272,15 @@ function PaginaRepartidor() {
                   <StatBox label="ETA total" value={`${tspResult.etaMin} min`} />
                 </div>
               </div>
-              <MapaRutaMulti stops={mapaStops} altura="clamp(440px, 74svh, 780px)" />
+              <MapaRutaMulti
+                stops={mapaStops}
+                altura="clamp(440px, 74svh, 780px)"
+                onUbicacion={enviarUbicacion}
+              />
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <MapPin className="mt-px h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
-                Toca un pin o una parada para ver el pedido. «Iniciar» simula el recorrido con
-                navegación por voz.
+                Toca un pin o una parada para ver el pedido. «Navegar con GPS» usa la ubicación de
+                tu celular; «Simular» recorre la ruta automáticamente (demostración).
               </p>
             </>
           ) : tspRunning ? (
@@ -552,6 +576,12 @@ function PaginaRepartidor() {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Distancia aproximada en metros (suficiente para decidir si enviar la ubicación). */
+function metrosEntre(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const kLng = 111320 * Math.cos((lat1 * Math.PI) / 180);
+  return Math.hypot((lat2 - lat1) * 111320, (lng2 - lng1) * kLng);
+}
 
 function formatearFecha(fecha: string): string {
   return new Date(fecha).toLocaleDateString("es-PE", {
