@@ -681,11 +681,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
   return (
     <div
-      className={`relative flex overflow-hidden rounded-xl border border-border ${className}`}
-      style={{ height: altura }}
+      className={`relative flex flex-col sm:flex-row overflow-hidden rounded-xl border border-border ${className}`}
     >
       {/* ── IZQUIERDA: Mapa Leaflet ── */}
-      <div className="relative min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1" style={{ height: altura }}>
         {/* Banner instrucción GPS actual (overlay superior) */}
         {simulando && instruccion && (
           <div
@@ -738,7 +737,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
       {/* ── DERECHA: Panel de instrucciones GPS ── */}
       {puedeComentar && (
-        <div className="hidden sm:flex w-56 shrink-0 flex-col border-l border-border bg-card">
+        <div className="flex w-full sm:w-56 sm:shrink-0 flex-col border-t sm:border-t-0 sm:border-l border-border bg-card h-44 sm:h-auto">
           {/* Cabecera del panel */}
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">

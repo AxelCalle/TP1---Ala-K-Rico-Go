@@ -801,7 +801,7 @@ function SeccionReportes() {
             Sin entregas completadas en el período seleccionado.
           </p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-5">
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
             {[
               { label: "Total entregas", val: tiempos.total, color: "" },
               { label: "Promedio", val: fmtMin(tiempos.promedio), color: "text-accent" },
@@ -1667,7 +1667,7 @@ function SeccionPedidos() {
               : `${conteoSistema.activos} activo${conteoSistema.activos !== 1 ? "s" : ""} · ${conteoSistema.completados} completado${conteoSistema.completados !== 1 ? "s" : ""} · ${conteoSistema.total} total`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {conteoSistema.activos > 0 && (
             <button
               onClick={confirmarLimpiarAtascados}
