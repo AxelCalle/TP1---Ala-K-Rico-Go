@@ -701,6 +701,34 @@ function accionPaso(p: Paso, totalParadas: number): string {
   }
 }
 
+/** Metros desde el punto `posIdx` de la polilínea hasta la maniobra `paso`. */
+function distanciaHasta(ruta: RutaCalculada, paso: Paso, posIdx: number): number {
+  return Math.max(0, ruta.acum[paso.polyIdx] - ruta.acum[posIdx]);
+}
+
+/** Frase hablada: "En 300 metros, gira a la derecha en Av. Perú". */
+function fraseManiobra(p: Paso, distancia: number, totalParadas: number): string {
+  const accion = accionPaso(p, totalParadas);
+  const calle = p.calle && p.tipo !== "arrive" ? ` en ${p.calle}` : "";
+  if (distancia <= 30) return `${accion}${calle}`;
+  const dist =
+    distancia < 1000
+      ? `${Math.round(distancia / 10) * 10} metros`
+      : `${(distancia / 1000).toFixed(1).replace(".", ",")} kilómetros`;
+  return `En ${dist}, ${accion.charAt(0).toLowerCase()}${accion.slice(1)}${calle}`;
+}
+
+/** Mejor voz en español disponible (Perú → Latinoamérica → cualquier español). */
+function vozEspanol(voces: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const preferidas = ["es-PE", "es-419", "es-MX", "es-US", "es-CO", "es-AR", "es-ES"];
+  const norm = (l: string) => l.replace("_", "-").toLowerCase();
+  for (const lang of preferidas) {
+    const v = voces.find((x) => norm(x.lang) === lang.toLowerCase());
+    if (v) return v;
+  }
+  return voces.find((x) => norm(x.lang).startsWith("es")) ?? null;
+}
+
 function IconoManiobra({ paso, className }: { paso: Paso; className?: string }) {
   const { tipo, modificador: m } = paso;
   let Icono = ArrowUp;
@@ -790,24 +818,82 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const swipeHechoRef = useRef(false);
   useAjusteTamano(raizRef, mapaRef);
 
+  // ── Voz ─────────────────────────────────────────────────────────────────────
+  // Nunca se corta una frase a la mitad: si llega otra indicación mientras se
+  // habla, queda en espera (solo la más reciente) y se dice al terminar. La
+  // simulación se detiene mientras habla (ver iniciarSimulacion).
+  const vozActivaRef = useRef(vozActiva);
+  const hablandoRef = useRef(false);
+  const pendienteRef = useRef<(() => string) | null>(null);
+  const seguroVozRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const posIdxRef = useRef(0);
+
+  const decir = useCallback((texto: string) => {
+    if (!("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    const utt = new SpeechSynthesisUtterance(texto);
+    utt.lang = "es-PE";
+    const voz = vozEspanol(synth.getVoices());
+    if (voz) utt.voice = voz;
+    utt.rate = 0.95;
+    utt.pitch = 1;
+
+    const terminar = () => {
+      if (seguroVozRef.current) clearTimeout(seguroVozRef.current);
+      seguroVozRef.current = null;
+      if (!hablandoRef.current) return;
+      hablandoRef.current = false;
+      const siguiente = pendienteRef.current;
+      pendienteRef.current = null;
+      if (siguiente && vozActivaRef.current) {
+        hablandoRef.current = true;
+        decirRef.current(siguiente());
+      }
+    };
+    utt.onend = terminar;
+    utt.onerror = terminar;
+    // Algunos navegadores no disparan onend: liberar la cola por tiempo estimado
+    if (seguroVozRef.current) clearTimeout(seguroVozRef.current);
+    seguroVozRef.current = setTimeout(terminar, 2500 + texto.length * 110);
+
+    hablandoRef.current = true;
+    synth.speak(utt);
+  }, []);
+  const decirRef = useRef(decir);
+
+  /** Encola una frase; `texto` se evalúa al momento de decirla (distancias frescas). */
   const hablar = useCallback(
-    (texto: string) => {
-      if (!vozActiva) return;
+    (texto: string | (() => string)) => {
+      if (!vozActivaRef.current || !("speechSynthesis" in window)) return;
+      const crear = typeof texto === "string" ? () => texto : texto;
       try {
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-          const utt = new SpeechSynthesisUtterance(texto);
-          utt.lang = "es-PE";
-          utt.rate = 1.05;
-          utt.pitch = 1;
-          window.speechSynthesis.speak(utt);
-        }
+        if (hablandoRef.current) pendienteRef.current = crear;
+        else decir(crear());
       } catch {
-        /* no crítico */
+        hablandoRef.current = false; /* no crítico */
       }
     },
-    [vozActiva],
+    [decir],
   );
+
+  const callarVoz = useCallback(() => {
+    pendienteRef.current = null;
+    hablandoRef.current = false;
+    if (seguroVozRef.current) clearTimeout(seguroVozRef.current);
+    seguroVozRef.current = null;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }, []);
+
+  useEffect(() => {
+    vozActivaRef.current = vozActiva;
+    if (!vozActiva) callarVoz();
+  }, [vozActiva, callarVoz]);
+
+  // Las voces del sistema cargan de forma asíncrona en Chrome/Android
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.getVoices();
+  }, []);
 
   // ── Montar el mapa ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -900,7 +986,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     return () => {
       activo = false;
       cancelAnimationFrame(animFrameRef.current);
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      callarVoz();
       markersRef.current = [];
       avatarRef.current = null;
       if (mapaRef.current) {
@@ -908,7 +994,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         mapaRef.current = null;
       }
     };
-  }, [stops]);
+  }, [stops, callarVoz]);
 
   // ── Progreso derivado de la posición del avatar ────────────────────────────
   const enCurso = simulando || llegada;
@@ -959,17 +1045,9 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     ultimoAnunciadoRef.current = pasoIdx;
     const prox = ruta.pasos[pasoIdx + 1];
     if (!prox) return;
-    const dist = ruta.acum[prox.polyIdx] - ruta.acum[posIdx];
-    const accion = accionPaso(prox, totalParadas);
-    const calle = prox.calle && prox.tipo !== "arrive" ? ` en ${prox.calle}` : "";
-    const prefijo =
-      dist > 30
-        ? `En ${formatDist(dist).replace(" m", " metros").replace(" km", " kilómetros")}, `
-        : "";
-    hablar(
-      `${prefijo}${prefijo ? accion.charAt(0).toLowerCase() + accion.slice(1) : accion}${calle}`,
-    );
-  }, [simulando, ruta, pasoIdx, posIdx, totalParadas, hablar]);
+    // La distancia se calcula al momento de hablar, no al encolar
+    hablar(() => fraseManiobra(prox, distanciaHasta(ruta, prox, posIdxRef.current), totalParadas));
+  }, [simulando, ruta, pasoIdx, totalParadas, hablar]);
 
   // ── Mantener visible la indicación actual en la lista ─────────────────────
   useEffect(() => {
@@ -984,8 +1062,17 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     const mapa = mapaRef.current;
     if (!r || !avatarRef.current || !mapa) return;
     cancelAnimationFrame(animFrameRef.current);
+    callarVoz();
 
-    ultimoAnunciadoRef.current = -1;
+    // Se anuncia aquí (dentro del toque del usuario): iOS solo permite voz tras un gesto
+    ultimoAnunciadoRef.current = 0;
+    posIdxRef.current = 0;
+    const primero = r.pasos[1];
+    hablar(
+      primero
+        ? `Iniciando recorrido. ${fraseManiobra(primero, distanciaHasta(r, primero, 0), totalParadas)}`
+        : "Iniciando recorrido",
+    );
     seguirRef.current = true;
     setSeguir(true);
     setSimulando(true);
@@ -1005,6 +1092,11 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
     const frame = () => {
       if (!avatarRef.current || !mapaRef.current) return;
+      // Mientras la voz habla el repartidor espera: así cada indicación se oye completa
+      if (vozActivaRef.current && hablandoRef.current) {
+        animFrameRef.current = requestAnimationFrame(frame);
+        return;
+      }
       frameCount++;
 
       if (frameCount % FRAMES_POR_PUNTO === 0) {
@@ -1022,6 +1114,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
 
         avatarRef.current.setLatLng(r.puntos[idx]);
         rotarAvatar(avatarRef.current, calcularBearing(r.puntos[idx], r.puntos[idx + 1]));
+        posIdxRef.current = idx;
         setPosIdx(idx);
 
         // El mapa sigue al avatar mientras el usuario no lo haya movido
@@ -1045,8 +1138,9 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     setSimulando(false);
     setLlegada(false);
     setPosIdx(0);
+    posIdxRef.current = 0;
     if (avatarRef.current && ruta) avatarRef.current.setLatLng(ruta.puntos[0]);
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    callarVoz();
   }
 
   function ajustarRuta() {
