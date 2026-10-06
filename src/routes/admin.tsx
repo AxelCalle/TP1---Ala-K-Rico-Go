@@ -3693,7 +3693,11 @@ function SeccionAlertas() {
       {alertas.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           <Bell className="mx-auto mb-3 h-8 w-8 opacity-30" aria-hidden="true" />
-          No hay alertas registradas.
+          <p className="font-semibold text-foreground">No hay alertas</p>
+          <p className="mx-auto mt-1 max-w-sm leading-relaxed">
+            Todas las entregas recientes tienen calificación de 3 o más. Aquí aparecerán las
+            entregas con calificación baja (demoras o incidencias) para que puedas revisarlas.
+          </p>
         </div>
       ) : (
         <ul className="space-y-2">
