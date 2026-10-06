@@ -20,6 +20,7 @@ import {
   Minimize2,
   Minus,
   Navigation2,
+  Play,
   Plus,
   RotateCw,
   Scan,
@@ -559,8 +560,12 @@ interface Paso {
   /** metros hasta la siguiente maniobra */
   distancia: number;
   coord: Coords;
-  /** índice del tramo (leg): va de la parada `tramo` a la `tramo + 1` */
+  /** índice del tramo (leg) dentro de esta ruta calculada */
   tramo: number;
+  /** índice absoluto (en `stops`) de la parada a la que lleva este tramo */
+  parada: number;
+  /** primer tramo desde el local (no desde un recálculo en camino) */
+  esSalida: boolean;
   /** índice del punto de la polilínea donde ocurre la maniobra */
   polyIdx: number;
 }
@@ -570,13 +575,22 @@ interface RutaCalculada {
   /** distancia acumulada (m) hasta cada punto de la polilínea */
   acum: number[];
   pasos: Paso[];
-  /** polyIdx de llegada a cada parada k ≥ 1 (posición k - 1) */
+  /** polyIdx de llegada a cada parada, empezando por `paradaInicial` */
   llegadaParada: number[];
+  /** índice en `stops` de la primera parada de esta ruta (1, o más tras recalcular) */
+  paradaInicial: number;
   distancia: number;
   duracion: number;
 }
 
-async function obtenerRutaMulti(coords: Coords[]): Promise<RutaCalculada | null> {
+/**
+ * Ruta por calles entre `coords` (OSRM). `paradaInicial` indica a qué parada
+ * de `stops` lleva el primer tramo: 1 desde el local, k al recalcular en camino.
+ */
+async function obtenerRutaMulti(
+  coords: Coords[],
+  paradaInicial = 1,
+): Promise<RutaCalculada | null> {
   if (coords.length < 2) return null;
   try {
     const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
@@ -630,6 +644,8 @@ async function obtenerRutaMulti(coords: Coords[]): Promise<RutaCalculada | null>
           distancia: Math.round(step.distance ?? 0),
           coord,
           tramo,
+          parada: paradaInicial + tramo,
+          esSalida: tramo === 0 && paradaInicial === 1,
           polyIdx,
         });
       }
@@ -641,6 +657,7 @@ async function obtenerRutaMulti(coords: Coords[]): Promise<RutaCalculada | null>
       acum,
       pasos,
       llegadaParada,
+      paradaInicial,
       distancia: ruta.distance ?? acum[acum.length - 1],
       duracion: ruta.duration ?? 0,
     };
@@ -668,11 +685,11 @@ function accionPaso(p: Paso, totalParadas: number): string {
   if (p.modificador === "uturn" && p.tipo !== "arrive") return "Da la vuelta en U";
   switch (p.tipo) {
     case "depart":
-      return p.tramo === 0 ? "Sal del punto de partida" : `Continúa hacia la parada ${p.tramo + 1}`;
+      return p.esSalida ? "Sal del punto de partida" : `Continúa hacia la parada ${p.parada}`;
     case "arrive":
-      return p.tramo + 1 >= totalParadas - 1
+      return p.parada >= totalParadas - 1
         ? "Llegada al destino final"
-        : `Llegada a la parada ${p.tramo + 1}`;
+        : `Llegada a la parada ${p.parada}`;
     case "turn":
     case "end of road":
       return p.modificador === "straight" ? "Continúa recto" : `Gira ${dir}`.trim();
@@ -704,6 +721,50 @@ function accionPaso(p: Paso, totalParadas: number): string {
 /** Metros desde el punto `posIdx` de la polilínea hasta la maniobra `paso`. */
 function distanciaHasta(ruta: RutaCalculada, paso: Paso, posIdx: number): number {
   return Math.max(0, ruta.acum[paso.polyIdx] - ruta.acum[posIdx]);
+}
+
+/**
+ * Ajusta una posición GPS a la ruta: devuelve el punto más cercano sobre la
+ * polilínea, su índice y la distancia (m). Con `desde`, busca solo cerca de la
+ * posición anterior (algo hacia atrás por el ruido del GPS, bastante hacia
+ * adelante) para que una calle que se recorre dos veces no haga saltar el avance.
+ */
+function ajustarARuta(
+  ruta: RutaCalculada,
+  pos: Coords,
+  desde: number | null,
+): { idx: number; dist: number; punto: Coords } {
+  const pts = ruta.puntos;
+  const ini = desde === null ? 0 : Math.max(0, desde - 30);
+  const fin = desde === null ? pts.length - 1 : Math.min(pts.length - 1, desde + 600);
+  // Proyección equirectangular local en metros (precisa a escala de ciudad)
+  const kLat = 111320;
+  const kLng = 111320 * Math.cos((pos[0] * Math.PI) / 180);
+  const aXY = (c: Coords): [number, number] => [(c[1] - pos[1]) * kLng, (c[0] - pos[0]) * kLat];
+
+  let mejor = { idx: ini, dist: Infinity, punto: pts[ini] };
+  for (let i = ini; i < Math.max(fin, ini + 1) && i < pts.length - 1; i++) {
+    const [ax, ay] = aXY(pts[i]);
+    const [bx, by] = aXY(pts[i + 1]);
+    const dx = bx - ax;
+    const dy = by - ay;
+    const largo2 = dx * dx + dy * dy;
+    const t = largo2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / largo2));
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    const dist = Math.hypot(px, py);
+    if (dist < mejor.dist) {
+      mejor = {
+        idx: t > 0.5 ? i + 1 : i,
+        dist,
+        punto: [
+          pts[i][0] + t * (pts[i + 1][0] - pts[i][0]),
+          pts[i][1] + t * (pts[i + 1][1] - pts[i][1]),
+        ],
+      };
+    }
+  }
+  return mejor;
 }
 
 /** Frase hablada: "En 300 metros, gira a la derecha en Av. Perú". */
@@ -777,20 +838,32 @@ interface MultiProps {
   /** px o cualquier valor CSS de altura (p.ej. "clamp(420px, 72svh, 760px)") */
   altura?: number | string;
   className?: string;
+  /** Se llama con cada posición GPS real (modo "Navegar con GPS"). */
+  onUbicacion?: (lat: number, lng: number, precisionM: number) => void;
 }
 
 type PestanaPanel = "indicaciones" | "paradas";
 
+/** "gps": posición real del teléfono. "simulacion": recorrido animado (demostraciones). */
+type ModoNavegacion = "gps" | "simulacion";
+
+type EstadoGps =
+  | { estado: "buscando"; mensaje?: string }
+  | { estado: "ok" | "fuera" | "recalculando"; precision: number }
+  | { estado: "error"; mensaje: string };
+
 /**
  * Mapa de ruta multi-parada con Leaflet.
  * - Pins numerados con estado (origen, pendiente, siguiente, completada, destino).
- * - Ruta real por calles (OSRM) y avatar animado que la recorre.
+ * - Ruta real por calles (OSRM). Dos modos: navegación con el GPS del
+ *   teléfono (ajuste a la ruta + recálculo si te desvías) o simulación
+ *   animada para demostraciones.
  * - Navegación tipo app: maniobra actual con icono + distancia, "después",
  *   resumen restante y lista de indicaciones/paradas.
  * - Desktop: panel lateral. Móvil/tablet: bottom sheet sobre el mapa.
  * - stops[0] es siempre el depot (punto de origen).
  */
-export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProps) {
+export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion }: MultiProps) {
   const raizRef = useRef<HTMLDivElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
@@ -802,10 +875,29 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const seguirRef = useRef(true);
   const ultimoAnunciadoRef = useRef(-1);
   const listaRef = useRef<HTMLOListElement>(null);
+  const rutaLayersRef = useRef<any[]>([]);
+  const rutaRef = useRef<RutaCalculada | null>(null);
+  const rutaOriginalRef = useRef<RutaCalculada | null>(null);
+  const stopsRef = useRef(stops);
+  stopsRef.current = stops;
+  const onUbicacionRef = useRef(onUbicacion);
+  onUbicacionRef.current = onUbicacion;
+  // GPS
+  const modoRef = useRef<ModoNavegacion | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const precisionCirculoRef = useRef<any>(null);
+  const primerFixRef = useRef(true);
+  const fueraDeRutaRef = useRef(0);
+  const ultimoRecalculoRef = useRef(0);
+  const wakeLockRef = useRef<any>(null);
+  /** distancia (m) a la que se anunció cada maniobra, para el recordatorio cercano */
+  const anunciadaARef = useRef(new Map<number, number>());
 
   const [estado, setEstado] = useState<Estado>("cargando");
   const [ruta, setRuta] = useState<RutaCalculada | null>(null);
-  const [simulando, setSimulando] = useState(false);
+  const [navegando, setNavegando] = useState(false);
+  const [modo, setModo] = useState<ModoNavegacion | null>(null);
+  const [gps, setGps] = useState<EstadoGps | null>(null);
   const [llegada, setLlegada] = useState(false);
   const [posIdx, setPosIdx] = useState(0);
   const [seguir, setSeguir] = useState(true);
@@ -901,7 +993,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     let activo = true;
     setEstado("cargando");
     setRuta(null);
-    setSimulando(false);
+    setNavegando(false);
     setLlegada(false);
     setPosIdx(0);
     setSeleccion(null);
@@ -955,8 +1047,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       if (!activo) return;
 
       if (calculada) {
-        L.polyline(calculada.puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa);
-        L.polyline(calculada.puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa);
+        dibujarRuta(calculada);
+        rutaOriginalRef.current = calculada;
         boundsRef.current = L.latLngBounds(calculada.puntos).pad(0.12);
 
         const avatar = L.marker(calculada.puntos[0], {
@@ -966,6 +1058,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         }).addTo(mapa);
         avatarRef.current = avatar;
 
+        rutaRef.current = calculada;
         setRuta(calculada);
         setEstado("listo");
       } else {
@@ -987,7 +1080,10 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       activo = false;
       cancelAnimationFrame(animFrameRef.current);
       callarVoz();
+      liberarGps();
       markersRef.current = [];
+      rutaLayersRef.current = [];
+      precisionCirculoRef.current = null;
       avatarRef.current = null;
       if (mapaRef.current) {
         mapaRef.current.remove();
@@ -997,7 +1093,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   }, [stops, callarVoz]);
 
   // ── Progreso derivado de la posición del avatar ────────────────────────────
-  const enCurso = simulando || llegada;
+  const enCurso = navegando || llegada;
   const totalParadas = stops.length;
   let pasoIdx = 0;
   if (ruta && enCurso) {
@@ -1006,8 +1102,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
       else break;
     }
   }
-  const proximo = ruta && simulando ? (ruta.pasos[pasoIdx + 1] ?? null) : null;
-  const despues = ruta && simulando ? (ruta.pasos[pasoIdx + 2] ?? null) : null;
+  const proximo = ruta && navegando ? (ruta.pasos[pasoIdx + 1] ?? null) : null;
+  const despues = ruta && navegando ? (ruta.pasos[pasoIdx + 2] ?? null) : null;
   const distProximo = ruta && proximo ? ruta.acum[proximo.polyIdx] - ruta.acum[posIdx] : 0;
   const restanteM = ruta
     ? ruta.distancia * (1 - ruta.acum[posIdx] / ruta.acum[ruta.acum.length - 1])
@@ -1015,17 +1111,20 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const restanteMin = ruta
     ? Math.max(llegada ? 0 : 1, Math.round((ruta.duracion * (restanteM / ruta.distancia)) / 60))
     : 0;
-  const completadas = ruta && enCurso ? ruta.llegadaParada.filter((pi) => pi <= posIdx).length : 0;
+  const completadas =
+    ruta && enCurso
+      ? ruta.paradaInicial - 1 + ruta.llegadaParada.filter((pi) => pi <= posIdx).length
+      : 0;
   const paradaSiguiente = Math.min(completadas + 1, totalParadas - 1);
 
   const varianteParada = useCallback(
     (k: number): Variante => {
       if (k === 0) return "origin";
       if (enCurso && k <= completadas) return "done";
-      if (simulando && k === completadas + 1) return "current";
+      if (navegando && k === completadas + 1) return "current";
       return k === totalParadas - 1 ? "dest" : "pending";
     },
-    [enCurso, simulando, completadas, totalParadas],
+    [enCurso, navegando, completadas, totalParadas],
   );
 
   // ── Actualizar pins según estado / selección ───────────────────────────────
@@ -1040,29 +1139,45 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   }, [varianteParada, seleccion, stops, estado]);
 
   // ── Voz: anunciar la próxima maniobra cada vez que se supera una ──────────
+  const gpsConFix = modo !== "gps" || gps?.estado === "ok";
   useEffect(() => {
-    if (!simulando || !ruta || pasoIdx === ultimoAnunciadoRef.current) return;
+    if (!navegando || !ruta || !gpsConFix || pasoIdx === ultimoAnunciadoRef.current) return;
     ultimoAnunciadoRef.current = pasoIdx;
-    const prox = ruta.pasos[pasoIdx + 1];
+    const k = pasoIdx + 1;
+    const prox = ruta.pasos[k];
     if (!prox) return;
+    anunciadaARef.current.set(k, distanciaHasta(ruta, prox, posIdxRef.current));
     // La distancia se calcula al momento de hablar, no al encolar
     hablar(() => fraseManiobra(prox, distanciaHasta(ruta, prox, posIdxRef.current), totalParadas));
-  }, [simulando, ruta, pasoIdx, totalParadas, hablar]);
+  }, [navegando, ruta, gpsConFix, pasoIdx, totalParadas, hablar]);
+
+  // GPS: si la maniobra se anunció lejos, recordarla al acercarse (~100 m)
+  useEffect(() => {
+    if (modo !== "gps" || !navegando || !ruta || !proximo) return;
+    const k = pasoIdx + 1;
+    const lejos = anunciadaARef.current.get(k);
+    if (lejos === undefined || lejos < 250 || distProximo > 110 || distProximo < 20) return;
+    anunciadaARef.current.set(k, 0);
+    hablar(() =>
+      fraseManiobra(proximo, distanciaHasta(ruta, proximo, posIdxRef.current), totalParadas),
+    );
+  }, [modo, navegando, ruta, proximo, pasoIdx, distProximo, totalParadas, hablar]);
 
   // ── Mantener visible la indicación actual en la lista ─────────────────────
   useEffect(() => {
-    if (!simulando || pestana !== "indicaciones") return;
+    if (!navegando || pestana !== "indicaciones") return;
     const el = listaRef.current?.querySelector<HTMLElement>("[data-actual='true']");
     el?.scrollIntoView({ block: "nearest" });
-  }, [pasoIdx, simulando, pestana]);
+  }, [pasoIdx, navegando, pestana]);
 
   // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
   function iniciarSimulacion() {
-    const r = ruta;
     const mapa = mapaRef.current;
-    if (!r || !avatarRef.current || !mapa) return;
-    cancelAnimationFrame(animFrameRef.current);
-    callarVoz();
+    if (!rutaOriginalRef.current || !avatarRef.current || !mapa) return;
+    detenerNavegacion();
+    const r = rutaOriginalRef.current;
+    modoRef.current = "simulacion";
+    setModo("simulacion");
 
     // Se anuncia aquí (dentro del toque del usuario): iOS solo permite voz tras un gesto
     ultimoAnunciadoRef.current = 0;
@@ -1075,7 +1190,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     );
     seguirRef.current = true;
     setSeguir(true);
-    setSimulando(true);
+    setNavegando(true);
     setLlegada(false);
     setPosIdx(0);
     setSeleccion(null);
@@ -1106,7 +1221,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
           idx = r.puntos.length - 1;
           avatarRef.current.setLatLng(r.puntos[idx]);
           setPosIdx(idx);
-          setSimulando(false);
+          setNavegando(false);
           setLlegada(true);
           hablar("Has llegado al destino final");
           return;
@@ -1133,14 +1248,217 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     animFrameRef.current = requestAnimationFrame(frame);
   }
 
-  function detenerSimulacion() {
+  /** Detiene la navegación (GPS o simulación) y deja la ruta original como al inicio. */
+  function detenerNavegacion(conservarErrorGps = false) {
     cancelAnimationFrame(animFrameRef.current);
-    setSimulando(false);
+    liberarGps();
+    callarVoz();
+    modoRef.current = null;
+    setModo(null);
+    if (!conservarErrorGps) setGps(null);
+    setNavegando(false);
     setLlegada(false);
     setPosIdx(0);
     posIdxRef.current = 0;
-    if (avatarRef.current && ruta) avatarRef.current.setLatLng(ruta.puntos[0]);
-    callarVoz();
+    anunciadaARef.current.clear();
+    const original = rutaOriginalRef.current;
+    if (original && rutaRef.current !== original) {
+      dibujarRuta(original);
+      rutaRef.current = original;
+      setRuta(original);
+    }
+    if (avatarRef.current && original) {
+      avatarRef.current.setLatLng(original.puntos[0]);
+      rotarAvatar(avatarRef.current, 0);
+    }
+  }
+
+  /** Dibuja (o reemplaza) la polilínea de la ruta. */
+  function dibujarRuta(r: RutaCalculada) {
+    const L = leafletRef.current;
+    const mapa = mapaRef.current;
+    if (!L || !mapa) return;
+    rutaLayersRef.current.forEach((capa) => capa.remove());
+    rutaLayersRef.current = [
+      L.polyline(r.puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa),
+      L.polyline(r.puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa),
+    ];
+  }
+
+  /** Corta el seguimiento GPS, el wake lock y el círculo de precisión. */
+  function liberarGps() {
+    if (watchIdRef.current !== null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    watchIdRef.current = null;
+    wakeLockRef.current?.release?.().catch(() => {});
+    wakeLockRef.current = null;
+    precisionCirculoRef.current?.remove();
+    precisionCirculoRef.current = null;
+  }
+
+  async function pedirPantallaEncendida() {
+    try {
+      const wl = (navigator as any).wakeLock;
+      if (wl) wakeLockRef.current = await wl.request("screen");
+    } catch {
+      /* no soportado o denegado: no es crítico */
+    }
+  }
+
+  // El wake lock se pierde al cambiar de app: se pide de nuevo al volver
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && modoRef.current === "gps") {
+        pedirPantallaEncendida();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  // ── Navegación con el GPS del teléfono ─────────────────────────────────────
+  function iniciarGps() {
+    if (!rutaOriginalRef.current || !avatarRef.current || !mapaRef.current) return;
+    if (!("geolocation" in navigator)) {
+      setGps({ estado: "error", mensaje: "Este navegador no permite usar el GPS." });
+      return;
+    }
+    if (!window.isSecureContext) {
+      setGps({ estado: "error", mensaje: "El GPS requiere abrir la app con HTTPS." });
+      return;
+    }
+    detenerNavegacion();
+    // Dentro del toque del usuario: desbloquea la voz en iOS
+    hablar("Iniciando navegación");
+
+    modoRef.current = "gps";
+    setModo("gps");
+    setGps({ estado: "buscando" });
+    primerFixRef.current = true;
+    fueraDeRutaRef.current = 0;
+    ultimoAnunciadoRef.current = -1;
+    seguirRef.current = true;
+    setSeguir(true);
+    setNavegando(true);
+    setSeleccion(null);
+    setPestana("indicaciones");
+
+    watchIdRef.current = navigator.geolocation.watchPosition(onPosicionGps, onErrorGps, {
+      enableHighAccuracy: true,
+      maximumAge: 1000,
+      timeout: 20000,
+    });
+    pedirPantallaEncendida();
+  }
+
+  function onErrorGps(e: GeolocationPositionError) {
+    if (modoRef.current !== "gps") return;
+    if (e.code === e.PERMISSION_DENIED) {
+      detenerNavegacion(true);
+      setGps({
+        estado: "error",
+        mensaje:
+          "Permiso de ubicación denegado. Actívalo para este sitio en la configuración del navegador.",
+      });
+      return;
+    }
+    // Sin señal o timeout: se sigue escuchando
+    setGps({ estado: "buscando", mensaje: "Señal GPS débil, buscando…" });
+  }
+
+  function onPosicionGps(p: GeolocationPosition) {
+    const r = rutaRef.current;
+    const L = leafletRef.current;
+    const mapa = mapaRef.current;
+    const avatar = avatarRef.current;
+    if (modoRef.current !== "gps" || !r || !L || !mapa || !avatar) return;
+
+    const pos: Coords = [p.coords.latitude, p.coords.longitude];
+    const precision = Math.round(p.coords.accuracy ?? 0);
+    onUbicacionRef.current?.(pos[0], pos[1], precision);
+
+    if (!precisionCirculoRef.current) {
+      precisionCirculoRef.current = L.circle(pos, {
+        radius: precision,
+        color: "#2563eb",
+        weight: 1,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.12,
+        interactive: false,
+      }).addTo(mapa);
+    } else {
+      precisionCirculoRef.current.setLatLng(pos);
+      precisionCirculoRef.current.setRadius(precision);
+    }
+
+    // Primer fix: buscar en toda la ruta; después, cerca de la posición anterior
+    const ajuste = ajustarARuta(r, pos, primerFixRef.current ? null : posIdxRef.current);
+    primerFixRef.current = false;
+    const tolerancia = Math.min(80, Math.max(40, precision));
+
+    if (ajuste.dist <= tolerancia) {
+      fueraDeRutaRef.current = 0;
+      avatar.setLatLng(ajuste.punto);
+      const rumbo =
+        p.coords.heading != null && !Number.isNaN(p.coords.heading) && (p.coords.speed ?? 0) > 1
+          ? p.coords.heading
+          : calcularBearing(
+              r.puntos[ajuste.idx],
+              r.puntos[Math.min(ajuste.idx + 1, r.puntos.length - 1)],
+            );
+      rotarAvatar(avatar, rumbo);
+      posIdxRef.current = ajuste.idx;
+      setPosIdx(ajuste.idx);
+      setGps({ estado: "ok", precision });
+
+      // Llegada: a menos de 25 m del final de la ruta (la última parada)
+      if (r.acum[r.acum.length - 1] - r.acum[ajuste.idx] < 25) {
+        liberarGps();
+        setNavegando(false);
+        setLlegada(true);
+        hablar("Has llegado al destino final");
+        return;
+      }
+    } else {
+      // Fuera de la ruta: se muestra la posición real y se recalcula si persiste
+      avatar.setLatLng(pos);
+      fueraDeRutaRef.current++;
+      setGps({ estado: "fuera", precision });
+      if (fueraDeRutaRef.current >= 3 && Date.now() - ultimoRecalculoRef.current > 20000) {
+        recalcularDesde(pos);
+      }
+    }
+
+    if (seguirRef.current) {
+      mapa.setView(avatar.getLatLng(), Math.max(mapa.getZoom(), 17), { animate: true });
+    }
+  }
+
+  /** Nueva ruta por calles desde la posición actual hacia las paradas que faltan. */
+  async function recalcularDesde(pos: Coords) {
+    const r = rutaRef.current;
+    if (!r) return;
+    ultimoRecalculoRef.current = Date.now();
+    setGps((g) => ({ estado: "recalculando", precision: g && "precision" in g ? g.precision : 0 }));
+
+    const hechas =
+      r.paradaInicial - 1 + r.llegadaParada.filter((pi) => pi <= posIdxRef.current).length;
+    const siguiente = Math.min(hechas + 1, stopsRef.current.length - 1);
+    const destinos = stopsRef.current.slice(siguiente).map((s) => s.coords);
+    const nueva = await obtenerRutaMulti([pos, ...destinos], siguiente);
+    if (!nueva || modoRef.current !== "gps") return;
+
+    dibujarRuta(nueva);
+    rutaRef.current = nueva;
+    setRuta(nueva);
+    posIdxRef.current = 0;
+    setPosIdx(0);
+    fueraDeRutaRef.current = 0;
+    ultimoAnunciadoRef.current = -1;
+    anunciadaARef.current.clear();
+    setGps((g) => ({ estado: "ok", precision: g && "precision" in g ? g.precision : 0 }));
+    hablar("Ruta recalculada");
   }
 
   function ajustarRuta() {
@@ -1190,7 +1508,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
   const paradaSel = seleccion !== null ? stops[seleccion] : null;
   const calleProximo = proximo
     ? proximo.tipo === "arrive"
-      ? (stops[proximo.tramo + 1]?.sublabel ?? "")
+      ? (stops[proximo.parada]?.sublabel ?? "")
       : proximo.calle
     : "";
 
@@ -1206,8 +1524,45 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
     >
       {/* ── Mapa ── */}
       <div className="relative h-full min-w-0 flex-1">
+        {/* GPS: esperando la primera posición */}
+        {navegando && modo === "gps" && gps?.estado === "buscando" && (
+          <div
+            role="status"
+            className="absolute left-3 right-[4.25rem] z-1001 flex items-center gap-3 rounded-2xl bg-coal px-4 py-3 text-cream shadow-lg"
+            style={{ top }}
+          >
+            <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Obteniendo tu ubicación…</p>
+              <p className="text-xs text-cream/70">
+                {gps.mensaje ?? "Permite el acceso a la ubicación si el navegador lo pide."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* GPS: error (permiso denegado, sin soporte, sin HTTPS) */}
+        {gps?.estado === "error" && (
+          <div
+            role="alert"
+            className="absolute left-3 right-[4.25rem] z-1001 flex items-start gap-3 rounded-2xl bg-destructive px-4 py-3 text-white shadow-lg"
+            style={{ top }}
+          >
+            <MapPin className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+            <p className="min-w-0 flex-1 text-sm font-medium">{gps.mensaje}</p>
+            <button
+              type="button"
+              onClick={() => setGps(null)}
+              aria-label="Cerrar aviso de GPS"
+              className="-mr-2 -mt-1 grid h-9 min-h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
         {/* Maniobra actual (overlay superior) */}
-        {simulando && proximo && (
+        {navegando && proximo && (modo !== "gps" || (gps && gps.estado !== "buscando")) && (
           <div
             className="absolute left-3 right-[4.25rem] z-1001 overflow-hidden rounded-2xl bg-coal text-cream shadow-lg"
             style={{ top }}
@@ -1228,6 +1583,18 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                 )}
               </div>
             </div>
+            {modo === "gps" && (gps?.estado === "fuera" || gps?.estado === "recalculando") && (
+              <div className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-coal">
+                {gps.estado === "recalculando" ? (
+                  <>
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-coal border-t-transparent" />
+                    Recalculando ruta…
+                  </>
+                ) : (
+                  "Estás fuera de la ruta"
+                )}
+              </div>
+            )}
             {despues && (
               <div className="flex items-center gap-2 border-t border-white/10 bg-black/25 px-3 py-1.5 text-xs">
                 <span className="text-cream/65">Después</span>
@@ -1241,7 +1608,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         )}
         {/* Anuncio accesible: solo cambia con cada maniobra, no con la distancia */}
         <p className="sr-only" aria-live="polite">
-          {simulando && proximo ? `${accionPaso(proximo, totalParadas)} ${calleProximo}` : ""}
+          {navegando && proximo ? `${accionPaso(proximo, totalParadas)} ${calleProximo}` : ""}
           {llegada ? "Llegada al destino final. Todas las paradas completadas." : ""}
         </p>
 
@@ -1275,7 +1642,7 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
             top={top}
             onAjustar={ajustarRuta}
             onCentrar={ruta ? centrarRepartidor : undefined}
-            centrado={simulando && seguir}
+            centrado={navegando && seguir}
             pantallaCompleta={pantallaCompleta}
             onPantallaCompleta={() => setPantallaCompleta((v) => !v)}
           />
@@ -1323,10 +1690,13 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                       {formatDist(restanteM)}
                     </span>
                   </p>
-                  <p className="mt-1 text-xs font-medium text-muted-foreground">
-                    {llegada
-                      ? `${totalParadas - 1} de ${totalParadas - 1} paradas completadas`
-                      : `Parada ${paradaSiguiente} de ${totalParadas - 1}`}
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-muted-foreground">
+                    {modo && navegando && <BadgeModo modo={modo} gps={gps} />}
+                    <span>
+                      {llegada
+                        ? `${totalParadas - 1} de ${totalParadas - 1} paradas completadas`
+                        : `Parada ${paradaSiguiente} de ${totalParadas - 1}`}
+                    </span>
                   </p>
                 </>
               ) : (
@@ -1360,27 +1730,40 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                 )}
               </button>
             )}
-            {ruta &&
-              (simulando ? (
-                <button
-                  type="button"
-                  onClick={detenerSimulacion}
-                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-destructive px-4 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-                  Detener
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={iniciarSimulacion}
-                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Navigation2 className="h-4 w-4" aria-hidden="true" />
-                  {llegada ? "Reiniciar" : "Iniciar"}
-                </button>
-              ))}
+            {ruta && navegando && (
+              <button
+                type="button"
+                onClick={() => detenerNavegacion()}
+                className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-destructive px-4 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                Detener
+              </button>
+            )}
           </div>
+
+          {/* Inicio: navegación real con GPS o simulación (demostraciones) */}
+          {ruta && !navegando && (
+            <div className="grid shrink-0 grid-cols-[1.4fr_1fr] gap-2 px-4 pb-3 lg:pt-3">
+              <button
+                type="button"
+                onClick={iniciarGps}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full bg-accent px-3 text-sm font-semibold text-accent-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LocateFixed className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Navegar con GPS
+              </button>
+              <button
+                type="button"
+                onClick={iniciarSimulacion}
+                title="Recorrido animado para demostraciones"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full border border-border bg-card px-3 text-sm font-semibold transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Play className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {llegada && modo === "simulacion" ? "Repetir" : "Simular"}
+              </button>
+            </div>
+          )}
 
           {/* Parada seleccionada en el mapa */}
           {paradaSel && seleccion !== null && (
@@ -1547,17 +1930,15 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
                     );
                   })
                 : ruta.pasos.map((p, i) => {
-                    const pasado = simulando && i <= pasoIdx;
-                    const actual = simulando && i === pasoIdx + 1;
+                    const pasado = navegando && i <= pasoIdx;
+                    const actual = navegando && i === pasoIdx + 1;
                     const nuevoTramo = i === 0 || ruta.pasos[i - 1].tramo !== p.tramo;
                     return (
                       <li key={i} data-actual={actual ? "true" : undefined}>
                         {nuevoTramo && (
                           <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Hacia parada {p.tramo + 1}
-                            {stops[p.tramo + 1]?.sublabel
-                              ? ` · ${stops[p.tramo + 1].sublabel}`
-                              : ""}
+                            Hacia parada {p.parada}
+                            {stops[p.parada]?.sublabel ? ` · ${stops[p.parada].sublabel}` : ""}
                           </p>
                         )}
                         <div
@@ -1605,6 +1986,27 @@ export function MapaRutaMulti({ stops, altura = 400, className = "" }: MultiProp
         </section>
       )}
     </div>
+  );
+}
+
+/** Indica si se navega con el GPS real (y su precisión) o en simulación. */
+function BadgeModo({ modo, gps }: { modo: ModoNavegacion; gps: EstadoGps | null }) {
+  if (modo === "simulacion") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-foreground">
+        <Play className="h-3 w-3" aria-hidden="true" /> Simulación
+      </span>
+    );
+  }
+  const precision = gps && "precision" in gps ? gps.precision : null;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+      <span className="relative flex h-2 w-2" aria-hidden="true">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60 motion-reduce:animate-none" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
+      </span>
+      GPS en vivo{precision ? ` · ±${precision} m` : ""}
+    </span>
   );
 }
 
