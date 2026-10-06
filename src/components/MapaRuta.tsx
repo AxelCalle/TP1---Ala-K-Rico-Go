@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import {
   ArrowUp,
+  CheckCircle2,
   ArrowUpLeft,
   ArrowUpRight,
   CornerUpLeft,
@@ -831,6 +832,8 @@ export interface MultiStop {
   eta?: string;
   /** Enlace al detalle del pedido */
   href?: string;
+  /** Id del pedido de esta parada (para confirmar la entrega desde la ruta) */
+  pedidoId?: number;
 }
 
 interface MultiProps {
@@ -840,6 +843,11 @@ interface MultiProps {
   className?: string;
   /** Se llama con cada posición GPS real (modo "Navegar con GPS"). */
   onUbicacion?: (lat: number, lng: number, precisionM: number) => void;
+  /**
+   * Si se pasa, la navegación se detiene en cada parada hasta que el repartidor
+   * confirme la entrega (se llama con el índice de la parada en `stops`).
+   */
+  onEntregar?: (indiceParada: number) => Promise<void>;
 }
 
 type PestanaPanel = "indicaciones" | "paradas";
@@ -863,7 +871,13 @@ type EstadoGps =
  * - Desktop: panel lateral. Móvil/tablet: bottom sheet sobre el mapa.
  * - stops[0] es siempre el depot (punto de origen).
  */
-export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion }: MultiProps) {
+export function MapaRutaMulti({
+  stops,
+  altura = 400,
+  className = "",
+  onUbicacion,
+  onEntregar,
+}: MultiProps) {
   const raizRef = useRef<HTMLDivElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
@@ -898,6 +912,14 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
   const [navegando, setNavegando] = useState(false);
   const [modo, setModo] = useState<ModoNavegacion | null>(null);
   const [gps, setGps] = useState<EstadoGps | null>(null);
+  // Confirmación de entrega en cada parada
+  const onEntregarRef = useRef(onEntregar);
+  onEntregarRef.current = onEntregar;
+  const esperandoRef = useRef<number | null>(null);
+  const entregadasRef = useRef(new Set<number>());
+  const [esperando, setEsperando] = useState<number | null>(null);
+  const [entregando, setEntregando] = useState(false);
+  const [errorEntrega, setErrorEntrega] = useState<string | null>(null);
   const [llegada, setLlegada] = useState(false);
   const [posIdx, setPosIdx] = useState(0);
   const [seguir, setSeguir] = useState(true);
@@ -997,6 +1019,9 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
     setLlegada(false);
     setPosIdx(0);
     setSeleccion(null);
+    esperandoRef.current = null;
+    entregadasRef.current = new Set();
+    setEsperando(null);
     cancelAnimationFrame(animFrameRef.current);
 
     async function montar() {
@@ -1120,11 +1145,14 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
   const varianteParada = useCallback(
     (k: number): Variante => {
       if (k === 0) return "origin";
+      if (entregadasRef.current.has(k)) return "done";
       if (enCurso && k <= completadas) return "done";
       if (navegando && k === completadas + 1) return "current";
       return k === totalParadas - 1 ? "dest" : "pending";
     },
-    [enCurso, navegando, completadas, totalParadas],
+    // esperando: re-evalúa tras confirmar una entrega (entregadasRef)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enCurso, navegando, completadas, totalParadas, esperando],
   );
 
   // ── Actualizar pins según estado / selección ───────────────────────────────
@@ -1207,8 +1235,8 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
 
     const frame = () => {
       if (!avatarRef.current || !mapaRef.current) return;
-      // Mientras la voz habla el repartidor espera: así cada indicación se oye completa
-      if (vozActivaRef.current && hablandoRef.current) {
+      // Espera mientras la voz habla (indicación completa) o mientras se confirma una entrega
+      if ((vozActivaRef.current && hablandoRef.current) || esperandoRef.current !== null) {
         animFrameRef.current = requestAnimationFrame(frame);
         return;
       }
@@ -1216,6 +1244,16 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
 
       if (frameCount % FRAMES_POR_PUNTO === 0) {
         idx++;
+
+        // Llegó a una parada: se detiene hasta que el repartidor confirme la entrega
+        if (revisarLlegadaParada(r, Math.min(idx, r.puntos.length - 1))) {
+          idx = Math.min(idx, r.puntos.length - 1);
+          avatarRef.current.setLatLng(r.puntos[idx]);
+          posIdxRef.current = idx;
+          setPosIdx(idx);
+          animFrameRef.current = requestAnimationFrame(frame);
+          return;
+        }
 
         if (idx >= r.puntos.length - 1) {
           idx = r.puntos.length - 1;
@@ -1251,6 +1289,9 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
   /** Detiene la navegación (GPS o simulación) y deja la ruta original como al inicio. */
   function detenerNavegacion(conservarErrorGps = false) {
     cancelAnimationFrame(animFrameRef.current);
+    esperandoRef.current = null;
+    setEsperando(null);
+    setErrorEntrega(null);
     liberarGps();
     callarVoz();
     modoRef.current = null;
@@ -1411,9 +1452,11 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
       posIdxRef.current = ajuste.idx;
       setPosIdx(ajuste.idx);
       setGps({ estado: "ok", precision });
+      revisarLlegadaParada(r, ajuste.idx);
 
       // Llegada: a menos de 25 m del final de la ruta (la última parada)
       if (r.acum[r.acum.length - 1] - r.acum[ajuste.idx] < 25) {
+        revisarLlegadaParada(r, r.puntos.length - 1);
         liberarGps();
         setNavegando(false);
         setLlegada(true);
@@ -1459,6 +1502,62 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
     anunciadaARef.current.clear();
     setGps((g) => ({ estado: "ok", precision: g && "precision" in g ? g.precision : 0 }));
     hablar("Ruta recalculada");
+  }
+
+  /**
+   * Si la posición `idx` ya pasó por la llegada de una parada no confirmada,
+   * abre la confirmación de entrega. Devuelve true si hay una entrega pendiente.
+   */
+  function revisarLlegadaParada(r: RutaCalculada, idx: number): boolean {
+    if (esperandoRef.current !== null) return true;
+    if (!onEntregarRef.current) return false;
+    for (let j = 0; j < r.llegadaParada.length; j++) {
+      const k = r.paradaInicial + j;
+      if (r.llegadaParada[j] <= idx && !entregadasRef.current.has(k)) {
+        esperandoRef.current = k;
+        setEsperando(k);
+        setErrorEntrega(null);
+        setPanelAbierto(false);
+        const s = stopsRef.current[k];
+        hablar(
+          `Llegaste a la parada ${k}${s?.sublabel ? `, ${s.sublabel}` : ""}. Confirma la entrega para continuar.`,
+        );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Marca la entrega (o la omite) y retoma la ruta hacia la siguiente parada. */
+  async function confirmarEntrega(marcar: boolean) {
+    const k = esperandoRef.current;
+    if (k === null) return;
+    if (marcar && onEntregarRef.current) {
+      setEntregando(true);
+      setErrorEntrega(null);
+      try {
+        await onEntregarRef.current(k);
+      } catch {
+        setErrorEntrega("No se pudo marcar la entrega. Revisa tu conexión e inténtalo de nuevo.");
+        setEntregando(false);
+        return;
+      }
+      setEntregando(false);
+    }
+    entregadasRef.current.add(k);
+    esperandoRef.current = null;
+    setEsperando(null);
+    const siguiente = stopsRef.current[k + 1];
+    const destino = siguiente ? (siguiente.sublabel ?? `parada ${k + 1}`) : null;
+    hablar(
+      marcar
+        ? destino
+          ? `Pedido entregado. Siguiente parada: ${destino}.`
+          : "Pedido entregado. Todas las entregas completadas."
+        : destino
+          ? `Continuando hacia ${destino}.`
+          : "Recorrido completado.",
+    );
   }
 
   function ajustarRuta() {
@@ -1561,51 +1660,104 @@ export function MapaRutaMulti({ stops, altura = 400, className = "", onUbicacion
           </div>
         )}
 
-        {/* Maniobra actual (overlay superior) */}
-        {navegando && proximo && (modo !== "gps" || (gps && gps.estado !== "buscando")) && (
+        {/* Llegada a una parada: confirmar la entrega antes de seguir */}
+        {esperando !== null && stops[esperando] && (
           <div
-            className="absolute left-3 right-[4.25rem] z-1001 overflow-hidden rounded-2xl bg-coal text-cream shadow-lg"
+            role="alertdialog"
+            aria-labelledby="titulo-llegada"
+            className="absolute left-3 right-[4.25rem] z-1002 rounded-2xl bg-card p-4 shadow-xl ring-2 ring-green-600"
             style={{ top }}
           >
-            <div className="flex items-center gap-3 px-3 py-3">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-                <IconoManiobra paso={proximo} className="h-7 w-7" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-2xl font-bold leading-none tabular-nums">
-                  {formatDist(distProximo)}
-                </p>
-                <p className="mt-1 text-[15px] font-semibold leading-tight">
-                  {accionPaso(proximo, totalParadas)}
-                </p>
-                {calleProximo && (
-                  <p className="break-words text-sm leading-snug text-cream/75">{calleProximo}</p>
-                )}
-              </div>
-            </div>
-            {modo === "gps" && (gps?.estado === "fuera" || gps?.estado === "recalculando") && (
-              <div className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-coal">
-                {gps.estado === "recalculando" ? (
-                  <>
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-coal border-t-transparent" />
-                    Recalculando ruta…
-                  </>
-                ) : (
-                  "Estás fuera de la ruta"
-                )}
-              </div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
+              Llegaste a la parada {esperando} de {totalParadas - 1}
+            </p>
+            <p id="titulo-llegada" className="mt-1 break-words text-lg font-semibold leading-tight">
+              {stops[esperando].sublabel ?? `Parada ${esperando}`}
+            </p>
+            {stops[esperando].direccion && (
+              <p className="mt-0.5 break-words text-sm text-muted-foreground">
+                {stops[esperando].direccion}
+              </p>
             )}
-            {despues && (
-              <div className="flex items-center gap-2 border-t border-white/10 bg-black/25 px-3 py-1.5 text-xs">
-                <span className="text-cream/65">Después</span>
-                <IconoManiobra paso={despues} className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 truncate font-medium">
-                  {accionPaso(despues, totalParadas)}
-                </span>
-              </div>
+            {errorEntrega && (
+              <p role="alert" className="mt-2 text-xs font-medium text-destructive">
+                {errorEntrega}
+              </p>
             )}
+            <button
+              type="button"
+              onClick={() => confirmarEntrega(true)}
+              disabled={entregando}
+              className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {entregando ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden="true" />
+              )}
+              {esperando >= totalParadas - 1
+                ? "Pedido entregado · finalizar"
+                : "Pedido entregado · ir a la siguiente"}
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmarEntrega(false)}
+              disabled={entregando}
+              className="mt-1 h-10 min-h-10 w-full rounded-lg text-sm font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Continuar sin marcar
+            </button>
           </div>
         )}
+
+        {/* Maniobra actual (overlay superior) */}
+        {navegando &&
+          proximo &&
+          esperando === null &&
+          (modo !== "gps" || (gps && gps.estado !== "buscando")) && (
+            <div
+              className="absolute left-3 right-[4.25rem] z-1001 overflow-hidden rounded-2xl bg-coal text-cream shadow-lg"
+              style={{ top }}
+            >
+              <div className="flex items-center gap-3 px-3 py-3">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
+                  <IconoManiobra paso={proximo} className="h-7 w-7" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-2xl font-bold leading-none tabular-nums">
+                    {formatDist(distProximo)}
+                  </p>
+                  <p className="mt-1 text-[15px] font-semibold leading-tight">
+                    {accionPaso(proximo, totalParadas)}
+                  </p>
+                  {calleProximo && (
+                    <p className="break-words text-sm leading-snug text-cream/75">{calleProximo}</p>
+                  )}
+                </div>
+              </div>
+              {modo === "gps" && (gps?.estado === "fuera" || gps?.estado === "recalculando") && (
+                <div className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-coal">
+                  {gps.estado === "recalculando" ? (
+                    <>
+                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-coal border-t-transparent" />
+                      Recalculando ruta…
+                    </>
+                  ) : (
+                    "Estás fuera de la ruta"
+                  )}
+                </div>
+              )}
+              {despues && (
+                <div className="flex items-center gap-2 border-t border-white/10 bg-black/25 px-3 py-1.5 text-xs">
+                  <span className="text-cream/65">Después</span>
+                  <IconoManiobra paso={despues} className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 truncate font-medium">
+                    {accionPaso(despues, totalParadas)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         {/* Anuncio accesible: solo cambia con cada maniobra, no con la distancia */}
         <p className="sr-only" aria-live="polite">
           {navegando && proximo ? `${accionPaso(proximo, totalParadas)} ${calleProximo}` : ""}

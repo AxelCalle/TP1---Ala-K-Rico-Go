@@ -114,11 +114,29 @@ function PaginaRepartidor() {
               estadoPedido: pedido ? (STATUS_ES[pedido.Estado] ?? pedido.Estado) : undefined,
               eta: idx === 0 ? "Salida" : `+${tspResult.etaAcumulado[idx]} min`,
               href: idx === 0 ? undefined : `/driver/${stop.id}`,
+              pedidoId: idx === 0 ? undefined : Number(stop.id),
             };
           })
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo se recalcula con una nueva ruta
     [tspResult],
+  );
+
+  // Confirmación de entrega desde la ruta: marca el pedido y lo saca de la lista de activos
+  const entregarDesdeRuta = useCallback(
+    async (indiceParada: number) => {
+      const id = mapaStops[indiceParada]?.pedidoId;
+      if (!id) return;
+      await api.cambiarEstadoPedido(id, "entregado");
+      setPedidos((prev) =>
+        prev.map((p) =>
+          p.Id_Pedido === id
+            ? { ...p, Estado: "entregado", Entrega_Pedido: new Date().toISOString() }
+            : p,
+        ),
+      );
+    },
+    [mapaStops],
   );
 
   if (!montado || !session) return null;
@@ -276,6 +294,7 @@ function PaginaRepartidor() {
                 stops={mapaStops}
                 altura="clamp(440px, 74svh, 780px)"
                 onUbicacion={enviarUbicacion}
+                onEntregar={entregarDesdeRuta}
               />
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <MapPin className="mt-px h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
