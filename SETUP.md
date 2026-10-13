@@ -142,6 +142,8 @@ Pasos: inicia sesión como repartidor → **Generar ruta óptima** → **Navegar
 - **Android (Chrome):** si lo rechazaste, candado de la barra de direcciones → Permisos → Ubicación → Permitir. La ubicación del teléfono debe estar activada.
 - **iPhone (Safari):** Ajustes → Privacidad y seguridad → Localización → activada, y Safari → «Al usar la app». En Safari: aA → Configuración del sitio web → Ubicación → Permitir.
 
+**Historial del recorrido:** mientras se usa «Navegar con GPS», cada posición enviada se guarda en `AKR_Recorrido` (además de la última posición en `AKR_Ubicaciones`). El administrador lo ve en **Repartidores → Recorrido**, eligiendo el día. Se conserva 90 días. En una base existente, ejecuta una vez `server/migraciones/001_akr_recorrido.sql` antes de desplegar el backend (es idempotente). Si no se ejecutó, el seguimiento en vivo sigue funcionando y solo el historial queda deshabilitado.
+
 Limitaciones: la web no recibe ubicación con la pantalla bloqueada o con otra app en primer plano (la app pide mantener la pantalla encendida mientras navegas). La frecuencia y la precisión de las lecturas las decide el sistema (en interiores o con poca señal pueden empeorar); el GPS de alta precisión consume más batería.
 
 ---

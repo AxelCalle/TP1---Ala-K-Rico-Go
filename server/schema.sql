@@ -84,6 +84,27 @@ CREATE TABLE AKR_Ubicaciones (
 );
 
 -- ---------------------------------------------------------------------------
+-- 5b. RECORRIDO GPS (historial de posiciones del repartidor)
+-- ---------------------------------------------------------------------------
+-- Un punto por cada posición GPS recibida durante "Navegar con GPS".
+-- AKR_Ubicaciones sigue guardando solo la última posición (seguimiento en vivo).
+-- Id_Pedido no tiene FK a propósito: es un registro histórico y no debe
+-- bloquear los scripts que vacían o renumeran AKR_Pedidos.
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'AKR_Recorrido')
+CREATE TABLE AKR_Recorrido (
+    Id_Punto        BIGINT          IDENTITY(1,1) PRIMARY KEY,
+    Id_Repartidor   INT             NOT NULL REFERENCES AKR_Usuarios(Id_Usuario),
+    Id_Pedido       INT             NULL,
+    Lat             FLOAT           NOT NULL,
+    Lng             FLOAT           NOT NULL,
+    Precision_M     FLOAT           NULL,
+    Fecha           DATETIME2(0)    NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_AKR_Recorrido_Repartidor_Fecha')
+CREATE INDEX IX_AKR_Recorrido_Repartidor_Fecha ON AKR_Recorrido (Id_Repartidor, Fecha);
+
+-- ---------------------------------------------------------------------------
 -- 6. NOTIFICACIONES
 -- ---------------------------------------------------------------------------
 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'AKR_Notificaciones')

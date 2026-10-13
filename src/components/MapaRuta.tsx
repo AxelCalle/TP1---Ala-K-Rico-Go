@@ -812,8 +812,11 @@ interface MultiProps {
   /** px o cualquier valor CSS de altura (p.ej. "clamp(420px, 72svh, 760px)") */
   altura?: number | string;
   className?: string;
-  /** Se llama con cada posición GPS real (modo "Navegar con GPS"). */
-  onUbicacion?: (lat: number, lng: number, precisionM: number) => void;
+  /**
+   * Se llama con cada posición GPS real útil (modo "Navegar con GPS").
+   * `paradaDestino`: índice en `stops` de la parada hacia la que se dirige.
+   */
+  onUbicacion?: (lat: number, lng: number, precisionM: number, paradaDestino: number) => void;
   /**
    * Si se pasa, la navegación se detiene en cada parada hasta que el repartidor
    * confirme la entrega (se llama con el índice de la parada en `stops`).
@@ -1438,7 +1441,13 @@ export function MapaRutaMulti({
     const { pos } = lectura;
     const precision = Math.round(lectura.precision);
     const util = lectura.precision <= PRECISION_UTIL_M;
-    if (util) onUbicacionRef.current?.(pos[0], pos[1], precision);
+    if (util) {
+      // Parada destino según el avance de la lectura anterior (la entrega pendiente, si la hay)
+      const hechas =
+        r.paradaInicial - 1 + r.llegadaParada.filter((pi) => pi <= posIdxRef.current).length;
+      const destino = esperandoRef.current ?? Math.min(hechas + 1, stopsRef.current.length - 1);
+      onUbicacionRef.current?.(pos[0], pos[1], precision, destino);
+    }
 
     if (!precisionCirculoRef.current) {
       precisionCirculoRef.current = L.circle(pos, {
