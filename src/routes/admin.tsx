@@ -26,6 +26,7 @@ import {
   Loader2,
   LogOut,
   Plus,
+  Route as IconoRuta,
   Settings,
   ShieldOff,
   Truck,
@@ -34,9 +35,10 @@ import {
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore, SAUCES, type Sauce, type OrderStatus, type AcoConfig } from "@/lib/store";
-import { ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { ESTADO_PEDIDO_ES, RESTAURANTE_COORDS } from "@/lib/constants";
 import { api } from "@/lib/api";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
+import { MapaRecorrido } from "@/components/MapaRecorrido";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -2326,6 +2328,9 @@ function SeccionRepartidores() {
   const [cargando, setCargando] = useState(true);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editando, setEditando] = useState<import("@/lib/api").RepartidorApi | null>(null);
+  const [viendoRecorrido, setViendoRecorrido] = useState<import("@/lib/api").RepartidorApi | null>(
+    null,
+  );
 
   const cargar = () => {
     setCargando(true);
@@ -2413,6 +2418,14 @@ function SeccionRepartidores() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setViendoRecorrido(r)}
+                      aria-label={`Ver recorrido de ${nombre}`}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <IconoRuta className="h-3.5 w-3.5" aria-hidden="true" /> Recorrido
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
                       aria-label={
                         activo ? `Desactivar repartidor ${nombre}` : `Activar repartidor ${nombre}`
@@ -2452,7 +2465,7 @@ function SeccionRepartidores() {
               <Encabezado className="w-32">Teléfono</Encabezado>
               <Encabezado className="w-16">Zona</Encabezado>
               <Encabezado className="w-24">Estado</Encabezado>
-              <Encabezado className="w-48">Acciones</Encabezado>
+              <Encabezado className="w-72">Acciones</Encabezado>
             </tr>
           </thead>
           <tbody>
@@ -2517,6 +2530,14 @@ function SeccionRepartidores() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => setViendoRecorrido(r)}
+                          aria-label={`Ver recorrido de ${nombre}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <IconoRuta className="h-3.5 w-3.5" aria-hidden="true" /> Recorrido
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => api.toggleRepartidor(r.Id_Usuario).then(cargar)}
                           aria-label={
                             activo
@@ -2574,7 +2595,163 @@ function SeccionRepartidores() {
           }}
         />
       )}
+      {viendoRecorrido && (
+        <DialogRecorrido repartidor={viendoRecorrido} onClose={() => setViendoRecorrido(null)} />
+      )}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODAL: RECORRIDO GPS REAL DEL REPARTIDOR (historial AKR_Recorrido)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Fecha de hoy en Lima ("YYYY-MM-DD"), igual que el servidor. */
+function hoyLima(): string {
+  return new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function horaLima(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("es-PE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Lima",
+  });
+}
+
+function DialogRecorrido({
+  repartidor: r,
+  onClose,
+}: {
+  repartidor: import("@/lib/api").RepartidorApi;
+  onClose: () => void;
+}) {
+  const [fecha, setFecha] = useState(hoyLima);
+  const [datos, setDatos] = useState<import("@/lib/api").RecorridoApi | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+  const nombre = `${r.Nombre_Usuario} ${r.Apellido_Usuario}`.trim();
+
+  useEffect(() => {
+    let activo = true;
+    setCargando(true);
+    setError("");
+    api
+      .obtenerRecorrido(r.Id_Usuario, fecha)
+      .then((d) => {
+        if (activo) setDatos(d);
+      })
+      .catch((e: unknown) => {
+        if (!activo) return;
+        setDatos(null);
+        setError(e instanceof Error ? e.message : "No se pudo cargar el recorrido.");
+      })
+      .finally(() => {
+        if (activo) setCargando(false);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [r.Id_Usuario, fecha]);
+
+  const res = datos?.resumen;
+  const km = res ? (res.distanciaM / 1000).toFixed(1).replace(".", ",") : "0";
+
+  return (
+    <Overlay onClose={onClose} tituloId="dlg-recorrido" ancho="3xl">
+      <h2 id="dlg-recorrido" className="text-lg font-semibold">
+        Recorrido de {nombre}
+      </h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Posiciones GPS registradas mientras usaba «Navegar con GPS» (hora de Lima).
+      </p>
+
+      <label className="mt-4 block max-w-xs text-sm font-medium">
+        Día
+        <input
+          type="date"
+          value={fecha}
+          max={hoyLima()}
+          onChange={(e) => {
+            if (e.target.value) setFecha(e.target.value);
+          }}
+          className="mt-1 block h-11 w-full rounded-md border border-border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </label>
+
+      {error && (
+        <div className="mt-4">
+          <MensajeError>{error}</MensajeError>
+        </div>
+      )}
+
+      {cargando ? (
+        <div
+          role="status"
+          className="mt-4 flex h-[360px] items-center justify-center gap-2 rounded-xl border border-border bg-muted text-sm text-muted-foreground"
+        >
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Cargando recorrido…
+        </div>
+      ) : datos ? (
+        <>
+          <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Distancia", `${km} km`],
+              ["En movimiento", `${res?.duracionMin ?? 0} min`],
+              ["Horario", `${horaLima(res?.inicio ?? null)} – ${horaLima(res?.fin ?? null)}`],
+              ["Entregas", String(datos.entregas.length)],
+            ].map(([etiqueta, valor]) => (
+              <div key={etiqueta} className="rounded-lg border border-border bg-background p-3">
+                <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
+                <dd className="mt-0.5 text-base font-semibold leading-snug tabular-nums">
+                  {valor}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {datos.puntos.length === 0 && (
+            <p className="mt-3 rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">
+              No hay posiciones registradas este día.
+              {datos.entregas.length > 0 && " Se muestran solo las entregas."} El recorrido se
+              registra cuando el repartidor usa «Navegar con GPS».
+            </p>
+          )}
+          {res && res.tramos > 1 && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              El recorrido tiene {res.tramos} tramos: hubo cortes de señal de más de 5 minutos y no
+              se dibuja una línea en esos huecos.
+            </p>
+          )}
+          <div className="mt-3">
+            <MapaRecorrido recorrido={datos} centro={RESTAURANTE_COORDS} />
+          </div>
+          <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-5 rounded bg-blue-600" aria-hidden="true" /> Recorrido real
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-green-600" aria-hidden="true" /> Inicio
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-600" aria-hidden="true" /> Última
+              posición
+            </span>
+            <span>Pins numerados: entregas en orden</span>
+          </p>
+        </>
+      ) : null}
+
+      <PieDialog>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-border px-4 py-2.5 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Cerrar
+        </button>
+      </PieDialog>
+    </Overlay>
   );
 }
 
@@ -3162,6 +3339,7 @@ function Overlay({
   onClose,
   titulo,
   tituloId,
+  ancho = "lg",
 }: {
   children: React.ReactNode;
   onClose: () => void;
@@ -3169,6 +3347,8 @@ function Overlay({
   titulo?: string;
   /** id del <h2> visible del diálogo (aria-labelledby) */
   tituloId?: string;
+  /** Ancho máximo en sm+ ("3xl" para diálogos con mapa) */
+  ancho?: "lg" | "3xl";
 }) {
   // Ref para no re-suscribir el listener en cada render (onClose suele ser inline)
   const onCloseRef = useRef(onClose);
@@ -3199,7 +3379,7 @@ function Overlay({
         aria-labelledby={tituloId}
         aria-label={tituloId ? undefined : titulo}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:max-w-lg sm:rounded-2xl"
+        className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-[var(--shadow-elegant)] sm:rounded-2xl ${ancho === "3xl" ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
       >
         {/* Asa visual del bottom sheet (solo móvil) */}
         <div aria-hidden="true" className="flex justify-center pt-2 sm:hidden">

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
+import { RETENCION_DIAS, hoyLima, rangoDiaLima, resumirRecorrido, validarPunto } from '../lib/recorrido.js';
 
 const router = Router();
 router.use(verificarToken);
@@ -153,6 +154,8 @@ router.patch('/:id/toggle', async (req, res) => {
 });
 
 // PUT /api/repartidores/:id/ubicacion  — repartidor actualiza su GPS (CP052-054)
+// Guarda la última posición (AKR_Ubicaciones) y agrega el punto al historial
+// del recorrido (AKR_Recorrido). Body: { lat, lng, precision?, idPedido? }
 router.put('/:id/ubicacion', async (req, res) => {
   const idParam = parseInt(req.params.id);
 
@@ -161,10 +164,11 @@ router.put('/:id/ubicacion', async (req, res) => {
     return res.status(403).json({ error: 'Acceso denegado.' });
   }
 
-  const { lat, lng } = req.body;
-  if (lat === undefined || lng === undefined) {
-    return res.status(400).json({ error: 'lat y lng son obligatorios.' });
+  const punto = validarPunto(req.body);
+  if (punto.error) {
+    return res.status(400).json({ error: punto.error });
   }
+  const { lat, lng, precision, idPedido } = punto;
 
   try {
     const pool = await getPool();
@@ -184,9 +188,96 @@ router.put('/:id/ubicacion', async (req, res) => {
           INSERT (Id_Repartidor, Lat, Lng) VALUES (@id, @lat, @lng);
       `);
 
+    // Historial: si falla (p. ej. la migración 001 aún no se ejecutó) no se
+    // interrumpe el seguimiento en vivo. El pedido solo se guarda si es de este repartidor.
+    try {
+      await pool.request()
+        .input('id',  sql.Int,   idParam)
+        .input('ped', sql.Int,   idPedido)
+        .input('lat', sql.Float, lat)
+        .input('lng', sql.Float, lng)
+        .input('pre', sql.Float, precision)
+        .query(`
+          INSERT INTO AKR_Recorrido (Id_Repartidor, Id_Pedido, Lat, Lng, Precision_M)
+          VALUES (
+            @id,
+            (SELECT Id_Pedido FROM AKR_Pedidos WHERE Id_Pedido = @ped AND Id_Repartidor = @id),
+            @lat, @lng, @pre
+          );
+        `);
+    } catch (err) {
+      console.warn('AKR_Recorrido: no se guardó el punto:', err.message);
+    }
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('PUT /repartidores/:id/ubicacion:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
+// GET /api/repartidores/:id/recorrido?fecha=YYYY-MM-DD  — historial GPS de un día (hora de Lima)
+// Solo admin o el propio repartidor. Devuelve los puntos, un resumen y las entregas del día.
+router.get('/:id/recorrido', async (req, res) => {
+  const idParam = parseInt(req.params.id, 10);
+  if (!idParam || isNaN(idParam)) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  if (req.usuario.role !== 'admin' && !(req.usuario.role === 'driver' && req.usuario.id === idParam)) {
+    return res.status(403).json({ error: 'Acceso denegado.' });
+  }
+  const fecha = req.query.fecha ?? hoyLima();
+  const rango = rangoDiaLima(fecha);
+  if (!rango) {
+    return res.status(400).json({ error: 'fecha debe tener el formato YYYY-MM-DD.' });
+  }
+
+  try {
+    const pool = await getPool();
+
+    // Retención: se borra el historial de más de RETENCION_DIAS días
+    await pool.request()
+      .input('dias', sql.Int, RETENCION_DIAS)
+      .query('DELETE FROM AKR_Recorrido WHERE Fecha < DATEADD(day, -@dias, SYSUTCDATETIME())');
+
+    const puntos = await pool.request()
+      .input('id',    sql.Int,       idParam)
+      .input('desde', sql.DateTime2, rango.desde)
+      .input('hasta', sql.DateTime2, rango.hasta)
+      .query(`
+        SELECT TOP (20000) Lat, Lng, Precision_M, Id_Pedido, Fecha
+        FROM AKR_Recorrido
+        WHERE Id_Repartidor = @id AND Fecha >= @desde AND Fecha < @hasta
+        ORDER BY Fecha, Id_Punto
+      `);
+
+    // Entregas del día (Entrega_Pedido se guarda en UTC: mssql envía las fechas JS en UTC)
+    const entregas = await pool.request()
+      .input('id',    sql.Int,       idParam)
+      .input('desde', sql.DateTime2, rango.desde)
+      .input('hasta', sql.DateTime2, rango.hasta)
+      .query(`
+        SELECT p.Id_Pedido, p.Lat_Destino, p.Lng_Destino, p.Direccion_Destino, p.Entrega_Pedido,
+               u.Nombre_Usuario AS Nombre_Cliente, u.Apellido_Usuario AS Apellido_Cliente
+        FROM AKR_Pedidos p
+        LEFT JOIN AKR_Usuarios u ON u.Id_Usuario = p.Id_Cliente
+        WHERE p.Id_Repartidor = @id AND p.Estado = 'entregado'
+          AND p.Entrega_Pedido >= @desde AND p.Entrega_Pedido < @hasta
+        ORDER BY p.Entrega_Pedido
+      `);
+
+    const lista = puntos.recordset;
+    return res.json({
+      fecha,
+      resumen: resumirRecorrido(lista.map((p) => ({ lat: p.Lat, lng: p.Lng, fecha: p.Fecha }))),
+      puntos: lista,
+      entregas: entregas.recordset,
+    });
+  } catch (err) {
+    console.error('GET /repartidores/:id/recorrido:', err.message);
+    if (/AKR_Recorrido/i.test(err.message)) {
+      return res.status(503).json({ error: 'El historial de recorridos aún no está habilitado (falta la migración 001).' });
+    }
     return res.status(500).json({ error: 'Error interno.' });
   }
 });

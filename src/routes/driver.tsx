@@ -77,25 +77,31 @@ function PaginaRepartidor() {
       .finally(() => setCargando(false));
   }, [montado, session]);
 
+  const mapaStopsRef = useRef<MultiStop[]>([]);
   // Ubicación GPS real → backend (el admin ve dónde está el repartidor).
   // Como máximo cada 15 s, o cada 5 s si avanzó 50 m o más.
   const ultimoEnvioRef = useRef<{ t: number; lat: number; lng: number } | null>(null);
-  const enviarUbicacion = useCallback((lat: number, lng: number) => {
-    const id = Number(store.get().session?.driverId);
-    if (!id) return; // un admin viendo la ruta no tiene ubicación propia
-    const ahora = Date.now();
-    const prev = ultimoEnvioRef.current;
-    if (prev) {
-      const t = ahora - prev.t;
-      const movido = metrosEntre(prev.lat, prev.lng, lat, lng);
-      if (t < 5000 || (t < 15000 && movido < 50)) return;
-    }
-    ultimoEnvioRef.current = { t: ahora, lat, lng };
-    api.actualizarUbicacion(id, lat, lng).catch(() => {
-      /* sin conexión: se reintenta con la próxima posición */
-      ultimoEnvioRef.current = prev;
-    });
-  }, []);
+  const enviarUbicacion = useCallback(
+    (lat: number, lng: number, precision: number, paradaDestino: number) => {
+      const id = Number(store.get().session?.driverId);
+      if (!id) return; // un admin viendo la ruta no tiene ubicación propia
+      const ahora = Date.now();
+      const prev = ultimoEnvioRef.current;
+      if (prev) {
+        const t = ahora - prev.t;
+        const movido = metrosEntre(prev.lat, prev.lng, lat, lng);
+        if (t < 5000 || (t < 15000 && movido < 50)) return;
+      }
+      ultimoEnvioRef.current = { t: ahora, lat, lng };
+      // El pedido al que se dirige queda en el historial del recorrido (AKR_Recorrido)
+      const idPedido = mapaStopsRef.current[paradaDestino]?.pedidoId;
+      api.actualizarUbicacion(id, lat, lng, { precision, idPedido }).catch(() => {
+        /* sin conexión: se reintenta con la próxima posición */
+        ultimoEnvioRef.current = prev;
+      });
+    },
+    [],
+  );
 
   // Stops para MapaRutaMulti memorizados: si cambiaran en cada render el mapa se reiniciaría
   const mapaStops: MultiStop[] = useMemo(
@@ -121,6 +127,8 @@ function PaginaRepartidor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo se recalcula con una nueva ruta
     [tspResult],
   );
+
+  mapaStopsRef.current = mapaStops;
 
   // Confirmación de entrega desde la ruta: marca el pedido y lo saca de la lista de activos
   const entregarDesdeRuta = useCallback(

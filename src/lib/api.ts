@@ -77,6 +77,35 @@ export type PedidoApi = {
   Apellido_Repartidor?: string;
 };
 
+/** Recorrido GPS real de un día (GET /api/repartidores/:id/recorrido). */
+export type RecorridoApi = {
+  fecha: string;
+  resumen: {
+    puntos: number;
+    tramos: number;
+    distanciaM: number;
+    duracionMin: number;
+    inicio: string | null;
+    fin: string | null;
+  };
+  puntos: {
+    Lat: number;
+    Lng: number;
+    Precision_M: number | null;
+    Id_Pedido: number | null;
+    Fecha: string;
+  }[];
+  entregas: {
+    Id_Pedido: number;
+    Lat_Destino: number;
+    Lng_Destino: number;
+    Direccion_Destino: string;
+    Entrega_Pedido: string;
+    Nombre_Cliente: string | null;
+    Apellido_Cliente: string | null;
+  }[];
+};
+
 export type RepartidorApi = {
   Id_Usuario: number;
   Nombre_Usuario: string;
@@ -456,16 +485,26 @@ export const api = {
     });
   },
 
+  /** Última posición + punto del historial (AKR_Recorrido). */
   async actualizarUbicacion(
     idRepartidor: number,
     lat: number,
     lng: number,
+    extra: { precision?: number; idPedido?: number } = {},
   ): Promise<{ ok: boolean }> {
     return solicitar<{ ok: boolean }>(`/api/repartidores/${idRepartidor}/ubicacion`, {
       method: "PUT",
       headers: cabeceraAuth(),
-      body: JSON.stringify({ lat, lng }),
+      body: JSON.stringify({ lat, lng, ...extra }),
     });
+  },
+
+  /** Recorrido GPS real de un día (hora de Lima, "YYYY-MM-DD"). Admin o el propio repartidor. */
+  async obtenerRecorrido(idRepartidor: number, fecha: string): Promise<RecorridoApi> {
+    return solicitar<RecorridoApi>(
+      `/api/repartidores/${idRepartidor}/recorrido?fecha=${encodeURIComponent(fecha)}`,
+      { headers: cabeceraAuth() },
+    );
   },
 
   async obtenerUbicacion(

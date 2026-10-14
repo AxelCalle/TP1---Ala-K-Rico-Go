@@ -32,6 +32,17 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import {
+  PRECISION_LIMITADA_M,
+  PRECISION_UTIL_M,
+  ajustarARuta,
+  avisoErrorGps,
+  crearSeguidorGps,
+  leerPosicion,
+  validarLectura,
+  type LecturaGps,
+  type SeguidorGps,
+} from "@/lib/gps";
 
 // ─── Servicios externos ────────────────────────────────────────────────────────
 
@@ -343,7 +354,11 @@ function ControlesMapa({
         <Scan className="h-5 w-5" aria-hidden="true" />
       </BotonMapa>
       {onCentrar && (
-        <BotonMapa label="Seguir al repartidor" onClick={onCentrar} activo={centrado}>
+        <BotonMapa
+          label={centrado ? "Dejar de seguir al repartidor" : "Centrar y seguir al repartidor"}
+          onClick={onCentrar}
+          activo={centrado}
+        >
           <LocateFixed className="h-5 w-5" aria-hidden="true" />
         </BotonMapa>
       )}
@@ -724,50 +739,6 @@ function distanciaHasta(ruta: RutaCalculada, paso: Paso, posIdx: number): number
   return Math.max(0, ruta.acum[paso.polyIdx] - ruta.acum[posIdx]);
 }
 
-/**
- * Ajusta una posición GPS a la ruta: devuelve el punto más cercano sobre la
- * polilínea, su índice y la distancia (m). Con `desde`, busca solo cerca de la
- * posición anterior (algo hacia atrás por el ruido del GPS, bastante hacia
- * adelante) para que una calle que se recorre dos veces no haga saltar el avance.
- */
-function ajustarARuta(
-  ruta: RutaCalculada,
-  pos: Coords,
-  desde: number | null,
-): { idx: number; dist: number; punto: Coords } {
-  const pts = ruta.puntos;
-  const ini = desde === null ? 0 : Math.max(0, desde - 30);
-  const fin = desde === null ? pts.length - 1 : Math.min(pts.length - 1, desde + 600);
-  // Proyección equirectangular local en metros (precisa a escala de ciudad)
-  const kLat = 111320;
-  const kLng = 111320 * Math.cos((pos[0] * Math.PI) / 180);
-  const aXY = (c: Coords): [number, number] => [(c[1] - pos[1]) * kLng, (c[0] - pos[0]) * kLat];
-
-  let mejor = { idx: ini, dist: Infinity, punto: pts[ini] };
-  for (let i = ini; i < Math.max(fin, ini + 1) && i < pts.length - 1; i++) {
-    const [ax, ay] = aXY(pts[i]);
-    const [bx, by] = aXY(pts[i + 1]);
-    const dx = bx - ax;
-    const dy = by - ay;
-    const largo2 = dx * dx + dy * dy;
-    const t = largo2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / largo2));
-    const px = ax + t * dx;
-    const py = ay + t * dy;
-    const dist = Math.hypot(px, py);
-    if (dist < mejor.dist) {
-      mejor = {
-        idx: t > 0.5 ? i + 1 : i,
-        dist,
-        punto: [
-          pts[i][0] + t * (pts[i + 1][0] - pts[i][0]),
-          pts[i][1] + t * (pts[i + 1][1] - pts[i][1]),
-        ],
-      };
-    }
-  }
-  return mejor;
-}
-
 /** Frase hablada: "En 300 metros, gira a la derecha en Av. Perú". */
 function fraseManiobra(p: Paso, distancia: number, totalParadas: number): string {
   const accion = accionPaso(p, totalParadas);
@@ -841,8 +812,11 @@ interface MultiProps {
   /** px o cualquier valor CSS de altura (p.ej. "clamp(420px, 72svh, 760px)") */
   altura?: number | string;
   className?: string;
-  /** Se llama con cada posición GPS real (modo "Navegar con GPS"). */
-  onUbicacion?: (lat: number, lng: number, precisionM: number) => void;
+  /**
+   * Se llama con cada posición GPS real útil (modo "Navegar con GPS").
+   * `paradaDestino`: índice en `stops` de la parada hacia la que se dirige.
+   */
+  onUbicacion?: (lat: number, lng: number, precisionM: number, paradaDestino: number) => void;
   /**
    * Si se pasa, la navegación se detiene en cada parada hasta que el repartidor
    * confirme la entrega (se llama con el índice de la parada en `stops`).
@@ -856,7 +830,7 @@ type PestanaPanel = "indicaciones" | "paradas";
 type ModoNavegacion = "gps" | "simulacion";
 
 type EstadoGps =
-  | { estado: "buscando"; mensaje?: string }
+  | { estado: "buscando"; titulo?: string; mensaje?: string }
   | { estado: "ok" | "fuera" | "recalculando"; precision: number }
   | { estado: "error"; mensaje: string };
 
@@ -898,9 +872,13 @@ export function MapaRutaMulti({
   onUbicacionRef.current = onUbicacion;
   // GPS
   const modoRef = useRef<ModoNavegacion | null>(null);
-  const watchIdRef = useRef<number | null>(null);
+  const seguidorRef = useRef<SeguidorGps | null>(null);
+  const ultimaLecturaRef = useRef<LecturaGps | null>(null);
+  const tweenRef = useRef(0);
+  const desvioLayersRef = useRef<any[]>([]);
   const precisionCirculoRef = useRef<any>(null);
   const primerFixRef = useRef(true);
+  const ajusteInicialRef = useRef(true);
   const fueraDeRutaRef = useRef(0);
   const ultimoRecalculoRef = useRef(0);
   const wakeLockRef = useRef<any>(null);
@@ -1072,8 +1050,8 @@ export function MapaRutaMulti({
       if (!activo) return;
 
       if (calculada) {
-        dibujarRuta(calculada);
         rutaOriginalRef.current = calculada;
+        dibujarRuta(calculada);
         boundsRef.current = L.latLngBounds(calculada.puntos).pad(0.12);
 
         const avatar = L.marker(calculada.puntos[0], {
@@ -1108,6 +1086,7 @@ export function MapaRutaMulti({
       liberarGps();
       markersRef.current = [];
       rutaLayersRef.current = [];
+      desvioLayersRef.current = [];
       precisionCirculoRef.current = null;
       avatarRef.current = null;
       if (mapaRef.current) {
@@ -1310,28 +1289,48 @@ export function MapaRutaMulti({
     }
     if (avatarRef.current && original) {
       avatarRef.current.setLatLng(original.puntos[0]);
+      avatarRef.current.setOpacity(1);
       rotarAvatar(avatarRef.current, 0);
     }
   }
 
-  /** Dibuja (o reemplaza) la polilínea de la ruta. */
+  /**
+   * Dibuja la ruta planificada (orden ACO) o, tras un desvío, la ruta
+   * recalculada encima. La planificada nunca se borra: con un desvío queda
+   * punteada y atenuada para distinguirla del camino a seguir (azul).
+   */
   function dibujarRuta(r: RutaCalculada) {
     const L = leafletRef.current;
     const mapa = mapaRef.current;
     if (!L || !mapa) return;
-    rutaLayersRef.current.forEach((capa) => capa.remove());
-    rutaLayersRef.current = [
-      L.polyline(r.puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa),
-      L.polyline(r.puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa),
+    desvioLayersRef.current.forEach((capa) => capa.remove());
+    desvioLayersRef.current = [];
+    const plan = rutaOriginalRef.current;
+    if (plan && !rutaLayersRef.current.length) {
+      rutaLayersRef.current = [
+        L.polyline(plan.puntos, { color: "#ffffff", weight: 9, opacity: 0.6 }).addTo(mapa),
+        L.polyline(plan.puntos, { color: "#ea580c", weight: 5, opacity: 0.95 }).addTo(mapa),
+      ];
+    }
+    const [borde, linea] = rutaLayersRef.current;
+    if (r === plan) {
+      borde?.setStyle({ opacity: 0.6 });
+      linea?.setStyle({ opacity: 0.95, dashArray: null });
+      return;
+    }
+    borde?.setStyle({ opacity: 0.25 });
+    linea?.setStyle({ opacity: 0.5, dashArray: "8 10" });
+    desvioLayersRef.current = [
+      L.polyline(r.puntos, { color: "#ffffff", weight: 9, opacity: 0.7 }).addTo(mapa),
+      L.polyline(r.puntos, { color: "#2563eb", weight: 5, opacity: 0.95 }).addTo(mapa),
     ];
   }
 
   /** Corta el seguimiento GPS, el wake lock y el círculo de precisión. */
   function liberarGps() {
-    if (watchIdRef.current !== null && "geolocation" in navigator) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-    }
-    watchIdRef.current = null;
+    seguidorRef.current?.detener();
+    seguidorRef.current = null;
+    cancelAnimationFrame(tweenRef.current);
     wakeLockRef.current?.release?.().catch(() => {});
     wakeLockRef.current = null;
     precisionCirculoRef.current?.remove();
@@ -1377,6 +1376,8 @@ export function MapaRutaMulti({
     setModo("gps");
     setGps({ estado: "buscando" });
     primerFixRef.current = true;
+    ajusteInicialRef.current = true;
+    ultimaLecturaRef.current = null;
     fueraDeRutaRef.current = 0;
     ultimoAnunciadoRef.current = -1;
     seguirRef.current = true;
@@ -1385,27 +1386,45 @@ export function MapaRutaMulti({
     setSeleccion(null);
     setPestana("indicaciones");
 
-    watchIdRef.current = navigator.geolocation.watchPosition(onPosicionGps, onErrorGps, {
-      enableHighAccuracy: true,
-      maximumAge: 1000,
-      timeout: 20000,
-    });
+    // Hasta la primera lectura real el repartidor no se dibuja: no se inventa una posición
+    avatarRef.current.setOpacity(0);
+
+    seguidorRef.current = crearSeguidorGps(navigator.geolocation, onPosicionGps, onErrorGps);
+    seguidorRef.current.iniciar();
     pedirPantallaEncendida();
+
+    // Distingue "esperando el permiso" de "buscando señal" (Permissions API: Chrome, Safari 16+)
+    navigator.permissions
+      ?.query({ name: "geolocation" as PermissionName })
+      .then((st) => {
+        if (st.state !== "prompt" || modoRef.current !== "gps") return;
+        setGps((g) =>
+          g?.estado === "buscando" && !ultimaLecturaRef.current
+            ? {
+                estado: "buscando",
+                titulo: "Solicitando permiso de ubicación",
+                mensaje: "Toca «Permitir» en el aviso del navegador.",
+              }
+            : g,
+        );
+      })
+      .catch(() => {});
   }
 
   function onErrorGps(e: GeolocationPositionError) {
     if (modoRef.current !== "gps") return;
-    if (e.code === e.PERMISSION_DENIED) {
+    const aviso = avisoErrorGps(e.code);
+    if (aviso.fatal) {
       detenerNavegacion(true);
-      setGps({
-        estado: "error",
-        mensaje:
-          "Permiso de ubicación denegado. Actívalo para este sitio en la configuración del navegador.",
-      });
+      setGps({ estado: "error", mensaje: aviso.mensaje });
       return;
     }
-    // Sin señal o timeout: se sigue escuchando
-    setGps({ estado: "buscando", mensaje: "Señal GPS débil, buscando…" });
+    // Detenido en un semáforo o en una parada el sistema puede no enviar lecturas
+    // nuevas (timeout): con una lectura reciente no se interrumpe la navegación.
+    const ultima = ultimaLecturaRef.current;
+    if (ultima && Date.now() - ultima.timestamp < 60000) return;
+    // Sin señal: el observador sigue activo y se recupera con la próxima lectura
+    setGps({ estado: "buscando", titulo: aviso.titulo, mensaje: aviso.mensaje });
   }
 
   function onPosicionGps(p: GeolocationPosition) {
@@ -1415,9 +1434,20 @@ export function MapaRutaMulti({
     const avatar = avatarRef.current;
     if (modoRef.current !== "gps" || !r || !L || !mapa || !avatar) return;
 
-    const pos: Coords = [p.coords.latitude, p.coords.longitude];
-    const precision = Math.round(p.coords.accuracy ?? 0);
-    onUbicacionRef.current?.(pos[0], pos[1], precision);
+    // Se descartan solo lecturas inválidas, viejas (caché) o repetidas
+    const lectura = leerPosicion(p);
+    if (validarLectura(lectura, ultimaLecturaRef.current)) return;
+    ultimaLecturaRef.current = lectura;
+    const { pos } = lectura;
+    const precision = Math.round(lectura.precision);
+    const util = lectura.precision <= PRECISION_UTIL_M;
+    if (util) {
+      // Parada destino según el avance de la lectura anterior (la entrega pendiente, si la hay)
+      const hechas =
+        r.paradaInicial - 1 + r.llegadaParada.filter((pi) => pi <= posIdxRef.current).length;
+      const destino = esperandoRef.current ?? Math.min(hechas + 1, stopsRef.current.length - 1);
+      onUbicacionRef.current?.(pos[0], pos[1], precision, destino);
+    }
 
     if (!precisionCirculoRef.current) {
       precisionCirculoRef.current = L.circle(pos, {
@@ -1433,22 +1463,41 @@ export function MapaRutaMulti({
       precisionCirculoRef.current.setRadius(precision);
     }
 
-    // Primer fix: buscar en toda la ruta; después, cerca de la posición anterior
-    const ajuste = ajustarARuta(r, pos, primerFixRef.current ? null : posIdxRef.current);
+    // El marcador muestra siempre la posición real, aunque esté fuera de la ruta
+    const primerFix = primerFixRef.current;
     primerFixRef.current = false;
+    if (primerFix) avatar.setOpacity(1);
+    moverAvatar(pos, primerFix);
+    const conRumbo = lectura.rumbo !== null && (lectura.velocidad ?? 0) > 1;
+
+    if (!util) {
+      // Lectura imprecisa (p. ej. por antena): se ve, pero no mueve el avance ni marca desvíos
+      if (conRumbo) rotarAvatar(avatar, lectura.rumbo!);
+      setGps((g) => ({
+        estado: g?.estado === "fuera" || g?.estado === "recalculando" ? g.estado : "ok",
+        precision,
+      }));
+      seguirMapa(pos, primerFix);
+      return;
+    }
+
+    // La proyección sobre la ruta solo mide el avance (maniobras, paradas, llegada).
+    // Primera lectura útil: busca en toda la ruta; después, cerca de la anterior.
+    const ajuste = ajustarARuta(r, pos, ajusteInicialRef.current ? null : posIdxRef.current);
+    ajusteInicialRef.current = false;
     const tolerancia = Math.min(80, Math.max(40, precision));
 
     if (ajuste.dist <= tolerancia) {
       fueraDeRutaRef.current = 0;
-      avatar.setLatLng(ajuste.punto);
-      const rumbo =
-        p.coords.heading != null && !Number.isNaN(p.coords.heading) && (p.coords.speed ?? 0) > 1
-          ? p.coords.heading
+      rotarAvatar(
+        avatar,
+        conRumbo
+          ? lectura.rumbo!
           : calcularBearing(
               r.puntos[ajuste.idx],
               r.puntos[Math.min(ajuste.idx + 1, r.puntos.length - 1)],
-            );
-      rotarAvatar(avatar, rumbo);
+            ),
+      );
       posIdxRef.current = ajuste.idx;
       setPosIdx(ajuste.idx);
       setGps({ estado: "ok", precision });
@@ -1457,6 +1506,7 @@ export function MapaRutaMulti({
       // Llegada: a menos de 25 m del final de la ruta (la última parada)
       if (r.acum[r.acum.length - 1] - r.acum[ajuste.idx] < 25) {
         revisarLlegadaParada(r, r.puntos.length - 1);
+        seguirMapa(pos, primerFix);
         liberarGps();
         setNavegando(false);
         setLlegada(true);
@@ -1464,8 +1514,9 @@ export function MapaRutaMulti({
         return;
       }
     } else {
-      // Fuera de la ruta: se muestra la posición real y se recalcula si persiste
-      avatar.setLatLng(pos);
+      // Fuera de la ruta: se avisa y, si persiste, se traza un camino a las paradas
+      // que faltan (mismo orden ACO; el algoritmo no se vuelve a ejecutar)
+      if (conRumbo) rotarAvatar(avatar, lectura.rumbo!);
       fueraDeRutaRef.current++;
       setGps({ estado: "fuera", precision });
       if (fueraDeRutaRef.current >= 3 && Date.now() - ultimoRecalculoRef.current > 20000) {
@@ -1473,9 +1524,55 @@ export function MapaRutaMulti({
       }
     }
 
-    if (seguirRef.current) {
-      mapa.setView(avatar.getLatLng(), Math.max(mapa.getZoom(), 17), { animate: true });
+    seguirMapa(pos, primerFix);
+  }
+
+  /**
+   * Mueve el marcador del repartidor sin recrearlo. La transición corta es solo
+   * visual: el avance y los desvíos se calculan con la coordenada GPS original.
+   */
+  function moverAvatar(destino: Coords, inmediato: boolean) {
+    const avatar = avatarRef.current;
+    if (!avatar) return;
+    cancelAnimationFrame(tweenRef.current);
+    const ll = avatar.getLatLng();
+    const desde: Coords = [ll.lat, ll.lng];
+    const sinAnimacion =
+      inmediato ||
+      document.hidden ||
+      distanciaM(desde, destino) > 150 ||
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (sinAnimacion) {
+      avatar.setLatLng(destino);
+      return;
     }
+    const DURACION = 600;
+    const t0 = performance.now();
+    const paso = (t: number) => {
+      const a = avatarRef.current;
+      if (!a) return;
+      const k = Math.min(1, (t - t0) / DURACION);
+      a.setLatLng([desde[0] + (destino[0] - desde[0]) * k, desde[1] + (destino[1] - desde[1]) * k]);
+      if (k < 1) tweenRef.current = requestAnimationFrame(paso);
+    };
+    tweenRef.current = requestAnimationFrame(paso);
+  }
+
+  /**
+   * Seguimiento visual: el mapa acompaña al repartidor sin cambiar el zoom
+   * (salvo al centrar en la primera lectura). Si el usuario arrastró el mapa,
+   * no se mueve hasta que vuelva a activar "Seguir".
+   */
+  function seguirMapa(pos: Coords, primero: boolean) {
+    const mapa = mapaRef.current;
+    if (!mapa || !seguirRef.current) return;
+    if (primero) {
+      mapa.setView(pos, Math.max(mapa.getZoom(), 17), { animate: true });
+      return;
+    }
+    const centro = mapa.latLngToContainerPoint(mapa.getCenter());
+    if (centro.distanceTo(mapa.latLngToContainerPoint(pos)) < 8) return;
+    mapa.panTo(pos, { animate: true, duration: 0.6, easeLinearity: 0.5 });
   }
 
   /** Nueva ruta por calles desde la posición actual hacia las paradas que faltan. */
@@ -1569,8 +1666,20 @@ export function MapaRutaMulti({
   function centrarRepartidor() {
     seguirRef.current = true;
     setSeguir(true);
+    // GPS sin primera lectura: se centrará al llegar (no hay posición real todavía)
+    if (modoRef.current === "gps" && !ultimaLecturaRef.current) return;
     const pos = avatarRef.current?.getLatLng();
     if (pos) mapaRef.current?.setView(pos, Math.max(mapaRef.current.getZoom(), 16));
+  }
+
+  /** Botón del mapa: centra y sigue al repartidor, o deja el mapa libre si ya lo seguía. */
+  function alternarSeguimiento() {
+    if (navegando && seguirRef.current) {
+      seguirRef.current = false;
+      setSeguir(false);
+      return;
+    }
+    centrarRepartidor();
   }
 
   function enfocarParada(k: number) {
@@ -1632,7 +1741,7 @@ export function MapaRutaMulti({
           >
             <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
             <div className="min-w-0">
-              <p className="text-sm font-semibold">Obteniendo tu ubicación…</p>
+              <p className="text-sm font-semibold">{gps.titulo ?? "Obteniendo tu ubicación…"}</p>
               <p className="text-xs text-cream/70">
                 {gps.mensaje ?? "Permite el acceso a la ubicación si el navegador lo pide."}
               </p>
@@ -1793,7 +1902,7 @@ export function MapaRutaMulti({
             mapaRef={mapaRef}
             top={top}
             onAjustar={ajustarRuta}
-            onCentrar={ruta ? centrarRepartidor : undefined}
+            onCentrar={ruta ? alternarSeguimiento : undefined}
             centrado={navegando && seguir}
             pantallaCompleta={pantallaCompleta}
             onPantallaCompleta={() => setPantallaCompleta((v) => !v)}
@@ -1844,6 +1953,16 @@ export function MapaRutaMulti({
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-muted-foreground">
                     {modo && navegando && <BadgeModo modo={modo} gps={gps} />}
+                    {modo === "gps" && navegando && !seguir && (
+                      <button
+                        type="button"
+                        onClick={centrarRepartidor}
+                        className="inline-flex min-h-7 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <LocateFixed className="h-3 w-3" aria-hidden="true" />
+                        Mapa libre · Recentrar
+                      </button>
+                    )}
                     <span>
                       {llegada
                         ? `${totalParadas - 1} de ${totalParadas - 1} paradas completadas`
@@ -2151,6 +2270,14 @@ function BadgeModo({ modo, gps }: { modo: ModoNavegacion; gps: EstadoGps | null 
     );
   }
   const precision = gps && "precision" in gps ? gps.precision : null;
+  if (precision !== null && precision > PRECISION_LIMITADA_M) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+        <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+        GPS · precisión limitada ±{precision} m
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
       <span className="relative flex h-2 w-2" aria-hidden="true">
