@@ -36,7 +36,7 @@ import {
 import { LogoIcon } from "../components/Logo";
 import { store, useStore, SAUCES, type Sauce, type OrderStatus, type AcoConfig } from "@/lib/store";
 import { ESTADO_PEDIDO_ES, RESTAURANTE_COORDS } from "@/lib/constants";
-import { api } from "@/lib/api";
+import { api, ErrorApi } from "@/lib/api";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
 import { MapaRecorrido } from "@/components/MapaRecorrido";
 
@@ -57,12 +57,7 @@ export const Route = createFileRoute("/admin")({
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type SeccionAdmin =
-  | "dashboard"
-  | "pedidos"
-  | "repartidores"
-  | "reportes"
-  | "configuracion"
-  | "alertas";
+  "dashboard" | "pedidos" | "repartidores" | "reportes" | "configuracion" | "alertas";
 
 /** Etiqueta visible de cada tab (también se usa para enlazar tab ↔ panel por id) */
 const SECCION_LABEL: Record<SeccionAdmin, string> = {
@@ -225,10 +220,7 @@ function PaginaAdmin() {
             />
             <NavBtn
               activo={seccion === "alertas"}
-              onClick={() => {
-                setSeccion("alertas");
-                setAlertasNoLeidas(0);
-              }}
+              onClick={() => setSeccion("alertas")}
               icon={
                 <span className="relative">
                   <Bell className="h-4 w-4" />
@@ -257,7 +249,7 @@ function PaginaAdmin() {
         {seccion === "repartidores" && <SeccionRepartidores />}
         {seccion === "reportes" && <SeccionReportes />}
         {seccion === "configuracion" && <SeccionConfiguracion />}
-        {seccion === "alertas" && <SeccionAlertas />}
+        {seccion === "alertas" && <SeccionAlertas onNoLeidas={setAlertasNoLeidas} />}
       </main>
 
       <footer className="safe-bottom mt-auto border-t border-border bg-card">
@@ -765,12 +757,25 @@ function SeccionReportes() {
   const [errCarga, setErrCarga] = useState<string | null>(null);
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  const [errFiltro, setErrFiltro] = useState<string | null>(null);
 
-  const cargarTiempos = (d?: string, h?: string) =>
-    api
+  const cargarTiempos = (d?: string, h?: string) => {
+    setErrFiltro(null);
+    if (d && h && d > h) {
+      setErrFiltro('La fecha "desde" no puede ser posterior a "hasta".');
+      return Promise.resolve();
+    }
+    return api
       .reporteTiempos(d || h ? { desde: d, hasta: h } : undefined)
       .then(setTiempos)
-      .catch(() => {});
+      .catch((e: unknown) =>
+        setErrFiltro(
+          e instanceof ErrorApi && e.status === 400 && e.codigo
+            ? e.codigo
+            : "No se pudieron cargar los tiempos de entrega.",
+        ),
+      );
+  };
 
   useEffect(() => {
     setCargando(true);
@@ -802,7 +807,8 @@ function SeccionReportes() {
     ]).finally(() => setCargando(false));
   }, []);
 
-  const promGlobal = tiempos?.promedio ?? 0;
+  // Referencia histórica (no depende del filtro de fechas): la entrega el servidor
+  const promGlobal = ranking[0]?.promedio_general ?? 0;
 
   // Filas derivadas (se comparten entre la vista de cards móvil y la tabla desktop)
   const filasRanking = ranking.map((r, i) => ({
@@ -836,11 +842,13 @@ function SeccionReportes() {
     });
 
   const EVENTO_COLOR: Record<string, string> = {
-    login_ok: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    login_exitoso: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     login_fallido: "bg-destructive/10 text-destructive",
+    token_invalido: "bg-destructive/10 text-destructive",
+    acceso_sin_token: "bg-destructive/10 text-destructive",
     repartidor_creado: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
     pedido_creado: "bg-accent/10 text-accent",
-    aco_config_update: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    config_aco_actualizada: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
   };
 
   return (
@@ -898,6 +906,11 @@ function SeccionReportes() {
         >
           Aplicar filtro
         </button>
+        {errFiltro && (
+          <p role="alert" className="col-span-2 text-sm text-destructive sm:basis-full">
+            {errFiltro}
+          </p>
+        )}
         {(desde || hasta) && (
           <button
             type="button"
@@ -1048,6 +1061,9 @@ function SeccionReportes() {
           )}
         </div>
       )}
+
+      {/* ── Análisis de retrasos (HU029) ───────────────────────────────────── */}
+      <AnalisisRetrasos />
 
       {/* ── Ranking repartidores (HU027) ──────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
@@ -1493,12 +1509,16 @@ function SeccionConfiguracion() {
       await api.guardarAcoConfig(local);
       setGuardada({ ...local });
       store.updateAcoConfig(local);
-    } catch {
-      setErrorApi("No se pudo guardar en el servidor.");
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 3000);
+    } catch (err) {
+      setErrorApi(
+        err instanceof ErrorApi && err.status === 400 && err.codigo
+          ? err.codigo
+          : "No se pudo guardar en el servidor.",
+      );
     }
     setGuardando(false);
-    setGuardado(true);
-    setTimeout(() => setGuardado(false), 3000);
   }
 
   function handleReset() {
@@ -1710,6 +1730,7 @@ function SeccionPedidos() {
   const [sortBy, setSortBy] = useState<"id" | "fecha" | "estado">("fecha");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [errCarga, setErrCarga] = useState<string | null>(null);
+  const [errAccion, setErrAccion] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [copiado, setCopiado] = useState<number | null>(null);
   const [filtro, setFiltro] = useState<FiltroEstado>("todos");
@@ -1810,8 +1831,17 @@ function SeccionPedidos() {
     });
   }
 
+  function mensajeError(e: unknown, generico: string) {
+    return e instanceof ErrorApi && e.status < 500 && e.codigo ? e.codigo : generico;
+  }
+
   async function ejecutarCambioEstado(id: number, estado: string) {
-    await api.cambiarEstadoPedido(id, estado).catch(() => {});
+    setErrAccion(null);
+    try {
+      await api.cambiarEstadoPedido(id, estado);
+    } catch (e) {
+      setErrAccion(mensajeError(e, "No se pudo cambiar el estado del pedido."));
+    }
     cargar(page);
   }
 
@@ -1831,7 +1861,12 @@ function SeccionPedidos() {
   }
 
   async function ejecutarAsignacion(idPedido: number, idRepartidor: number | null) {
-    await api.asignarPedido(idPedido, idRepartidor).catch(() => {});
+    setErrAccion(null);
+    try {
+      await api.asignarPedido(idPedido, idRepartidor);
+    } catch (e) {
+      setErrAccion(mensajeError(e, "No se pudo actualizar la asignación del pedido."));
+    }
     cargar(page);
   }
 
@@ -1966,6 +2001,14 @@ function SeccionPedidos() {
         </div>
       </div>
 
+      {errAccion && (
+        <p
+          role="alert"
+          className="mt-4 break-words rounded-md bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
+        >
+          {errAccion}
+        </p>
+      )}
       {errCarga && !cargando && (
         <p
           role="alert"
@@ -2783,6 +2826,10 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
       setError("El DNI es obligatorio.");
       return;
     }
+    if (!/^\d{8}$/.test(dni.trim())) {
+      setError("El DNI debe tener 8 dígitos.");
+      return;
+    }
     if (!correo.includes("@")) {
       setError("Ingresa un correo válido.");
       return;
@@ -2960,12 +3007,22 @@ function DialogEditarRepartidor({
   const [telefono, setTelefono] = useState(r.Telf_Usuario ?? "");
   const [guardado, setGuardado] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [errorEdit, setErrorEdit] = useState("");
   const [confirmarDesactivar, setConfirmarDesactivar] = useState(false);
 
   const activo = r.Activo_Usuario;
 
   async function handleGuardar(e: FormEvent) {
     e.preventDefault();
+    setErrorEdit("");
+    if (!correo.trim().includes("@")) {
+      setErrorEdit("Ingresa un correo válido.");
+      return;
+    }
+    if (dni.trim() && !/^\d{8}$/.test(dni.trim())) {
+      setErrorEdit("El DNI debe tener 8 dígitos.");
+      return;
+    }
     setGuardando(true);
     try {
       await api.editarRepartidor(r.Id_Usuario, {
@@ -2980,8 +3037,14 @@ function DialogEditarRepartidor({
         setGuardado(false);
         onClose();
       }, 1200);
-    } catch {
-      // sin feedback extra — onClose igual
+    } catch (err) {
+      setErrorEdit(
+        err instanceof ErrorApi && err.codigo === "email_taken"
+          ? "Ya existe una cuenta con ese correo."
+          : err instanceof ErrorApi && err.status === 400 && err.codigo
+            ? err.codigo
+            : "No se pudieron guardar los cambios. Intenta de nuevo.",
+      );
     } finally {
       setGuardando(false);
     }
@@ -3058,6 +3121,8 @@ function DialogEditarRepartidor({
               />
             </Campo>
           </div>
+
+          {errorEdit && <MensajeError>{errorEdit}</MensajeError>}
 
           <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             {guardado && (
@@ -3776,13 +3841,176 @@ function Campo({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ANÁLISIS DE RETRASOS (HU029)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const NOMBRE_PARAMETRO: Record<string, string> = { beta: "β (beta)", iterations: "Iteraciones" };
+
+function AnalisisRetrasos() {
+  const [datos, setDatos] = useState<import("@/lib/api").AnalisisRetrasosApi | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [ejecutando, setEjecutando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .analisisRetrasos()
+      .then(setDatos)
+      .catch(() => setError("No se pudo cargar el análisis de retrasos."))
+      .finally(() => setCargando(false));
+  }, []);
+
+  async function ejecutar() {
+    setEjecutando(true);
+    setError(null);
+    setAviso(null);
+    try {
+      const r = await api.ejecutarAnalisisRetrasos();
+      setDatos(r);
+      const n = r.alertasCreadas ?? 0;
+      setAviso(
+        n > 0
+          ? `Análisis ejecutado: ${n} alerta${n === 1 ? "" : "s"} nueva${n === 1 ? "" : "s"} en Alertas.`
+          : "Análisis ejecutado: sin alertas nuevas.",
+      );
+    } catch {
+      setError("No se pudo ejecutar el análisis. Intenta de nuevo.");
+    }
+    setEjecutando(false);
+  }
+
+  const grupos = (titulo: string, filas: import("@/lib/api").GrupoRetrasoApi[]) => (
+    <div className="min-w-0">
+      <h3 className="mb-2 text-sm font-semibold">{titulo}</h3>
+      {filas.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Sin entregas en el período.</p>
+      ) : (
+        <ul className="space-y-2">
+          {filas.map((g) => (
+            <li
+              key={g.id}
+              className={`rounded-lg border p-3 ${g.demoraRecurrente ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/30"}`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="min-w-0 break-words text-sm font-medium">{g.nombre}</span>
+                {g.demoraRecurrente && (
+                  <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                    Demora recurrente
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                {g.entregas} entrega{g.entregas === 1 ? "" : "s"} · Real {g.realMin} min · Estimado{" "}
+                {g.estimadoMin} min ·{" "}
+                <span className={g.retrasoPct > 30 ? "font-semibold text-destructive" : ""}>
+                  {g.retrasoPct > 0 ? "+" : ""}
+                  {g.retrasoPct} %
+                </span>
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">Análisis de retrasos</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Últimos {datos?.dias ?? 30} días · tiempo real (asignación → entrega) frente al estimado
+            (distancia a 25 km/h con el factor de tráfico). Demora recurrente: más de 30 % en 3 o
+            más entregas. Se ejecuta automáticamente cada día.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={ejecutar}
+          disabled={ejecutando || cargando}
+          className={`${clsBtnAccent} w-full shrink-0 sm:w-auto`}
+        >
+          {ejecutando ? "Analizando…" : "Ejecutar análisis ahora"}
+        </button>
+      </div>
+      {aviso && (
+        <p
+          role="status"
+          className="mb-3 rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300"
+        >
+          {aviso}
+        </p>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {cargando ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Analizando entregas…
+        </p>
+      ) : datos ? (
+        <div className="space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Entregas analizadas:{" "}
+            <strong className="text-foreground">{datos.entregasAnalizadas}</strong>
+          </p>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {grupos("Por zona (distancia al local)", datos.zonas)}
+            {grupos("Por repartidor", datos.repartidores)}
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Recomendación de parámetros del ACO</h3>
+            {datos.recomendaciones.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sin demoras recurrentes por zona: no se sugieren cambios en la configuración.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {datos.recomendaciones.map((r) => (
+                  <li
+                    key={r.parametro}
+                    className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                  >
+                    <strong>
+                      {NOMBRE_PARAMETRO[r.parametro] ?? r.parametro}: de {r.actual} a {r.sugerido}
+                    </strong>
+                    <span className="block text-xs text-muted-foreground">{r.motivo}</span>
+                  </li>
+                ))}
+                <li className="text-xs text-muted-foreground">
+                  Puedes aplicarlas en Configuración ACO.
+                </li>
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SECCIÓN: ALERTAS DE BAJO DESEMPEÑO (HU013 Esc.3 / HU022)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function SeccionAlertas() {
+const TIPO_ALERTA: Record<string, string> = {
+  calificacion_baja: "Calificación baja",
+  incidencia: "Incidencia",
+  retraso_recurrente: "Demora recurrente",
+};
+
+function SeccionAlertas({ onNoLeidas }: { onNoLeidas?: (n: number) => void }) {
   const [alertas, setAlertas] = useState<import("@/lib/api").AlertaAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorAccion, setErrorAccion] = useState<string | null>(null);
 
   const cargar = () => {
     setCargando(true);
@@ -3797,17 +4025,33 @@ function SeccionAlertas() {
     cargar();
   }, []);
 
+  // La alerta solo se marca como leída si el servidor lo confirmó
   const marcarTodas = async () => {
-    await api.leerTodasAlertas().catch(() => {});
-    setAlertas((prev) => prev.map((a) => ({ ...a, Leida: true })));
+    setErrorAccion(null);
+    try {
+      await api.leerTodasAlertas();
+      setAlertas((prev) => prev.map((a) => ({ ...a, Leida: true })));
+    } catch {
+      setErrorAccion("No se pudieron marcar las alertas. Intenta de nuevo.");
+    }
   };
 
   const marcarUna = async (id: number) => {
-    await api.leerAlerta(id).catch(() => {});
-    setAlertas((prev) => prev.map((a) => (a.Id_Alerta === id ? { ...a, Leida: true } : a)));
+    setErrorAccion(null);
+    try {
+      await api.leerAlerta(id);
+      setAlertas((prev) => prev.map((a) => (a.Id_Alerta === id ? { ...a, Leida: true } : a)));
+    } catch {
+      setErrorAccion("No se pudo marcar la alerta. Intenta de nuevo.");
+    }
   };
 
   const noLeidas = alertas.filter((a) => !a.Leida).length;
+
+  // El contador del menú refleja las alertas sin leer reales
+  useEffect(() => {
+    if (!cargando && !error) onNoLeidas?.(noLeidas);
+  }, [noLeidas, cargando, error, onNoLeidas]);
 
   if (cargando) {
     return (
@@ -3846,7 +4090,7 @@ function SeccionAlertas() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Alertas de desempeño</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Alertas automáticas por calificación baja del repartidor
+            Alertas automáticas por calificación baja, incidencias reportadas y demoras recurrentes
             {noLeidas > 0 && (
               <span className="ml-2 inline-block whitespace-nowrap rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
                 {noLeidas} sin leer
@@ -3870,13 +4114,20 @@ function SeccionAlertas() {
         </div>
       </div>
 
+      {errorAccion && (
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {errorAccion}
+        </p>
+      )}
+
       {alertas.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           <Bell className="mx-auto mb-3 h-8 w-8 opacity-30" aria-hidden="true" />
           <p className="font-semibold text-foreground">No hay alertas</p>
           <p className="mx-auto mt-1 max-w-sm leading-relaxed">
             Todas las entregas recientes tienen calificación de 3 o más. Aquí aparecerán las
-            entregas con calificación baja (demoras o incidencias) para que puedas revisarlas.
+            entregas con calificación baja, las incidencias que reporten los repartidores y las
+            demoras recurrentes que detecte el análisis diario.
           </p>
         </div>
       ) : (
@@ -3897,6 +4148,11 @@ function SeccionAlertas() {
                     className={`mt-0.5 h-4 w-4 shrink-0 ${alerta.Leida ? "text-muted-foreground" : "text-destructive"}`}
                   />
                   <div className="min-w-0">
+                    {TIPO_ALERTA[alerta.Tipo] && (
+                      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {TIPO_ALERTA[alerta.Tipo]}
+                      </p>
+                    )}
                     <p className="break-words text-sm font-medium leading-snug">
                       {!alerta.Leida && <span className="sr-only">No leída: </span>}
                       {alerta.Mensaje}

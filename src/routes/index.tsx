@@ -67,7 +67,7 @@ export function PaginaInicio() {
     const id = codigo.trim().toUpperCase();
     /* Heurística #5: Prevención de errores — valida antes de navegar */
     if (!id) {
-      setError("Ingresá el código de tu pedido. Ejemplo: AKA-1042");
+      setError("Ingresa el código de tu pedido. Ejemplo: AKA-1042");
       return;
     }
     if (!/^AKA-\d+$/i.test(id)) {

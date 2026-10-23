@@ -228,14 +228,17 @@ function PaginaRepartidor() {
             <span className="hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline">
               {nombreRepartidor}
             </span>
-            <Link
-              to="/admin"
-              aria-label="Panel de administración"
-              className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Admin</span>
-            </Link>
+            {/* Solo un administrador que revisa la ruta ve el acceso a su panel */}
+            {session.role === "admin" && (
+              <Link
+                to="/admin"
+                aria-label="Panel de administración"
+                className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Admin</span>
+              </Link>
+            )}
             <button
               onClick={cerrarSesion}
               aria-label="Cerrar sesión"
@@ -325,7 +328,7 @@ function PaginaRepartidor() {
               </h2>
               <Navigation className="h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
               <p className="text-sm font-medium text-muted-foreground">
-                Presioná <strong>Generar ruta óptima</strong>
+                Presiona <strong>Generar ruta óptima</strong>
               </p>
               <p className="max-w-xs text-xs text-muted-foreground">
                 El ACO calculará el orden óptimo para entregar todos los pedidos activos y lo
@@ -365,7 +368,7 @@ function PaginaRepartidor() {
             </div>
           ) : pedidosActivos.length === 0 ? (
             <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              No tenés pedidos activos por el momento.
+              No tienes pedidos activos por el momento.
             </p>
           ) : (
             <>

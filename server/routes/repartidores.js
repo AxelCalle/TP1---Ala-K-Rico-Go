@@ -1,6 +1,7 @@
 // Rutas de repartidores (GPS, listado, alta por admin)
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'node:crypto';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
@@ -58,10 +59,13 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'nombre, email y DNI son obligatorios.' });
   }
 
-  // Contraseña automática: primerNombre + últimas 4 del DNI
-  const primerNombre = nombre.trim().split(' ')[0].toLowerCase();
-  const ultimas4     = (dni || '').slice(-4);
-  const passwordAuto = `${primerNombre}.${ultimas4}`;
+  if (!/^\d{8}$/.test(String(dni).trim())) {
+    return res.status(400).json({ error: 'El DNI debe tener 8 dígitos.' });
+  }
+
+  // Contraseña inicial aleatoria (no deducible de los datos personales);
+  // se muestra una sola vez al administrador
+  const passwordAuto = generarPasswordInicial();
 
   try {
     const pool = await getPool();
@@ -80,7 +84,7 @@ router.post('/', async (req, res) => {
       .input('apellido', sql.NVarChar(100), apellido || '')
       .input('email',    sql.NVarChar(150), email)
       .input('hash',     sql.NVarChar(250), hash)
-      .input('dni',      sql.NVarChar(9),   dni || '')
+      .input('dni',      sql.NVarChar(9),   String(dni).trim())
       .input('tel',      sql.NVarChar(9),   telefono || '')
       .query(`
         INSERT INTO AKR_Usuarios
@@ -108,6 +112,9 @@ router.put('/:id', async (req, res) => {
   if (!idRep || isNaN(idRep)) return res.status(400).json({ error: 'ID inválido.' });
   const { nombre, apellido, email, dni, telefono } = req.body;
   if (!nombre || !email) return res.status(400).json({ error: 'nombre y email son obligatorios.' });
+  if (dni && !/^\d{8}$/.test(String(dni).trim())) {
+    return res.status(400).json({ error: 'El DNI debe tener 8 dígitos.' });
+  }
   try {
     const pool = await getPool();
     await pool.request()
@@ -122,8 +129,14 @@ router.put('/:id', async (req, res) => {
         Email_Usuario=@email, DNI_Usuario=@dni, Telf_Usuario=@tel,
         Modificacion_Usuario=GETDATE()
         WHERE Id_Usuario=@id AND Id_Roles=2`);
+    await registrarAuditoria(pool, req.usuario.id, null, 'repartidor_editado',
+      `Repartidor ${idRep} editado`, req);
     return res.json({ ok: true });
   } catch (err) {
+    // Correo ya usado por otra cuenta (índice único)
+    if (err.number === 2627 || err.number === 2601) {
+      return res.status(409).json({ error: 'email_taken' });
+    }
     console.error('PUT /repartidores/:id:', err.message);
     return res.status(500).json({ error: 'Error interno.' });
   }
@@ -138,15 +151,21 @@ router.patch('/:id/toggle', async (req, res) => {
   if (!idToggle || isNaN(idToggle)) return res.status(400).json({ error: 'ID inválido.' });
   try {
     const pool = await getPool();
-    await pool.request()
+    const r = await pool.request()
       .input('id', sql.Int, idToggle)
       .query(`
         UPDATE AKR_Usuarios SET
           Activo_Usuario       = CASE WHEN Activo_Usuario = 1 THEN 0 ELSE 1 END,
           Modificacion_Usuario = GETDATE()
+        OUTPUT INSERTED.Activo_Usuario
         WHERE Id_Usuario = @id AND Id_Roles = 2
       `);
-    return res.json({ ok: true });
+    const fila = r.recordset[0];
+    if (!fila) return res.status(404).json({ error: 'Repartidor no encontrado.' });
+    await registrarAuditoria(pool, req.usuario.id, null,
+      fila.Activo_Usuario ? 'repartidor_activado' : 'repartidor_desactivado',
+      `Repartidor ${idToggle} ${fila.Activo_Usuario ? 'activado' : 'desactivado'}`, req);
+    return res.json({ ok: true, activo: !!fila.Activo_Usuario });
   } catch (err) {
     console.error('PATCH /repartidores/:id/toggle:', err.message);
     return res.status(500).json({ error: 'Error interno.' });
@@ -160,7 +179,8 @@ router.put('/:id/ubicacion', async (req, res) => {
   const idParam = parseInt(req.params.id);
 
   // Solo el propio repartidor o admin pueden actualizar
-  if (req.usuario.role !== 'admin' && req.usuario.id !== idParam) {
+  const esPropio = req.usuario.role === 'driver' && req.usuario.id === idParam;
+  if (req.usuario.role !== 'admin' && !esPropio) {
     return res.status(403).json({ error: 'Acceso denegado.' });
   }
 
@@ -349,3 +369,18 @@ router.get('/:id/calificaciones', async (req, res) => {
 });
 
 export default router;
+
+/** Contraseña inicial de 10 caracteres sin caracteres ambiguos (0/O, 1/l/I). */
+function generarPasswordInicial() {
+  const letras = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
+  const digitos = '23456789';
+  const todos = letras + digitos;
+  const chars = [letras[randomInt(letras.length)], digitos[randomInt(digitos.length)]];
+  while (chars.length < 10) chars.push(todos[randomInt(todos.length)]);
+  // Mezcla (Fisher-Yates) para que la letra y el dígito obligatorios no queden al inicio
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store } from "@/lib/store";
@@ -162,7 +162,32 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
   const [verPass, setVerPass] = useState(false);
   const [error, setError] = useState("");
   const [bloqueado, setBloqueado] = useState(false);
+  const [bloqueoHasta, setBloqueoHasta] = useState(0);
   const [cargando, setCargando] = useState(false);
+
+  // Al vencer el bloqueo de 15 min se reactiva el botón sin recargar la página
+  useEffect(() => {
+    if (!bloqueoHasta) return;
+    const t = setTimeout(
+      () => {
+        setBloqueado(false);
+        setBloqueoHasta(0);
+        setError("");
+      },
+      Math.max(0, bloqueoHasta - Date.now()),
+    );
+    return () => clearTimeout(t);
+  }, [bloqueoHasta]);
+
+  function mostrarBloqueo(hasta: number) {
+    setBloqueado(true);
+    setBloqueoHasta(hasta);
+    const min = Math.ceil((hasta - Date.now()) / 60_000);
+    setError(
+      `Cuenta bloqueada por demasiados intentos fallidos. ` +
+        `Intenta de nuevo en ${min} minuto${min === 1 ? "" : "s"}.`,
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -177,12 +202,7 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
     // ── 1. Verificar bloqueo frontal antes de intentar ────────────────────
     const lockedUntil = store.getBloqueo(email.trim());
     if (lockedUntil) {
-      setBloqueado(true);
-      const min = Math.ceil((lockedUntil - Date.now()) / 60_000);
-      setError(
-        `Cuenta bloqueada por demasiados intentos fallidos. ` +
-          `Intenta de nuevo en ${min} minuto${min === 1 ? "" : "s"}.`,
-      );
+      mostrarBloqueo(lockedUntil);
       return;
     }
 
@@ -192,7 +212,8 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
       // ── 2. Intentar autenticación con el backend real ─────────────────
       const respuesta = await api.login(email.trim(), password);
 
-      // Éxito: guardar token y sincronizar sesión en el store local
+      // Éxito: guardar token, limpiar intentos fallidos y sincronizar la sesión
+      store.limpiarFallos(email.trim());
       api.guardarToken(respuesta.token);
       store.setApiSession(respuesta.usuario);
 
@@ -211,16 +232,11 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
         const restantes = store.remainingAttempts(email.trim());
         const nuevoBloqueo = store.getBloqueo(email.trim());
         if (nuevoBloqueo) {
-          setBloqueado(true);
-          const min = Math.ceil((nuevoBloqueo - Date.now()) / 60_000);
-          setError(
-            `Cuenta bloqueada por demasiados intentos fallidos. ` +
-              `Intenta de nuevo en ${min} minuto${min === 1 ? "" : "s"}.`,
-          );
+          mostrarBloqueo(nuevoBloqueo);
         } else if (restantes <= 2 && restantes > 0) {
           setError(
             `Correo o contraseña incorrectos. ` +
-              `Te quedan ${restantes} intento${restantes === 1 ? "" : "s"} antes de que la cuenta se bloquee 15 min.`,
+              `Te ${restantes === 1 ? "queda" : "quedan"} ${restantes} intento${restantes === 1 ? "" : "s"} antes de que la cuenta se bloquee 15 min.`,
           );
         } else {
           setError("Correo o contraseña incorrectos.");
@@ -229,7 +245,10 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
         // ── Sin conexión al servidor ───────────────────────────────────────
         // Admin y repartidores requieren backend — sus credenciales están
         // hasheadas en la base de datos y no pueden verificarse offline.
-        setError("Sin conexión con el servidor. Verificá tu conexión e intentá de nuevo.");
+        setError("Sin conexión con el servidor. Verifica tu conexión e intenta de nuevo.");
+      } else if (err instanceof ErrorApi && err.status === 429) {
+        // Límite de intentos del servidor (por conexión)
+        setError("Demasiados intentos desde esta conexión. Intenta de nuevo en 15 minutos.");
       } else {
         // ── Error inesperado del servidor ──────────────────────────────────
         setError("Error del servidor. Intenta de nuevo en un momento.");
@@ -271,7 +290,15 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
           aria-describedby={error ? "login-error" : undefined}
           maxLength={120}
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            // Otro correo: se quita el aviso de bloqueo del correo anterior
+            if (bloqueado) {
+              setBloqueado(false);
+              setBloqueoHasta(0);
+              setError("");
+            }
+          }}
           className={inputCls}
           placeholder="tu@correo.com"
         />

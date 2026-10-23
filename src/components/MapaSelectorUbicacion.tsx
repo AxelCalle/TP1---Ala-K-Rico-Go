@@ -53,7 +53,9 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
         "accept-language": "es",
         zoom: "18",
       });
-      const res = await fetch(`${NOMINATIM_REVERSE}?${params}`);
+      const res = await fetch(`${NOMINATIM_REVERSE}?${params}`, {
+        signal: AbortSignal.timeout(10_000),
+      });
       if (!res.ok) return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       const data = await res.json();
       const addr = data.address ?? {};
@@ -80,11 +82,15 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
   }, []);
 
   // ── Actualizar posición del pin ──────────────────────────────────────────────
+  // Solo vale la respuesta de la última posición (si el pin se mueve rápido,
+  // una respuesta antigua de Nominatim no debe pisar a la nueva)
+  const consultaRef = useRef(0);
   const actualizarPosicion = useCallback(
     async (lat: number, lng: number, marker: any) => {
+      const consulta = ++consultaRef.current;
       setBuscandoDir(true);
       const dir = await geocodInverso(lat, lng);
-      if (!activoRef.current) return;
+      if (!activoRef.current || consulta !== consultaRef.current) return;
       setBuscandoDir(false);
       setDireccionSel(dir);
       const distKm = haversineKm(RESTAURANTE_COORDS[0], RESTAURANTE_COORDS[1], lat, lng);
@@ -95,7 +101,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
           .bindPopup(
             `<div style="font-size:12px;max-width:200px">
               <b style="color:#f59e0b">📍 Ubicación fijada</b><br>
-              <span style="color:#666">${dir}</span>
+              <span style="color:#666">${escaparHtml(dir)}</span>
             </div>`,
           )
           .openPopup();
@@ -330,4 +336,12 @@ function crearIconoPin(L: any) {
     iconAnchor: [16, 44], // punta del pin en el suelo
     popupAnchor: [0, -46],
   });
+}
+
+/** Escapa texto externo (dirección de Nominatim) antes de insertarlo en el popup. */
+function escaparHtml(t: string): string {
+  return t.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
+  );
 }

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
+import { validarTransicion } from '../lib/pedidos.js';
 
 const router = Router();
 
@@ -101,7 +102,11 @@ router.get('/', async (req, res) => {
           FROM AKR_Pedidos p
           LEFT JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
           WHERE p.Id_Repartidor = @idRep
-            AND p.Estado IN ('asignado','en_camino')
+            AND (p.Estado IN ('asignado','en_camino')
+                 -- entregas de hoy (hora de Lima) para el historial del repartidor
+                 OR (p.Estado = 'entregado'
+                     AND CAST(DATEADD(HOUR, -5, p.Entrega_Pedido) AS DATE)
+                         = CAST(DATEADD(HOUR, -5, GETUTCDATE()) AS DATE)))
           ORDER BY p.Creacion_Pedido DESC
         `);
       return res.json(result.recordset);
@@ -237,10 +242,6 @@ router.patch('/:id/estado', async (req, res) => {
     return res.status(400).json({ error: 'ID de pedido inválido.' });
   }
   const { estado } = req.body;
-  const validStates = ['sin_asignar','asignado','en_camino','entregado','cancelado'];
-  if (!estado || !validStates.includes(estado)) {
-    return res.status(400).json({ error: 'Estado inválido.' });
-  }
 
   try {
     const pool = await getPool();
@@ -252,40 +253,45 @@ router.patch('/:id/estado', async (req, res) => {
     const pedido = cur.recordset[0];
     if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado.' });
 
-    // Permisos: admin puede todo; driver solo en_camino→entregado de sus pedidos
-    if (req.usuario.role === 'driver') {
-      if (pedido.Id_Repartidor !== req.usuario.id) {
-        return res.status(403).json({ error: 'Acceso denegado.' });
-      }
-      if (!['en_camino','entregado'].includes(estado)) {
-        return res.status(403).json({ error: 'El repartidor solo puede marcar en_camino o entregado.' });
-      }
+    // Propiedad del pedido: el repartidor solo sus pedidos; el cliente solo los suyos
+    if (req.usuario.role === 'driver' && pedido.Id_Repartidor !== req.usuario.id) {
+      return res.status(403).json({ error: 'Acceso denegado.' });
     }
-    // customer solo puede cancelar sus propios pedidos sin_asignar
-    if (req.usuario.role === 'customer') {
-      if (pedido.Id_Cliente !== req.usuario.id) {
-        return res.status(403).json({ error: 'Acceso denegado.' });
-      }
-      if (estado !== 'cancelado' || pedido.Estado !== 'sin_asignar') {
-        return res.status(400).json({ error: 'Solo puedes cancelar pedidos sin asignar.' });
-      }
+    if (req.usuario.role === 'customer' && pedido.Id_Cliente !== req.usuario.id) {
+      return res.status(403).json({ error: 'Acceso denegado.' });
     }
 
+    // Transiciones permitidas por rol (sin regresar desde entregado o cancelado)
+    const v = validarTransicion(req.usuario.role, pedido.Estado, estado, {
+      tieneRepartidor: pedido.Id_Repartidor != null,
+    });
+    if (!v.ok) return res.status(v.status).json({ error: v.error });
+    // Reintento sobre un estado ya aplicado: no se repiten notificaciones ni calificaciones
+    if (v.sinCambios) return res.json({ ok: true, sinCambios: true });
+
     const now = new Date();
-    await pool.request()
+    const actualizado = await pool.request()
       .input('id',       sql.Int,         idNum)
+      .input('actual',   sql.NVarChar(20), pedido.Estado)
       .input('estado',   sql.NVarChar(20), estado)
       .input('asignado', sql.DateTime,     estado === 'asignado'  ? now : null)
       .input('entrega',  sql.DateTime,     estado === 'entregado' ? now : null)
       .input('cancel',   sql.DateTime,     estado === 'cancelado' ? now : null)
+      .input('liberar',  sql.Bit,          estado === 'sin_asignar' ? 1 : 0)
       .query(`
         UPDATE AKR_Pedidos SET
           Estado              = @estado,
-          Asignacion_Pedido   = COALESCE(Asignacion_Pedido, @asignado),
+          Id_Repartidor       = CASE WHEN @liberar = 1 THEN NULL ELSE Id_Repartidor END,
+          Asignacion_Pedido   = CASE WHEN @liberar = 1 THEN NULL
+                                     ELSE COALESCE(Asignacion_Pedido, @asignado) END,
           Entrega_Pedido      = COALESCE(Entrega_Pedido, @entrega),
           Cancelacion_Pedido  = COALESCE(Cancelacion_Pedido, @cancel)
-        WHERE Id_Pedido = @id
+        WHERE Id_Pedido = @id AND Estado = @actual
       `);
+    // Otro usuario cambió el pedido entre la lectura y la actualización
+    if (actualizado.rowsAffected[0] === 0) {
+      return res.status(409).json({ error: 'El pedido cambió de estado. Recarga e inténtalo de nuevo.' });
+    }
 
     // Crear notificación si corresponde
     // Notificaciones solo si hay cliente registrado (no pedidos WhatsApp sin cuenta)
@@ -401,7 +407,7 @@ router.patch('/:id/asignar', async (req, res) => {
     const pool = await getPool();
 
     if (desasignar) {
-      await pool.request()
+      const r = await pool.request()
         .input('id', sql.Int, idPed)
         .query(`
           UPDATE AKR_Pedidos SET
@@ -410,6 +416,11 @@ router.patch('/:id/asignar', async (req, res) => {
             Asignacion_Pedido = NULL
           WHERE Id_Pedido = @id AND Estado IN ('asignado', 'sin_asignar')
         `);
+      if (r.rowsAffected[0] === 0) {
+        return res.status(409).json({
+          error: 'Solo se puede quitar la asignación de pedidos sin asignar o asignados.',
+        });
+      }
 
       await registrarAuditoria(pool, req.usuario.id, null, 'pedido_desasignado',
         `Pedido #${idPed} desasignado`, req);
@@ -418,8 +429,16 @@ router.patch('/:id/asignar', async (req, res) => {
       if (!repId || isNaN(repId) || repId < 1) {
         return res.status(400).json({ error: 'ID de repartidor inválido.' });
       }
+      // Solo repartidores activos (rol 2)
+      const rep = await pool.request()
+        .input('repId', sql.Int, repId)
+        .query('SELECT 1 FROM AKR_Usuarios WHERE Id_Usuario = @repId AND Id_Roles = 2 AND Activo_Usuario = 1');
+      if (rep.recordset.length === 0) {
+        return res.status(400).json({ error: 'El repartidor no existe o está inactivo.' });
+      }
+
       const now = new Date();
-      await pool.request()
+      const r = await pool.request()
         .input('id',    sql.Int,      idPed)
         .input('repId', sql.Int,      repId)
         .input('now',   sql.DateTime, now)
@@ -430,6 +449,11 @@ router.patch('/:id/asignar', async (req, res) => {
             Asignacion_Pedido = @now
           WHERE Id_Pedido = @id AND Estado IN ('sin_asignar', 'asignado')
         `);
+      if (r.rowsAffected[0] === 0) {
+        return res.status(409).json({
+          error: 'Solo se pueden asignar pedidos sin asignar o asignados.',
+        });
+      }
 
       const cur = await pool.request()
         .input('id', sql.Int, idPed)
@@ -529,6 +553,20 @@ router.post('/:id/incidencia', async (req, res) => {
 
     await registrarAuditoria(pool, req.usuario.id, null, 'incidencia_reportada',
       `Pedido #${idPedInc}: ${tipo}`, req);
+
+    // Aviso al administrador en Alertas
+    await pool.request()
+      .input('tipoAl',  sql.NVarChar(60),      'incidencia')
+      .input('msgAl',   sql.NVarChar(500),
+        `Incidencia en el pedido #${idPedInc}: ${String(tipo).slice(0, 80)}` +
+        (detalle ? ` — ${String(detalle).slice(0, 300)}` : ''))
+      .input('datosAl', sql.NVarChar(sql.MAX), JSON.stringify({
+        idPedido: idPedInc, idRepartidor: req.usuario.id, tipo,
+      }))
+      .query(`
+        INSERT INTO AKR_Alertas_Admin (Tipo, Mensaje, Datos)
+        VALUES (@tipoAl, @msgAl, @datosAl)
+      `);
 
     return res.status(201).json({ ok: true });
   } catch (err) {

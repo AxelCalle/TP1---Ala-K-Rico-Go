@@ -32,15 +32,16 @@ router.put('/aco', async (req, res) => {
 
   const permitidas = ['alfa','beta','rho','Q','numAnts','iterations','elite','tauMin'];
   // Rangos válidos por parámetro: [min, max]
+  // (mismos rangos que el formulario de Configuración ACO del administrador)
   const rangos = {
-    alfa:       [0.1,  10],
-    beta:       [0.1,  10],
-    rho:        [0.01,  0.99],
+    alfa:       [0.5,  5],
+    beta:       [0.5,  5],
+    rho:        [0.01, 0.9],
     Q:          [0.1,  10],
     numAnts:    [5,    100],
-    iterations: [10,   500],
-    elite:      [0,    20],
-    tauMin:     [0.001, 1],
+    iterations: [10,   200],
+    elite:      [0,    10],
+    tauMin:     [0.001, 0.5],
   };
 
   const updates = Object.entries(req.body).filter(([k]) => permitidas.includes(k));

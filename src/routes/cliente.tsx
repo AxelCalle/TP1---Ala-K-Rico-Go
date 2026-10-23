@@ -35,7 +35,7 @@ import { MapaRuta } from "@/components/MapaRuta";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
 import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
 import { geocodificarDireccion } from "@/lib/geo";
-import { api } from "@/lib/api";
+import { api, ErrorApi } from "@/lib/api";
 
 export const Route = createFileRoute("/cliente")({
   head: () => ({
@@ -432,8 +432,13 @@ function ModalNuevoPedido({
         latOrigen: RESTAURANTE_COORDS[0],
         lngOrigen: RESTAURANTE_COORDS[1],
       });
-    } catch {
-      setError("Error al registrar el pedido. Intenta de nuevo.");
+    } catch (err) {
+      // Validaciones del servidor (p. ej. fuera de la zona de cobertura): se muestra el motivo
+      setError(
+        err instanceof ErrorApi && err.status === 400 && err.codigo
+          ? err.codigo
+          : "Error al registrar el pedido. Intenta de nuevo.",
+      );
       setEnviando(false);
       return;
     }
@@ -709,12 +714,19 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
     refetchInterval: 15000,
   });
   const [confirmandoCancelar, setConfirmandoCancelar] = useState<number | null>(null);
+  const [errorCancelar, setErrorCancelar] = useState("");
 
   async function cancelar(id: number) {
+    setErrorCancelar("");
     try {
       await api.cambiarEstadoPedido(id, "cancelado");
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // p. ej. el pedido fue asignado mientras el cliente confirmaba
+      setErrorCancelar(
+        err instanceof ErrorApi && err.codigo && err.status < 500
+          ? err.codigo
+          : "No se pudo cancelar el pedido. Intenta de nuevo.",
+      );
     }
     qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
     setConfirmandoCancelar(null);
@@ -746,6 +758,11 @@ function TabPedidos({ onNuevoPedido }: { customerId: string; onNuevoPedido: () =
 
   return (
     <div className="space-y-5">
+      {errorCancelar && (
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {errorCancelar}
+        </p>
+      )}
       {activo && (
         <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-4 sm:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1052,6 +1069,13 @@ function TarjetaSeguimiento({ order }: { order: any }) {
   const createdAt = order.Creacion_Pedido ?? order.createdAt;
   const assignedAt = order.Asignacion_Pedido ?? null;
   const deliveredAt = order.Entrega_Pedido ?? null;
+  // El ETA del pedido en camino baja con el tiempo: se recalcula cada 30 s
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (estado !== "en_camino") return;
+    const t = setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => clearInterval(t);
+  }, [estado]);
   const address = order.Direccion_Destino ?? order.address ?? "";
   const coords: [number, number] | undefined =
     order.Lat_Destino != null ? [order.Lat_Destino, order.Lng_Destino] : order.coords;

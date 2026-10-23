@@ -2,6 +2,13 @@
 import { Router } from 'express';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
+import { rangoDiaLima } from '../lib/recorrido.js';
+import { analizarRetrasos, mensajeDemora } from '../lib/analisis.js';
+
+// Las fechas se guardan en UTC (Azure SQL): "hoy" se calcula en hora de Lima (UTC−5)
+const HOY_LIMA = 'CAST(DATEADD(HOUR, -5, GETUTCDATE()) AS DATE)';
+const diaLima = (col) => `CAST(DATEADD(HOUR, -5, ${col}) AS DATE)`;
+const MINUTOS = 'CAST(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido) AS FLOAT)';
 
 const router = Router();
 router.use(verificarToken);
@@ -19,21 +26,22 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
     const pool = await getPool();
 
     const [kpisHoy, avgHistorico, activosAhora, repsActivos, porEstado, recientes] = await Promise.all([
-      // KPIs filtrados por HOY (pedidos creados hoy)
+      // KPIs de HOY en hora de Lima: pedidos creados hoy y entregas realizadas hoy
       pool.request().query(`
         SELECT
-          COUNT(*)                                                AS total_hoy,
-          SUM(CASE WHEN Estado = 'entregado' THEN 1 ELSE 0 END) AS entregados,
-          SUM(CASE WHEN Estado = 'cancelado' THEN 1 ELSE 0 END) AS cancelados,
-          AVG(CASE WHEN Entrega_Pedido IS NOT NULL AND Asignacion_Pedido IS NOT NULL
-                   THEN DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido)
-                   ELSE NULL END)                               AS avg_minutos
+          SUM(CASE WHEN ${diaLima('Creacion_Pedido')} = ${HOY_LIMA} THEN 1 ELSE 0 END) AS total_hoy,
+          SUM(CASE WHEN Estado = 'entregado' AND ${diaLima('Entrega_Pedido')} = ${HOY_LIMA}
+                   THEN 1 ELSE 0 END)                                                 AS entregados,
+          SUM(CASE WHEN Estado = 'cancelado' AND ${diaLima('Cancelacion_Pedido')} = ${HOY_LIMA}
+                   THEN 1 ELSE 0 END)                                                 AS cancelados,
+          ROUND(AVG(CASE WHEN Estado = 'entregado' AND Asignacion_Pedido IS NOT NULL
+                          AND ${diaLima('Entrega_Pedido')} = ${HOY_LIMA}
+                         THEN ${MINUTOS} ELSE NULL END), 1)                           AS avg_minutos
         FROM AKR_Pedidos
-        WHERE CAST(Creacion_Pedido AS DATE) = CAST(GETDATE() AS DATE)
       `),
       // Promedio histórico de entrega (todos los pedidos con ambos timestamps)
       pool.request().query(`
-        SELECT AVG(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido)) AS avg_historico
+        SELECT ROUND(AVG(${MINUTOS}), 1) AS avg_historico
         FROM AKR_Pedidos
         WHERE Entrega_Pedido IS NOT NULL AND Asignacion_Pedido IS NOT NULL
       `),
@@ -67,10 +75,10 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
 
     return res.json({
       kpis: {
-        total_hoy:           kpisHoy.recordset[0].total_hoy,
+        total_hoy:           kpisHoy.recordset[0].total_hoy ?? 0,
         activos:             activosAhora.recordset[0].activos,
-        entregados:          kpisHoy.recordset[0].entregados,
-        cancelados:          kpisHoy.recordset[0].cancelados,
+        entregados:          kpisHoy.recordset[0].entregados ?? 0,
+        cancelados:          kpisHoy.recordset[0].cancelados ?? 0,
         avg_minutos:         kpisHoy.recordset[0].avg_minutos,
         avg_historico:       avgHistorico.recordset[0].avg_historico,
         repartidores_activos: repsActivos.recordset[0].repartidores_activos,
@@ -84,21 +92,18 @@ router.get('/dashboard', soloAdmin, async (req, res) => {
   }
 });
 
-// GET /api/reportes/tiempos  — estadísticas de entrega (CP076-078)
+// GET /api/reportes/tiempos?desde=YYYY-MM-DD&hasta=YYYY-MM-DD — estadísticas de entrega (CP076-078)
+// Las fechas son días completos en hora de Lima, ambos inclusive; el tiempo de
+// entrega se mide desde la asignación hasta la entrega.
 router.get('/tiempos', soloAdmin, async (req, res) => {
   const { desde, hasta } = req.query;
-
-  const parseDate = (val) => {
-    if (!val) return null;
-    const d = new Date(val);
-    if (isNaN(d.getTime())) return null;
-    return d;
-  };
-
-  const fechaDesde = desde ? parseDate(desde) : null;
-  const fechaHasta = hasta ? parseDate(hasta) : null;
-  if (desde && !fechaDesde) return res.status(400).json({ error: 'Fecha "desde" inválida.' });
-  if (hasta && !fechaHasta) return res.status(400).json({ error: 'Fecha "hasta" inválida.' });
+  const rDesde = desde ? rangoDiaLima(String(desde)) : null;
+  const rHasta = hasta ? rangoDiaLima(String(hasta)) : null;
+  if (desde && !rDesde) return res.status(400).json({ error: 'Fecha "desde" inválida.' });
+  if (hasta && !rHasta) return res.status(400).json({ error: 'Fecha "hasta" inválida.' });
+  if (rDesde && rHasta && rDesde.desde > rHasta.desde) {
+    return res.status(400).json({ error: 'La fecha "desde" no puede ser posterior a "hasta".' });
+  }
 
   try {
     const pool = await getPool();
@@ -107,16 +112,16 @@ router.get('/tiempos', soloAdmin, async (req, res) => {
       Entrega_Pedido IS NOT NULL
       AND Asignacion_Pedido IS NOT NULL
     `;
-    if (fechaDesde) { req2.input('desde', sql.DateTime, fechaDesde); where += ' AND Creacion_Pedido >= @desde'; }
-    if (fechaHasta) { req2.input('hasta', sql.DateTime, fechaHasta); where += ' AND Creacion_Pedido <= @hasta'; }
+    if (rDesde) { req2.input('desde', sql.DateTime2, rDesde.desde); where += ' AND Creacion_Pedido >= @desde'; }
+    if (rHasta) { req2.input('hasta', sql.DateTime2, rHasta.hasta); where += ' AND Creacion_Pedido < @hasta'; }
 
     const result = await req2.query(`
       SELECT
-        COUNT(*)                                                                 AS total,
-        AVG(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido))                AS promedio,
-        MIN(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido))                AS minimo,
-        MAX(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido))                AS maximo,
-        STDEV(DATEDIFF(MINUTE, Asignacion_Pedido, Entrega_Pedido))              AS desviacion
+        COUNT(*)                          AS total,
+        ROUND(AVG(${MINUTOS}), 1)         AS promedio,
+        MIN(${MINUTOS})                   AS minimo,
+        MAX(${MINUTOS})                   AS maximo,
+        ROUND(STDEV(${MINUTOS}), 1)       AS desviacion
       FROM AKR_Pedidos
       WHERE ${where}
     `);
@@ -138,23 +143,30 @@ router.get('/repartidores', soloAdmin, async (req, res) => {
         u.Nombre_Usuario + ' ' + u.Apellido_Usuario AS Nombre,
         COUNT(p.Id_Pedido)                           AS total_pedidos,
         SUM(CASE WHEN p.Estado = 'entregado' THEN 1 ELSE 0 END) AS entregados,
-        AVG(CASE WHEN p.Entrega_Pedido IS NOT NULL AND p.Asignacion_Pedido IS NOT NULL
-                 THEN DATEDIFF(MINUTE, p.Asignacion_Pedido, p.Entrega_Pedido)
-                 ELSE NULL END)                      AS avg_minutos
+        ROUND(AVG(CASE WHEN p.Entrega_Pedido IS NOT NULL AND p.Asignacion_Pedido IS NOT NULL
+                 THEN CAST(DATEDIFF(MINUTE, p.Asignacion_Pedido, p.Entrega_Pedido) AS FLOAT)
+                 ELSE NULL END), 1)                  AS avg_minutos
       FROM AKR_Usuarios u
       LEFT JOIN AKR_Pedidos p ON p.Id_Repartidor = u.Id_Usuario
       WHERE u.Id_Roles = 2
       GROUP BY u.Id_Usuario, u.Nombre_Usuario, u.Apellido_Usuario
-      ORDER BY entregados DESC
+      ORDER BY entregados DESC, avg_minutos ASC
     `);
-    return res.json(result.recordset);
+    // Promedio general histórico: referencia fija para la etiqueta "Atención" (HU027)
+    const general = await pool.request().query(`
+      SELECT ROUND(AVG(${MINUTOS}), 1) AS promedio_general
+      FROM AKR_Pedidos
+      WHERE Entrega_Pedido IS NOT NULL AND Asignacion_Pedido IS NOT NULL AND Id_Repartidor IS NOT NULL
+    `);
+    const promedioGeneral = general.recordset[0]?.promedio_general ?? null;
+    return res.json(result.recordset.map((r) => ({ ...r, promedio_general: promedioGeneral })));
   } catch (err) {
     console.error('GET /reportes/repartidores:', err.message);
     return res.status(500).json({ error: 'Error interno.' });
   }
 });
 
-// GET /api/reportes/zonas  — heatmap de zonas (CP082-084)
+// GET /api/reportes/zonas  — frecuencia de pedidos por coordenada (apoyo al análisis)
 router.get('/zonas', soloAdmin, async (req, res) => {
   try {
     const pool = await getPool();
@@ -242,6 +254,78 @@ router.get('/piloto', soloAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('GET /reportes/piloto:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
+// ─── Análisis de retrasos (HU029, CP085-087) ─────────────────────────────────
+const DIAS_ANALISIS = 30;
+
+async function datosAnalisis(pool) {
+  const [pedidos, config] = await Promise.all([
+    pool.request().input('dias', sql.Int, DIAS_ANALISIS).query(`
+      SELECT p.Id_Pedido, p.Id_Repartidor,
+             u.Nombre_Usuario + ' ' + u.Apellido_Usuario AS Nombre_Repartidor,
+             p.Lat_Origen, p.Lng_Origen, p.Lat_Destino, p.Lng_Destino,
+             p.Asignacion_Pedido, p.Entrega_Pedido
+      FROM AKR_Pedidos p
+      LEFT JOIN AKR_Usuarios u ON u.Id_Usuario = p.Id_Repartidor
+      WHERE p.Estado = 'entregado' AND p.Id_Repartidor IS NOT NULL
+        AND p.Asignacion_Pedido IS NOT NULL AND p.Entrega_Pedido IS NOT NULL
+        AND p.Entrega_Pedido >= DATEADD(DAY, -@dias, GETUTCDATE())
+    `),
+    pool.request().query('SELECT Clave, Valor FROM AKR_ConfigACO'),
+  ]);
+  const cfg = {};
+  for (const row of config.recordset) cfg[row.Clave] = row.Valor;
+  return analizarRetrasos(pedidos.recordset, cfg);
+}
+
+/**
+ * Ejecuta el análisis y registra una alerta por cada demora recurrente
+ * (una sola vez por día y por zona o repartidor). Lo usa el proceso diario.
+ */
+export async function ejecutarAnalisisRetrasos() {
+  const pool = await getPool();
+  const resultado = await datosAnalisis(pool);
+  let alertasCreadas = 0;
+  for (const d of resultado.demoras) {
+    const clave = `${d.tipo}:${d.id}`;
+    const ins = await pool.request()
+      .input('tipo',  sql.NVarChar(60),      'retraso_recurrente')
+      .input('msg',   sql.NVarChar(500),     mensajeDemora(d))
+      .input('clave', sql.NVarChar(100),     clave)
+      .input('datos', sql.NVarChar(sql.MAX), JSON.stringify({ clave, ...d }))
+      .query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM AKR_Alertas_Admin
+          WHERE Tipo = @tipo AND JSON_VALUE(Datos, '$.clave') = @clave
+            AND ${diaLima('Creacion')} = ${HOY_LIMA}
+        )
+        INSERT INTO AKR_Alertas_Admin (Tipo, Mensaje, Datos) VALUES (@tipo, @msg, @datos)
+      `);
+    alertasCreadas += ins.rowsAffected?.[0] ?? 0;
+  }
+  return { ...resultado, alertasCreadas };
+}
+
+// GET /api/reportes/analisis — resultado actual del análisis (sin crear alertas)
+router.get('/analisis', soloAdmin, async (_req, res) => {
+  try {
+    const pool = await getPool();
+    return res.json({ dias: DIAS_ANALISIS, ...(await datosAnalisis(pool)) });
+  } catch (err) {
+    console.error('GET /reportes/analisis:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
+// POST /api/reportes/analisis — ejecuta el análisis ahora y registra las alertas
+router.post('/analisis', soloAdmin, async (_req, res) => {
+  try {
+    return res.json({ dias: DIAS_ANALISIS, ...(await ejecutarAnalisisRetrasos()) });
+  } catch (err) {
+    console.error('POST /reportes/analisis:', err.message);
     return res.status(500).json({ error: 'Error interno.' });
   }
 });

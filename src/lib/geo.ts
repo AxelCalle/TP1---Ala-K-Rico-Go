@@ -17,6 +17,7 @@ export async function geocodificarDireccion(dir: string): Promise<[number, numbe
       const params = new URLSearchParams({ q, format: "json", limit: "1", countrycodes: "pe" });
       const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
         headers: { "Accept-Language": "es" },
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) continue;
       const data: { lat: string; lon: string }[] = await res.json();
@@ -33,7 +34,9 @@ export async function geocodificarDireccion(dir: string): Promise<[number, numbe
       .replace(/\b\d{4,5}\b/g, "")
       .trim();
     const params = new URLSearchParams({ q: `${sinNum}, Lima, Peru`, limit: "1", lang: "es" });
-    const res = await fetch(`https://photon.komoot.io/api?${params}&bbox=-77.5,-12.3,-76.7,-11.6`);
+    const res = await fetch(`https://photon.komoot.io/api?${params}&bbox=-77.5,-12.3,-76.7,-11.6`, {
+      signal: AbortSignal.timeout(10_000),
+    });
     if (res.ok) {
       const data: { features: { geometry: { coordinates: [number, number] } }[] } =
         await res.json();
