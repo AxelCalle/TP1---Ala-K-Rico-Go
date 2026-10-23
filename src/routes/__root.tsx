@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
+import {
+  Outlet,
+  Link,
+  createRootRouteWithContext,
+  useRouter,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
 import { Drumstick, Home, RefreshCw } from "lucide-react";
 
 function NotFoundComponent() {
@@ -39,7 +45,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
   if (import.meta.env.DEV) console.error(error);
   const router = useRouter();
 

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { store } from "@/lib/store";
 import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
-import { construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
+import { calcularETA, construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
 import { api } from "@/lib/api";
 
@@ -279,11 +279,11 @@ function PaginaRuta() {
     PICKUP.address,
   )}&destination=${encodeURIComponent(pedido.Direccion_Destino)}&travelmode=driving`;
 
-  const distanceKm = resultadoACO
-    ? resultadoACO.distanceKm.toFixed(1)
-    : (2 + (pedido.Id_Pedido % 5)).toFixed(1);
+  // Antes de calcular la ruta: distancia en línea recta desde el local y su ETA (HU014)
+  const kmDirecto = distanciaKm(RESTAURANTE_COORDS, coordsDestino);
+  const distanceKm = resultadoACO ? resultadoACO.distanceKm.toFixed(1) : kmDirecto.toFixed(1);
 
-  const etaMin = resultadoACO ? resultadoACO.etaMin : 5 + (pedido.Id_Pedido % 8);
+  const etaMin = resultadoACO ? resultadoACO.etaMin : calcularETA(kmDirecto);
 
   const entregado = estado === "entregado";
 
@@ -666,4 +666,14 @@ function ParadaRuta({
       </div>
     </li>
   );
+}
+
+/** Distancia en línea recta (Haversine) en km. */
+function distanciaKm(a: [number, number], b: [number, number]): number {
+  const rad = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * rad;
+  const dLng = (b[1] - a[1]) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }

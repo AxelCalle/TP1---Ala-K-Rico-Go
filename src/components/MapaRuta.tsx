@@ -73,6 +73,7 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
       });
       const res = await fetch(`${NOMINATIM}?${params}`, {
         headers: { "Accept-Language": "es" },
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) continue;
       const data: { lat: string; lon: string }[] = await res.json();
@@ -87,7 +88,7 @@ async function geocodificar(direccion: string): Promise<Coords | null> {
     try {
       const params = new URLSearchParams({ q: query, limit: "1", lang: "es" });
       const url = `${PHOTON}?${params}&bbox=-77.5,-12.3,-76.7,-11.6`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
       if (!res.ok) continue;
       const data: { features: { geometry: { coordinates: [number, number] } }[] } =
         await res.json();
@@ -165,7 +166,7 @@ function buildQueriesPhoton(raw: string): string[] {
 async function obtenerRuta(a: Coords, b: Coords): Promise<Coords[]> {
   try {
     const url = `${OSRM}/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return [];
     const data = await res.json();
     if (data.code !== "Ok") return [];
@@ -425,6 +426,13 @@ export function MapaRuta({
   const [pantallaCompleta, setPantallaCompleta] = usePantallaCompleta(mapaRef);
   useAjusteTamano(raizRef, mapaRef);
 
+  // Coordenadas por valor: un array nuevo con los mismos puntos (re-render del
+  // padre) no debe destruir el mapa ni volver a pedir la ruta a OSRM
+  const latA = coordsOrigen?.[0];
+  const lngA = coordsOrigen?.[1];
+  const latB = coordsDestino?.[0];
+  const lngB = coordsDestino?.[1];
+
   useEffect(() => {
     if (!contenedorRef.current) return;
     let activo = true;
@@ -513,7 +521,8 @@ export function MapaRuta({
         mapaRef.current = null;
       }
     };
-  }, [origen, destino, coordsOrigen, coordsDestino]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- coordenadas comparadas por valor
+  }, [origen, destino, latA, lngA, latB, lngB]);
 
   const top = pantallaCompleta ? "calc(env(safe-area-inset-top) + 0.75rem)" : "0.75rem";
 
@@ -611,7 +620,7 @@ async function obtenerRutaMulti(
   try {
     const waypoints = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
     const url = `${OSRM}/${waypoints}?overview=full&geometries=geojson&steps=true&annotations=false`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.code !== "Ok") return null;
@@ -2266,6 +2275,17 @@ function BadgeModo({ modo, gps }: { modo: ModoNavegacion; gps: EstadoGps | null 
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-foreground">
         <Play className="h-3 w-3" aria-hidden="true" /> Simulación
+      </span>
+    );
+  }
+  if (gps?.estado === "buscando") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+        <span
+          className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground"
+          aria-hidden="true"
+        />
+        Buscando GPS…
       </span>
     );
   }

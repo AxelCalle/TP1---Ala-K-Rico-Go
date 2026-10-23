@@ -17,6 +17,7 @@ import configRoutes        from './routes/config.js';
 import alertasRoutes       from './routes/alertas.js';
 import { registrarAuditoria } from './middleware/auditoria.js';
 import { getPool } from './db.js';
+import { ejecutarAnalisisRetrasos } from './routes/reportes.js';
 
 dotenv.config();
 
@@ -42,10 +43,10 @@ app.set('trust proxy', 1);
 // ---------------------------------------------------------------------------
 const limiterAuth = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Demasiados intentos. Intente en 15 minutos.' },
+  message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' },
 });
 
 const limiterGeneral = rateLimit({
@@ -97,7 +98,10 @@ app.use('/api', (_req, res, next) => {
 app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = function (body) {
-    if (res.statusCode === 401) {
+    // Solo los 401 por token ausente o inválido (las credenciales incorrectas del
+    // login ya se auditan como login_fallido)
+    const errorToken = ['Token no proporcionado.', 'Token inválido o expirado.'].includes(body?.error);
+    if (res.statusCode === 401 && errorToken) {
       // Registrar intento sin token o con token inválido
       getPool().then(pool => {
         const email = req.body?.email ?? null;
@@ -105,7 +109,7 @@ app.use((req, res, next) => {
           ? 'acceso_sin_token'
           : 'token_invalido';
         registrarAuditoria(pool, null, email, evento,
-          `${req.method} ${req.path}`, req);
+          `${req.method} ${req.baseUrl}${req.path}`, req);
       }).catch(() => {});
     }
     return originalJson(body);
@@ -116,7 +120,10 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // Rutas
 // ---------------------------------------------------------------------------
-app.use('/api/auth',           limiterAuth, authRoutes);
+// El límite de intentos aplica a login, registro y contraseñas (no a /perfil)
+app.use(['/api/auth/login', '/api/auth/register', '/api/auth/reset-password',
+  '/api/auth/change-password'], limiterAuth);
+app.use('/api/auth',           authRoutes);
 app.use('/api/usuarios',       usuariosRoutes);
 app.use('/api/pedidos',        pedidosRoutes);
 app.use('/api/repartidores',   repartidoresRoutes);
@@ -163,3 +170,14 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
+
+// Análisis diario de retrasos (HU029): al minuto de iniciar y luego cada 24 h
+const UN_DIA = 24 * 60 * 60 * 1000;
+const correrAnalisis = () =>
+  ejecutarAnalisisRetrasos()
+    .then((r) => console.log(`Análisis de retrasos: ${r.entregasAnalizadas} entregas, ${r.alertasCreadas} alertas`))
+    .catch((e) => console.error('Análisis de retrasos:', e.message));
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(correrAnalisis, 60 * 1000).unref();
+  setInterval(correrAnalisis, UN_DIA).unref();
+}

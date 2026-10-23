@@ -7,12 +7,9 @@ import { sql } from '../db.js';
  */
 export async function registrarAuditoria(pool, idUsuario, emailIntento, evento, detalle, req) {
   try {
-    // Tomar solo la primera IP del header (la del cliente real) y truncar a 45 chars
-    // para prevenir que un atacante inyecte IPs falsas en el log de auditoría
-    const rawForwarded = req?.headers?.['x-forwarded-for'];
-    const ip = rawForwarded
-      ? String(rawForwarded).split(',')[0].trim().slice(0, 45)
-      : (req?.socket?.remoteAddress?.slice(0, 45) ?? null);
+    // req.ip respeta 'trust proxy' (solo confía en el proxy de Azure), así que el
+    // cliente no puede falsificar su IP enviando un X-Forwarded-For propio
+    const ip = (req?.ip ?? req?.socket?.remoteAddress ?? '').slice(0, 45) || null;
     await pool.request()
       .input('idUsuario',    sql.Int,          idUsuario    ?? null)
       .input('emailIntento', sql.NVarChar(150), emailIntento ?? null)

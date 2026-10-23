@@ -167,6 +167,29 @@ export type RankingRepartidorApi = {
   total_pedidos: number;
   entregados: number;
   avg_minutos: number | null;
+  /** Promedio general histórico (referencia de la etiqueta "Atención") */
+  promedio_general?: number | null;
+};
+
+/** Grupo (zona o repartidor) del análisis de retrasos (HU029). */
+export type GrupoRetrasoApi = {
+  id: string;
+  nombre: string;
+  entregas: number;
+  realMin: number;
+  estimadoMin: number;
+  retrasoPct: number;
+  demoraRecurrente: boolean;
+};
+
+export type AnalisisRetrasosApi = {
+  dias: number;
+  entregasAnalizadas: number;
+  zonas: GrupoRetrasoApi[];
+  repartidores: GrupoRetrasoApi[];
+  demoras: (GrupoRetrasoApi & { tipo: "zona" | "repartidor" })[];
+  recomendaciones: { parametro: string; actual: number; sugerido: number; motivo: string }[];
+  alertasCreadas?: number;
 };
 
 export type PilotoFaseData = {
@@ -270,7 +293,9 @@ async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T
   if (res.status === 401) {
     const teníaToken = api.obtenerToken() !== null;
     api.limpiarToken();
-    if (teníaToken && typeof window !== "undefined") window.location.href = "/login";
+    // En /api/auth (login) el 401 son credenciales incorrectas: no se recarga la página
+    const esAuth = ruta.startsWith("/api/auth/");
+    if (teníaToken && !esAuth && typeof window !== "undefined") window.location.href = "/login";
     throw new ErrorApi(401, "sesion_expirada");
   }
 
@@ -624,6 +649,19 @@ export const api = {
 
   async alertasNoLeidas(): Promise<{ total: number }> {
     return solicitar<{ total: number }>("/api/alertas/no-leidas", { headers: cabeceraAuth() });
+  },
+
+  /** Análisis de retrasos de los últimos 30 días (sin registrar alertas). */
+  async analisisRetrasos(): Promise<AnalisisRetrasosApi> {
+    return solicitar<AnalisisRetrasosApi>("/api/reportes/analisis", { headers: cabeceraAuth() });
+  },
+
+  /** Ejecuta el análisis ahora y registra las alertas de demora recurrente. */
+  async ejecutarAnalisisRetrasos(): Promise<AnalisisRetrasosApi> {
+    return solicitar<AnalisisRetrasosApi>("/api/reportes/analisis", {
+      method: "POST",
+      headers: cabeceraAuth(),
+    });
   },
 
   async leerAlerta(id: number): Promise<{ ok: boolean }> {

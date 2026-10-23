@@ -2,12 +2,7 @@
 import { useSyncExternalStore } from "react";
 
 export type Sauce =
-  | "Buffalo"
-  | "BBQ"
-  | "Honey Garlic"
-  | "Lemon Pepper"
-  | "Korean"
-  | "Mango Habanero";
+  "Buffalo" | "BBQ" | "Honey Garlic" | "Lemon Pepper" | "Korean" | "Mango Habanero";
 
 export type OrderStatus = "sin_asignar" | "asignado" | "en_camino" | "entregado" | "cancelado";
 
@@ -62,11 +57,7 @@ export type Order = {
 // ─── Notificaciones ───────────────────────────────────────────────────────────
 
 export type NotificacionTipo =
-  | "pedido_en_camino"
-  | "entregado"
-  | "cancelado"
-  | "asignado"
-  | "sistema";
+  "pedido_en_camino" | "entregado" | "cancelado" | "asignado" | "sistema";
 
 export type Notificacion = {
   id: string;
@@ -257,7 +248,10 @@ export function useStore<T>(selector: (s: State) => T): T {
 
 /** Registra un intento fallido y bloquea la cuenta si se alcanzan MAX_INTENTOS. */
 function registrarIntentoFallido(emailL: string) {
-  const prev = state.loginAttempts[emailL] ?? { count: 0, lockedUntil: 0 };
+  const guardado = state.loginAttempts[emailL] ?? { count: 0, lockedUntil: 0 };
+  // Si el bloqueo anterior ya venció, se empieza a contar de nuevo
+  const vencido = guardado.lockedUntil > 0 && Date.now() >= guardado.lockedUntil;
+  const prev = vencido ? { count: 0, lockedUntil: 0 } : guardado;
   const count = prev.count + 1;
   const locked = count >= MAX_INTENTOS ? Date.now() + BLOQUEO_MS : 0;
   state = {
@@ -357,6 +351,11 @@ export const store = {
    */
   registrarFallo(email: string) {
     registrarIntentoFallido(email.trim().toLowerCase());
+  },
+
+  /** Limpia los intentos fallidos de un correo (tras un inicio de sesión exitoso). */
+  limpiarFallos(email: string) {
+    limpiarIntentos(email.trim().toLowerCase());
   },
 
   /**
