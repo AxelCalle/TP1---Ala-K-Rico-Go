@@ -84,21 +84,23 @@ describe("análisis de retrasos (HU029)", () => {
   });
 
   it("detecta una demora recurrente (más de 30 % en 3 o más entregas)", () => {
-    // Estimado ≈ 1,5 km / 25 km/h × 60 × 1,2 ≈ 4 min; real 10 min
-    const r = analizarRetrasos([pedido(1, 7, 10), pedido(2, 7, 10), pedido(3, 7, 10)], { beta: 3.5, iterations: 100 });
+    // Estimado = máx(20 min comunicados al cliente, trayecto ≈ 4 min) = 20; real 30 min (+50 %)
+    const r = analizarRetrasos([pedido(1, 7, 30), pedido(2, 7, 30), pedido(3, 7, 30)], { beta: 3.5, iterations: 100 });
     assert.equal(r.entregasAnalizadas, 3);
     const zona = r.zonas.find((z) => z.id === "1-2");
     assert.equal(zona.entregas, 3);
+    assert.equal(zona.estimadoMin, 20);
+    assert.equal(zona.retrasoPct, 50);
     assert.equal(zona.demoraRecurrente, true);
-    assert.ok(zona.retrasoPct > 30);
     assert.equal(r.demoras.filter((d) => d.tipo === "zona").length, 1);
     assert.equal(r.demoras.filter((d) => d.tipo === "repartidor").length, 1);
     assert.match(mensajeDemora(r.demoras[0]), /^Demora recurrente en Zona 1–2 km: /);
   });
 
   it("no marca demora con menos de 3 entregas o sin retraso", () => {
-    assert.equal(analizarRetrasos([pedido(1, 7, 10), pedido(2, 7, 10)]).demoras.length, 0);
-    assert.equal(analizarRetrasos([pedido(1, 7, 4), pedido(2, 7, 4), pedido(3, 7, 4)]).demoras.length, 0);
+    assert.equal(analizarRetrasos([pedido(1, 7, 30), pedido(2, 7, 30)]).demoras.length, 0);
+    // 25 min frente a 20 estimados: +25 %, por debajo del umbral
+    assert.equal(analizarRetrasos([pedido(1, 7, 25), pedido(2, 7, 25), pedido(3, 7, 25)]).demoras.length, 0);
   });
 
   it("sugiere parámetros del ACO dentro de los rangos permitidos", () => {

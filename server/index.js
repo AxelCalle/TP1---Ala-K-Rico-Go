@@ -98,8 +98,10 @@ app.use('/api', (_req, res, next) => {
 app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = function (body) {
-    // Los 401 de /api/auth (credenciales incorrectas) ya se auditan como login_fallido
-    if (res.statusCode === 401 && req.baseUrl !== '/api/auth') {
+    // Solo los 401 por token ausente o inválido (las credenciales incorrectas del
+    // login ya se auditan como login_fallido)
+    const errorToken = ['Token no proporcionado.', 'Token inválido o expirado.'].includes(body?.error);
+    if (res.statusCode === 401 && errorToken) {
       // Registrar intento sin token o con token inválido
       getPool().then(pool => {
         const email = req.body?.email ?? null;

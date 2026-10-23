@@ -249,7 +249,16 @@ function PaginaAdmin() {
         {seccion === "repartidores" && <SeccionRepartidores />}
         {seccion === "reportes" && <SeccionReportes />}
         {seccion === "configuracion" && <SeccionConfiguracion />}
-        {seccion === "alertas" && <SeccionAlertas onNoLeidas={setAlertasNoLeidas} />}
+        {seccion === "alertas" && (
+          <SeccionAlertas
+            onCambio={() =>
+              api
+                .alertasNoLeidas()
+                .then((r) => setAlertasNoLeidas(r.total))
+                .catch(() => {})
+            }
+          />
+        )}
       </main>
 
       <footer className="safe-bottom mt-auto border-t border-border bg-card">
@@ -3575,6 +3584,7 @@ const ESTADOS_PEDIDO: { value: OrderStatus; label: string }[] = [
   { value: "asignado", label: "Asignado" },
   { value: "en_camino", label: "En camino" },
   { value: "entregado", label: "Entregado" },
+  { value: "cancelado", label: "Cancelado" },
 ];
 
 const ESTADO_COLOR: Record<string, string> = {
@@ -3921,9 +3931,10 @@ function AnalisisRetrasos() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">Análisis de retrasos</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Últimos {datos?.dias ?? 30} días · tiempo real (asignación → entrega) frente al estimado
-            (distancia a 25 km/h con el factor de tráfico). Demora recurrente: más de 30 % en 3 o
-            más entregas. Se ejecuta automáticamente cada día.
+            Últimos {datos?.dias ?? 30} días · tiempo real promedio (asignación → entrega) frente al
+            estimado (el mayor entre los 20 min comunicados al cliente y el trayecto a 25 km/h con
+            el factor de tráfico). Demora recurrente: más de 30 % con 3 o más entregas. Se ejecuta
+            automáticamente cada día.
           </p>
         </div>
         <button
@@ -3969,7 +3980,9 @@ function AnalisisRetrasos() {
             <h3 className="mb-2 text-sm font-semibold">Recomendación de parámetros del ACO</h3>
             {datos.recomendaciones.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Sin demoras recurrentes por zona: no se sugieren cambios en la configuración.
+                {datos.demoras.some((dm) => dm.tipo === "zona")
+                  ? "Los parámetros ya están en sus valores máximos recomendados: revisa la asignación de pedidos y los tiempos de preparación."
+                  : "Sin demoras recurrentes por zona: no se sugieren cambios en la configuración."}
               </p>
             ) : (
               <ul className="space-y-2">
@@ -4006,7 +4019,7 @@ const TIPO_ALERTA: Record<string, string> = {
   retraso_recurrente: "Demora recurrente",
 };
 
-function SeccionAlertas({ onNoLeidas }: { onNoLeidas?: (n: number) => void }) {
+function SeccionAlertas({ onCambio }: { onCambio?: () => void }) {
   const [alertas, setAlertas] = useState<import("@/lib/api").AlertaAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -4031,6 +4044,7 @@ function SeccionAlertas({ onNoLeidas }: { onNoLeidas?: (n: number) => void }) {
     try {
       await api.leerTodasAlertas();
       setAlertas((prev) => prev.map((a) => ({ ...a, Leida: true })));
+      onCambio?.();
     } catch {
       setErrorAccion("No se pudieron marcar las alertas. Intenta de nuevo.");
     }
@@ -4041,17 +4055,13 @@ function SeccionAlertas({ onNoLeidas }: { onNoLeidas?: (n: number) => void }) {
     try {
       await api.leerAlerta(id);
       setAlertas((prev) => prev.map((a) => (a.Id_Alerta === id ? { ...a, Leida: true } : a)));
+      onCambio?.();
     } catch {
       setErrorAccion("No se pudo marcar la alerta. Intenta de nuevo.");
     }
   };
 
   const noLeidas = alertas.filter((a) => !a.Leida).length;
-
-  // El contador del menú refleja las alertas sin leer reales
-  useEffect(() => {
-    if (!cargando && !error) onNoLeidas?.(noLeidas);
-  }, [noLeidas, cargando, error, onNoLeidas]);
 
   if (cargando) {
     return (

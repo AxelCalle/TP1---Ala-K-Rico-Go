@@ -1,13 +1,16 @@
 // Análisis de retrasos de entrega (HU029), sin base de datos.
 //
 // Para cada pedido entregado compara el tiempo real (asignación → entrega)
-// con el tiempo estimado por el sistema: distancia en línea recta desde el
-// restaurante a 25 km/h por el factor de tráfico de la hora de asignación
-// (la misma fórmula del ETA de la ruta, HU014/HU016).
+// con el tiempo estimado por el sistema: el mayor entre los 20 min que se
+// comunican al cliente desde la asignación (HU014) y el ETA del trayecto
+// (distancia en línea recta a 25 km/h por el factor de tráfico, HU014/HU016).
+// El tiempo real incluye la preparación, por eso el trayecto solo no basta.
 
 /** Lima: UTC−5 todo el año. */
 const OFFSET_LIMA_H = -5;
 export const VELOCIDAD_KMH = 25;
+/** ETA comunicado al cliente desde la asignación (HU014, escenario 2). */
+export const ETA_CLIENTE_MIN = 20;
 /** Retraso que se considera demora (30 % sobre el estimado). */
 export const UMBRAL_RETRASO = 0.3;
 /** Entregas mínimas de un grupo para hablar de demora "recurrente". */
@@ -58,7 +61,8 @@ export function medirPedidos(pedidos) {
     .map((p) => {
       const km = distanciaKm(p.Lat_Origen, p.Lng_Origen, p.Lat_Destino, p.Lng_Destino);
       const factor = factorTrafico(horaLima(p.Asignacion_Pedido));
-      const estimado = Math.max(1, Math.round((km / VELOCIDAD_KMH) * 60 * factor));
+      const trayecto = Math.max(1, Math.round((km / VELOCIDAD_KMH) * 60 * factor));
+      const estimado = Math.max(ETA_CLIENTE_MIN, trayecto);
       const real = (new Date(p.Entrega_Pedido) - new Date(p.Asignacion_Pedido)) / 60000;
       return {
         idPedido: p.Id_Pedido,
