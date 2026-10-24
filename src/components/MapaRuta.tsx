@@ -710,8 +710,10 @@ function accionPaso(p: Paso, totalParadas: number): string {
   if (p.modificador === "uturn" && p.tipo !== "arrive") return "Da la vuelta en U";
   switch (p.tipo) {
     case "depart":
+      if (p.parada === 0) return "Dirígete al restaurante";
       return p.esSalida ? "Sal del punto de partida" : `Continúa hacia la parada ${p.parada}`;
     case "arrive":
+      if (p.parada === 0) return "Llegada al restaurante";
       return p.parada >= totalParadas - 1
         ? "Llegada al destino final"
         : `Llegada a la parada ${p.parada}`;
@@ -838,6 +840,9 @@ type PestanaPanel = "indicaciones" | "paradas";
 /** "gps": posición real del teléfono. "simulacion": recorrido animado (demostraciones). */
 type ModoNavegacion = "gps" | "simulacion";
 
+/** A más de esta distancia (m) del restaurante, la navegación GPS pasa primero por él. */
+const DISTANCIA_AL_LOCAL_M = 100;
+
 type EstadoGps =
   | { estado: "buscando"; titulo?: string; mensaje?: string }
   | { estado: "ok" | "fuera" | "recalculando"; precision: number }
@@ -891,6 +896,8 @@ export function MapaRutaMulti({
   const fueraDeRutaRef = useRef(0);
   const ultimoRecalculoRef = useRef(0);
   const wakeLockRef = useRef<any>(null);
+  /** primera lectura de la navegación GPS: decide si antes hay que ir al restaurante */
+  const irAlLocalRef = useRef(false);
   /** distancia (m) a la que se anunció cada maniobra, para el recordatorio cercano */
   const anunciadaARef = useRef(new Map<number, number>());
 
@@ -1186,6 +1193,33 @@ export function MapaRutaMulti({
     el?.scrollIntoView({ block: "nearest" });
   }, [pasoIdx, navegando, pestana]);
 
+  // ── Ubicación real al abrir el mapa ────────────────────────────────────────
+  // Si el permiso ya fue concedido, el repartidor aparece en su posición real
+  // sin esperar a "Navegar con GPS". No se pide permiso aquí: el aviso del
+  // navegador solo aparece tras tocar el botón.
+  useEffect(() => {
+    if (estado !== "listo" || !("geolocation" in navigator) || !window.isSecureContext) return;
+    let vigente = true;
+    navigator.permissions
+      ?.query({ name: "geolocation" as PermissionName })
+      .then((st) => {
+        if (!vigente || st.state !== "granted") return;
+        navigator.geolocation.getCurrentPosition(
+          (p) => {
+            const lectura = leerPosicion(p);
+            if (!vigente || modoRef.current !== null || validarLectura(lectura, null)) return;
+            avatarRef.current?.setLatLng(lectura.pos);
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+        );
+      })
+      .catch(() => {});
+    return () => {
+      vigente = false;
+    };
+  }, [estado]);
+
   // ── Animación del avatar a lo largo de la ruta ─────────────────────────────
   function iniciarSimulacion() {
     const mapa = mapaRef.current;
@@ -1389,6 +1423,7 @@ export function MapaRutaMulti({
     ultimaLecturaRef.current = null;
     fueraDeRutaRef.current = 0;
     ultimoAnunciadoRef.current = -1;
+    irAlLocalRef.current = true;
     seguirRef.current = true;
     setSeguir(true);
     setNavegando(true);
@@ -1490,6 +1525,23 @@ export function MapaRutaMulti({
       return;
     }
 
+    // Lejos del restaurante y sin entregas hechas: la ruta empieza en el
+    // repartidor, pasa por el restaurante a recoger los pedidos y sigue el orden ACO.
+    if (irAlLocalRef.current) {
+      irAlLocalRef.current = false;
+      const local = stopsRef.current[0]?.coords;
+      if (
+        local &&
+        r === rutaOriginalRef.current &&
+        entregadasRef.current.size === 0 &&
+        distanciaM(pos, local) > DISTANCIA_AL_LOCAL_M
+      ) {
+        recalcularDesde(pos, 0);
+        seguirMapa(pos, primerFix);
+        return;
+      }
+    }
+
     // La proyección sobre la ruta solo mide el avance (maniobras, paradas, llegada).
     // Primera lectura útil: busca en toda la ruta; después, cerca de la anterior.
     const ajuste = ajustarARuta(r, pos, ajusteInicialRef.current ? null : posIdxRef.current);
@@ -1585,7 +1637,7 @@ export function MapaRutaMulti({
   }
 
   /** Nueva ruta por calles desde la posición actual hacia las paradas que faltan. */
-  async function recalcularDesde(pos: Coords) {
+  async function recalcularDesde(pos: Coords, desdeParada?: number) {
     const r = rutaRef.current;
     if (!r) return;
     ultimoRecalculoRef.current = Date.now();
@@ -1593,7 +1645,8 @@ export function MapaRutaMulti({
 
     const hechas =
       r.paradaInicial - 1 + r.llegadaParada.filter((pi) => pi <= posIdxRef.current).length;
-    const siguiente = Math.min(hechas + 1, stopsRef.current.length - 1);
+    // desdeParada 0: el primer tramo lleva al restaurante (stops[0])
+    const siguiente = desdeParada ?? Math.min(hechas + 1, stopsRef.current.length - 1);
     const destinos = stopsRef.current.slice(siguiente).map((s) => s.coords);
     const nueva = await obtenerRutaMulti([pos, ...destinos], siguiente);
     if (!nueva || modoRef.current !== "gps") return;
@@ -1607,7 +1660,7 @@ export function MapaRutaMulti({
     ultimoAnunciadoRef.current = -1;
     anunciadaARef.current.clear();
     setGps((g) => ({ estado: "ok", precision: g && "precision" in g ? g.precision : 0 }));
-    hablar("Ruta recalculada");
+    hablar(siguiente === 0 ? "Primero dirígete al restaurante" : "Ruta recalculada");
   }
 
   /**
@@ -1616,9 +1669,15 @@ export function MapaRutaMulti({
    */
   function revisarLlegadaParada(r: RutaCalculada, idx: number): boolean {
     if (esperandoRef.current !== null) return true;
+    // El restaurante no es una entrega: solo se avisa al llegar a recoger los pedidos
+    if (r.paradaInicial === 0 && r.llegadaParada[0] <= idx && !entregadasRef.current.has(0)) {
+      entregadasRef.current.add(0);
+      hablar("Llegaste al restaurante. Recoge los pedidos y continúa a la parada 1.");
+    }
     if (!onEntregarRef.current) return false;
     for (let j = 0; j < r.llegadaParada.length; j++) {
       const k = r.paradaInicial + j;
+      if (k === 0) continue;
       if (r.llegadaParada[j] <= idx && !entregadasRef.current.has(k)) {
         esperandoRef.current = k;
         setEsperando(k);
@@ -1766,7 +1825,19 @@ export function MapaRutaMulti({
             style={{ top }}
           >
             <MapPin className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-            <p className="min-w-0 flex-1 text-sm font-medium">{gps.mensaje}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{gps.mensaje}</p>
+              {ruta && (
+                <button
+                  type="button"
+                  onClick={iniciarGps}
+                  className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-sm font-semibold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <LocateFixed className="h-4 w-4" aria-hidden="true" />
+                  Reintentar
+                </button>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setGps(null)}
@@ -1975,7 +2046,9 @@ export function MapaRutaMulti({
                     <span>
                       {llegada
                         ? `${totalParadas - 1} de ${totalParadas - 1} paradas completadas`
-                        : `Parada ${paradaSiguiente} de ${totalParadas - 1}`}
+                        : paradaSiguiente === 0
+                          ? "Rumbo al restaurante"
+                          : `Parada ${paradaSiguiente} de ${totalParadas - 1}`}
                     </span>
                   </p>
                 </>
@@ -2217,7 +2290,7 @@ export function MapaRutaMulti({
                       <li key={i} data-actual={actual ? "true" : undefined}>
                         {nuevoTramo && (
                           <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Hacia parada {p.parada}
+                            {p.parada === 0 ? "Hacia el restaurante" : `Hacia parada ${p.parada}`}
                             {stops[p.parada]?.sublabel ? ` · ${stops[p.parada].sublabel}` : ""}
                           </p>
                         )}

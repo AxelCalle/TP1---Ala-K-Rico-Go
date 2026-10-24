@@ -96,13 +96,39 @@ export interface AvisoGps {
   mensaje: string;
 }
 
-export function avisoErrorGps(code: number): AvisoGps {
+export type Plataforma = "ios" | "android" | "otro";
+
+/** Plataforma del teléfono para dar los pasos exactos de su configuración. */
+export function detectarPlataforma(
+  userAgent: string = typeof navigator === "undefined" ? "" : navigator.userAgent,
+  puntosTactiles: number = typeof navigator === "undefined" ? 0 : navigator.maxTouchPoints,
+): Plataforma {
+  if (/iPhone|iPad|iPod/i.test(userAgent)) return "ios";
+  // iPadOS se presenta como Mac de escritorio, pero tiene pantalla táctil
+  if (/Macintosh/i.test(userAgent) && puntosTactiles > 1) return "ios";
+  if (/Android/i.test(userAgent)) return "android";
+  return "otro";
+}
+
+/** Pasos para habilitar la ubicación cuando el navegador responde "denegado". */
+export const PASOS_PERMISO: Record<Plataforma, string> = {
+  // En iOS el permiso del sitio en Safari no basta: el sistema también debe
+  // dar la ubicación a Safari ("Sitios web de Safari"), o responde "denegado".
+  ios: "En iPhone: Ajustes → Privacidad y seguridad → Localización (activada) → Sitios web de Safari → «Al usar la app» y Ubicación exacta activada. En Safari: aA → Configuración del sitio web → Ubicación → Permitir. Luego toca Reintentar.",
+  android:
+    "En Android: activa la Ubicación del teléfono (panel rápido) y en Chrome toca el ícono junto a la dirección → Permisos → Ubicación → Permitir. Si Chrome no tiene permiso: Ajustes → Apps → Chrome → Permisos → Ubicación → Permitir solo con la app en uso. Luego toca Reintentar.",
+  otro: "Permite la ubicación para este sitio en la configuración del navegador y luego toca Reintentar.",
+};
+
+export function avisoErrorGps(
+  code: number,
+  plataforma: Plataforma = detectarPlataforma(),
+): AvisoGps {
   if (code === PERMISO_DENEGADO) {
     return {
       fatal: true,
       titulo: "Permiso de ubicación denegado",
-      mensaje:
-        "Permiso de ubicación denegado. En Android: candado de la barra de direcciones → Permisos → Ubicación. En iPhone: Ajustes → Privacidad → Localización (activa Safari) y en Safari aA → Configuración del sitio → Ubicación.",
+      mensaje: `Permiso de ubicación denegado. ${PASOS_PERMISO[plataforma]}`,
     };
   }
   if (code === NO_DISPONIBLE) {
