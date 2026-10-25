@@ -129,6 +129,20 @@ function PaginaRepartidor() {
   );
 
   mapaStopsRef.current = mapaStops;
+  const pedidosRef = useRef(pedidos);
+  pedidosRef.current = pedidos;
+
+  // Inicio de entregas en el restaurante: los pedidos asignados de la ruta pasan a "en camino"
+  const iniciarEntregas = useCallback(async () => {
+    const ids = mapaStops
+      .map((s) => s.pedidoId)
+      .filter((id): id is number => id !== undefined)
+      .filter((id) => pedidosRef.current.find((p) => p.Id_Pedido === id)?.Estado === "asignado");
+    await Promise.all(ids.map((id) => api.cambiarEstadoPedido(id, "en_camino")));
+    setPedidos((prev) =>
+      prev.map((p) => (ids.includes(p.Id_Pedido) ? { ...p, Estado: "en_camino" } : p)),
+    );
+  }, [mapaStops]);
 
   // Confirmación de entrega desde la ruta: marca el pedido y lo saca de la lista de activos
   const entregarDesdeRuta = useCallback(
@@ -306,6 +320,7 @@ function PaginaRepartidor() {
                 altura="clamp(440px, 74svh, 780px)"
                 onUbicacion={enviarUbicacion}
                 onEntregar={entregarDesdeRuta}
+                onIniciarEntregas={iniciarEntregas}
               />
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <MapPin className="mt-px h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
