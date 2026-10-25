@@ -4,6 +4,7 @@ import {
   OPCIONES_GPS,
   ajustarARuta,
   avisoErrorGps,
+  detectarPlataforma,
   crearSeguidorGps,
   leerPosicion,
   validarLectura,
@@ -110,9 +111,26 @@ describe("avisoErrorGps", () => {
     });
   });
 
+  it("da los pasos de la plataforma del teléfono", () => {
+    expect(avisoErrorGps(1, "ios").mensaje).toMatch(/Sitios web de Safari/);
+    expect(avisoErrorGps(1, "android").mensaje).toMatch(/Chrome/);
+    expect(avisoErrorGps(1, "android").mensaje).not.toMatch(/Safari/);
+  });
+
   it("ubicación no disponible y timeout siguen escuchando", () => {
     expect(avisoErrorGps(2)).toMatchObject({ fatal: false, titulo: "Ubicación no disponible" });
     expect(avisoErrorGps(3)).toMatchObject({ fatal: false, titulo: "Señal GPS débil" });
+  });
+});
+
+describe("detectarPlataforma", () => {
+  it("reconoce iPhone, iPad, Android y escritorio", () => {
+    expect(detectarPlataforma("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", 5)).toBe(
+      "ios",
+    );
+    expect(detectarPlataforma("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 5)).toBe("ios");
+    expect(detectarPlataforma("Mozilla/5.0 (Linux; Android 14; SM-A546E)", 5)).toBe("android");
+    expect(detectarPlataforma("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 0)).toBe("otro");
   });
 });
 
