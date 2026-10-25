@@ -833,6 +833,11 @@ interface MultiProps {
    * confirme la entrega (se llama con el índice de la parada en `stops`).
    */
   onEntregar?: (indiceParada: number) => Promise<void>;
+  /**
+   * Al llegar al restaurante (o al iniciar la navegación en él), el repartidor
+   * recoge los pedidos y toca "Iniciar entregas": se llama una vez por recorrido.
+   */
+  onIniciarEntregas?: () => Promise<void>;
 }
 
 type PestanaPanel = "indicaciones" | "paradas";
@@ -865,6 +870,7 @@ export function MapaRutaMulti({
   className = "",
   onUbicacion,
   onEntregar,
+  onIniciarEntregas,
 }: MultiProps) {
   const raizRef = useRef<HTMLDivElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
@@ -909,6 +915,8 @@ export function MapaRutaMulti({
   // Confirmación de entrega en cada parada
   const onEntregarRef = useRef(onEntregar);
   onEntregarRef.current = onEntregar;
+  const onIniciarEntregasRef = useRef(onIniciarEntregas);
+  onIniciarEntregasRef.current = onIniciarEntregas;
   const esperandoRef = useRef<number | null>(null);
   const entregadasRef = useRef(new Set<number>());
   const [esperando, setEsperando] = useState<number | null>(null);
@@ -1540,6 +1548,7 @@ export function MapaRutaMulti({
         seguirMapa(pos, primerFix);
         return;
       }
+      if (local && entregadasRef.current.size === 0) esperarInicioEntregas();
     }
 
     // La proyección sobre la ruta solo mide el avance (maniobras, paradas, llegada).
@@ -1669,10 +1678,10 @@ export function MapaRutaMulti({
    */
   function revisarLlegadaParada(r: RutaCalculada, idx: number): boolean {
     if (esperandoRef.current !== null) return true;
-    // El restaurante no es una entrega: solo se avisa al llegar a recoger los pedidos
+    // Restaurante: no es una entrega; se espera a que el repartidor inicie las entregas
     if (r.paradaInicial === 0 && r.llegadaParada[0] <= idx && !entregadasRef.current.has(0)) {
-      entregadasRef.current.add(0);
-      hablar("Llegaste al restaurante. Recoge los pedidos y continúa a la parada 1.");
+      esperarInicioEntregas();
+      return true;
     }
     if (!onEntregarRef.current) return false;
     for (let j = 0; j < r.llegadaParada.length; j++) {
@@ -1693,10 +1702,44 @@ export function MapaRutaMulti({
     return false;
   }
 
+  /** Detiene la ruta en el restaurante hasta que el repartidor toque "Iniciar entregas". */
+  function esperarInicioEntregas() {
+    if (esperandoRef.current !== null || entregadasRef.current.has(0)) return;
+    esperandoRef.current = 0;
+    setEsperando(0);
+    setErrorEntrega(null);
+    setPanelAbierto(false);
+    hablar("Estás en el restaurante. Recoge los pedidos y toca Iniciar entregas.");
+  }
+
+  /** Inicia las entregas (los pedidos pasan a "en camino") y guía a la parada 1. */
+  async function iniciarEntregas() {
+    if (esperandoRef.current !== 0) return;
+    if (onIniciarEntregasRef.current) {
+      setEntregando(true);
+      setErrorEntrega(null);
+      try {
+        await onIniciarEntregasRef.current();
+      } catch {
+        setErrorEntrega(
+          "No se pudieron iniciar las entregas. Revisa tu conexión e inténtalo de nuevo.",
+        );
+        setEntregando(false);
+        return;
+      }
+      setEntregando(false);
+    }
+    entregadasRef.current.add(0);
+    esperandoRef.current = null;
+    setEsperando(null);
+    const primera = stopsRef.current[1];
+    hablar(`Entregas iniciadas. Primera parada: ${primera?.sublabel ?? "parada 1"}.`);
+  }
+
   /** Marca la entrega (o la omite) y retoma la ruta hacia la siguiente parada. */
   async function confirmarEntrega(marcar: boolean) {
     const k = esperandoRef.current;
-    if (k === null) return;
+    if (k === null || k === 0) return;
     if (marcar && onEntregarRef.current) {
       setEntregando(true);
       setErrorEntrega(null);
@@ -1849,8 +1892,47 @@ export function MapaRutaMulti({
           </div>
         )}
 
+        {/* Restaurante: recoger los pedidos e iniciar las entregas */}
+        {esperando === 0 && stops[0] && (
+          <div
+            role="alertdialog"
+            aria-labelledby="titulo-restaurante"
+            className="absolute left-3 right-[4.25rem] z-1002 rounded-2xl bg-card p-4 shadow-xl ring-2 ring-accent"
+            style={{ top }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-accent">
+              Estás en el restaurante
+            </p>
+            <p id="titulo-restaurante" className="mt-1 text-lg font-semibold leading-tight">
+              Recoge {totalParadas - 1 === 1 ? "el pedido" : `los ${totalParadas - 1} pedidos`}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Al iniciar, {totalParadas - 1 === 1 ? "el pedido pasa" : "los pedidos pasan"} a «En
+              camino» y el cliente lo ve en su seguimiento.
+            </p>
+            {errorEntrega && (
+              <p role="alert" className="mt-2 text-xs font-medium text-destructive">
+                {errorEntrega}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={iniciarEntregas}
+              disabled={entregando}
+              className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:brightness-110 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {entregando ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : (
+                <Play className="h-5 w-5 shrink-0" aria-hidden="true" />
+              )}
+              Iniciar entregas
+            </button>
+          </div>
+        )}
+
         {/* Llegada a una parada: confirmar la entrega antes de seguir */}
-        {esperando !== null && stops[esperando] && (
+        {esperando !== null && esperando > 0 && stops[esperando] && (
           <div
             role="alertdialog"
             aria-labelledby="titulo-llegada"
