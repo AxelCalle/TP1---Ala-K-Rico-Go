@@ -32,6 +32,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import { factorTrafico } from "@/lib/aco";
 import {
   PRECISION_LIMITADA_M,
   PRECISION_UTIL_M,
@@ -605,6 +606,7 @@ interface RutaCalculada {
   /** índice en `stops` de la primera parada de esta ruta (1, o más tras recalcular) */
   paradaInicial: number;
   distancia: number;
+  /** segundos: tiempo de OSRM (sin tráfico) por el factor de tráfico de la franja */
   duracion: number;
 }
 
@@ -684,7 +686,8 @@ async function obtenerRutaMulti(
       llegadaParada,
       paradaInicial,
       distancia: ruta.distance ?? acum[acum.length - 1],
-      duracion: ruta.duration ?? 0,
+      // OSRM no informa tráfico: la única fuente es la heurística por franja (HU016)
+      duracion: (ruta.duration ?? 0) * factorTrafico(),
     };
   } catch {
     return null;
