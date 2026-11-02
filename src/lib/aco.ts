@@ -264,6 +264,10 @@ export interface TSPResult {
   orden: Stop[];
   /** Distancia total de la ruta en km. */
   distanciaKm: number;
+  /** Distancia del orden de llegada (FIFO: paradas en el orden recibido) en km. */
+  distanciaFifoKm: number;
+  /** true si el ACO no mejoró al FIFO y se usa el orden de llegada (garantía ACO ≤ FIFO). */
+  usaOrdenFifo: boolean;
   /** ETA total desde el depot hasta la última entrega (min). */
   etaMin: number;
   /** ETA acumulado al llegar a cada parada en min. etaAcumulado[0] = 0 (depot). */
@@ -279,6 +283,8 @@ export interface TSPResult {
  * el resto se ordenan libremente.
  *
  * Distancias: Haversine en km (vuelo de pájaro).
+ * Garantía ACO ≤ FIFO (HU023 / CP068): el resto de paradas llega en orden de llegada;
+ * si el mejor recorrido del ACO es más largo que ese orden, se usa el orden FIFO.
  * Velocidad de moto urbana: MOTO_KMH = 25 km/h para el ETA.
  *
  * @param stops  Array de paradas incluyendo depot en posición 0.
@@ -432,6 +438,16 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
 
   if (bestTour.length === 0) return null;
 
+  // Garantía ACO ≤ FIFO: el ACO es aproximado y con pocas paradas puede no mejorar
+  // el orden de llegada; en ese caso la ruta propuesta es la FIFO
+  let fifoCost = 0;
+  for (let i = 0; i < n - 1; i++) fifoCost += distMat[i][i + 1];
+  const usaOrdenFifo = fifoCost < bestCost;
+  if (usaOrdenFifo) {
+    bestTour = Array.from({ length: n }, (_, i) => i);
+    bestCost = fifoCost;
+  }
+
   // Construir resultado con ETA acumulado por parada
   const orden = bestTour.map((i) => stops[i]);
   const etaAcumulado: number[] = [0]; // depot = 0 min
@@ -444,6 +460,8 @@ export function ejecutarACO_TSP(stops: Stop[], config: Partial<TspParams> = {}):
   return {
     orden,
     distanciaKm: parseFloat(bestCost.toFixed(1)),
+    distanciaFifoKm: parseFloat(fifoCost.toFixed(1)),
+    usaOrdenFifo,
     etaMin: calcularETA(bestCost),
     etaAcumulado,
   };

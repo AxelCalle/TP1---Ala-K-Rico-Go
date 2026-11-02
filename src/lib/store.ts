@@ -362,6 +362,19 @@ export const store = {
    * Devuelve el timestamp hasta el que la cuenta está bloqueada,
    * o 0 si no está bloqueada.
    */
+  /** Aplica el bloqueo informado por el servidor (válido en cualquier navegador). */
+  bloquearHasta(email: string, hasta: number) {
+    const emailL = email.trim().toLowerCase();
+    state = {
+      ...state,
+      loginAttempts: {
+        ...state.loginAttempts,
+        [emailL]: { count: MAX_INTENTOS, lockedUntil: hasta },
+      },
+    };
+    persistir();
+  },
+
   getBloqueo(email: string): number {
     const emailL = email.trim().toLowerCase();
     const attempts = state.loginAttempts[emailL];

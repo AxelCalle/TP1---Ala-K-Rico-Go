@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -20,6 +21,7 @@ import {
   Check,
   ClipboardList,
   Copy,
+  Download,
   Edit2,
   KeyRound,
   LayoutDashboard,
@@ -35,8 +37,11 @@ import {
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore, SAUCES, type Sauce, type OrderStatus, type AcoConfig } from "@/lib/store";
-import { ESTADO_PEDIDO_ES, RESTAURANTE_COORDS } from "@/lib/constants";
+import { ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { CLAVE_NEGOCIO, useNegocio } from "@/lib/negocio";
 import { api, ErrorApi } from "@/lib/api";
+import { correoValido, errorCorreo, TELEFONO_RE, ERROR_TELEFONO } from "@/lib/validacion";
+import { descargarXlsx } from "@/lib/excel";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
 import { MapaRecorrido } from "@/components/MapaRecorrido";
 
@@ -160,14 +165,6 @@ function PaginaAdmin() {
               <span className="hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline">
                 {session?.email ?? "invitado"}
               </span>
-              <Link
-                to="/driver"
-                aria-label="Vista repartidor"
-                className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Truck className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Vista repartidor</span>
-              </Link>
               <button
                 type="button"
                 onClick={cerrarSesion}
@@ -767,6 +764,35 @@ function SeccionReportes() {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [errFiltro, setErrFiltro] = useState<string | null>(null);
+  // Período con el que se calcularon los indicadores mostrados (lo usa "Exportar a Excel")
+  const [periodo, setPeriodo] = useState<{ desde?: string; hasta?: string }>({});
+  const [exportando, setExportando] = useState(false);
+  const [errExportar, setErrExportar] = useState<string | null>(null);
+  // Filtros del log de auditoría (HU019): fechas del período + usuario + tipo de acción
+  const [audUsuario, setAudUsuario] = useState("");
+  const [audEvento, setAudEvento] = useState("");
+  const [eventos, setEventos] = useState<string[]>([]);
+  const [cargandoAud, setCargandoAud] = useState(false);
+  const [errAud, setErrAud] = useState<string | null>(null);
+
+  // Días completos en hora de Lima (UTC-5, sin horario de verano), ambos incluidos
+  const cargarAuditoria = (
+    filtros: { desde?: string; hasta?: string; usuario?: string; evento?: string } = {},
+  ) => {
+    setCargandoAud(true);
+    setErrAud(null);
+    return api
+      .listarAuditoria({
+        pageSize: 50,
+        desde: filtros.desde ? `${filtros.desde}T00:00:00-05:00` : undefined,
+        hasta: filtros.hasta ? `${filtros.hasta}T23:59:59.999-05:00` : undefined,
+        usuario: filtros.usuario?.trim() || undefined,
+        evento: filtros.evento || undefined,
+      })
+      .then((r) => setAuditoria(r.items ?? []))
+      .catch(() => setErrAud("No se pudo cargar el log de auditoría."))
+      .finally(() => setCargandoAud(false));
+  };
 
   const cargarTiempos = (d?: string, h?: string) => {
     setErrFiltro(null);
@@ -776,7 +802,10 @@ function SeccionReportes() {
     }
     return api
       .reporteTiempos(d || h ? { desde: d, hasta: h } : undefined)
-      .then(setTiempos)
+      .then((t) => {
+        setTiempos(t);
+        setPeriodo({ desde: d, hasta: h });
+      })
       .catch((e: unknown) =>
         setErrFiltro(
           e instanceof ErrorApi && e.status === 400 && e.codigo
@@ -806,15 +835,98 @@ function SeccionReportes() {
         .reportePiloto()
         .then(setPiloto)
         .catch(() => {}),
+      cargarAuditoria(),
       api
-        .listarAuditoria({ pageSize: 50 })
-        .then((r) => setAuditoria(r.items ?? []))
-        .catch((e: unknown) => {
-          const msg = e instanceof Error ? e.message : String(e);
-          setErrCarga((prev) => (prev ? `${prev} / Auditoría: ${msg}` : `Auditoría: ${msg}`));
-        }),
+        .eventosAuditoria()
+        .then(setEventos)
+        .catch(() => {}),
     ]).finally(() => setCargando(false));
   }, []);
+
+  // Aplica el período a los indicadores y al log de auditoría
+  const aplicarPeriodo = (d?: string, h?: string) => {
+    void cargarTiempos(d, h);
+    if (!(d && h && d > h)) {
+      void cargarAuditoria({ desde: d, hasta: h, usuario: audUsuario, evento: audEvento });
+    }
+  };
+
+  const fmtLima = (ts: string | null | undefined) =>
+    ts
+      ? new Date(ts).toLocaleString("es-PE", {
+          timeZone: "America/Lima",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+  const fmtDia = (d?: string) => (d ? d.split("-").reverse().join("/") : "");
+
+  // Exportar a Excel (HU026): indicadores del período mostrado + detalle de cada entrega
+  async function exportarExcel() {
+    setExportando(true);
+    setErrExportar(null);
+    try {
+      const entregas = await api.reporteEntregas(periodo);
+      const textoPeriodo =
+        periodo.desde || periodo.hasta
+          ? `${fmtDia(periodo.desde) || "inicio"} al ${fmtDia(periodo.hasta) || "hoy"} (hora de Lima)`
+          : "Todo el historial";
+      descargarXlsx(`reporte-tiempos_${periodo.desde ?? "inicio"}_${periodo.hasta ?? "hoy"}.xlsx`, [
+        {
+          nombre: "Resumen",
+          anchos: [28, 40],
+          negritas: [0, 3],
+          filas: [
+            ["Reporte de tiempos de entrega — Ala K' Rico GO"],
+            ["Período", textoPeriodo],
+            ["Generado", fmtLima(new Date().toISOString())],
+            ["Indicador", "Valor (minutos)"],
+            ["Total entregas", tiempos?.total ?? 0],
+            ["Promedio", tiempos?.promedio ?? null],
+            ["Mínimo", tiempos?.minimo ?? null],
+            ["Máximo", tiempos?.maximo ?? null],
+            ["Desviación estándar", tiempos?.desviacion ?? null],
+          ],
+        },
+        {
+          nombre: "Entregas",
+          anchos: [12, 26, 26, 44, 10, 18, 18, 18, 14],
+          negritas: [0],
+          filas: [
+            [
+              "Pedido",
+              "Cliente",
+              "Repartidor",
+              "Dirección",
+              "Total (S/)",
+              "Creación",
+              "Asignación",
+              "Entrega",
+              "Tiempo (min)",
+            ],
+            ...entregas.map((e) => [
+              `AKA-${String(e.Id_Pedido).padStart(4, "0")}`,
+              e.Cliente || "—",
+              e.Repartidor || "—",
+              e.Direccion_Destino,
+              e.Total ?? null,
+              fmtLima(e.Creacion_Pedido),
+              fmtLima(e.Asignacion_Pedido),
+              fmtLima(e.Entrega_Pedido),
+              e.Minutos,
+            ]),
+          ],
+        },
+      ]);
+    } catch {
+      setErrExportar("No se pudo generar el Excel. Intenta de nuevo.");
+    } finally {
+      setExportando(false);
+    }
+  }
 
   // Referencia histórica (no depende del filtro de fechas): la entrega el servidor
   const promGlobal = ranking[0]?.promedio_general ?? 0;
@@ -910,7 +1022,7 @@ function SeccionReportes() {
         </label>
         <button
           type="button"
-          onClick={() => cargarTiempos(desde || undefined, hasta || undefined)}
+          onClick={() => aplicarPeriodo(desde || undefined, hasta || undefined)}
           className={`rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:col-span-1 ${desde || hasta ? "" : "col-span-2"}`}
         >
           Aplicar filtro
@@ -926,7 +1038,7 @@ function SeccionReportes() {
             onClick={() => {
               setDesde("");
               setHasta("");
-              cargarTiempos();
+              aplicarPeriodo();
             }}
             className="rounded-md border border-border px-3 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:border-transparent"
           >
@@ -937,7 +1049,27 @@ function SeccionReportes() {
 
       {/* ── Tiempos de entrega (HU026) ─────────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-        <h2 className="mb-4 text-base font-semibold">Tiempos de entrega (entregas completadas)</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Tiempos de entrega (entregas completadas)</h2>
+          <button
+            type="button"
+            onClick={exportarExcel}
+            disabled={exportando || !tiempos}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
+          >
+            {exportando ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            Exportar a Excel
+          </button>
+        </div>
+        {errExportar && (
+          <p role="alert" className="mb-3 text-sm text-destructive">
+            {errExportar}
+          </p>
+        )}
         {!tiempos || tiempos.total === 0 ? (
           <p className="text-sm text-muted-foreground">
             Sin entregas completadas en el período seleccionado.
@@ -1253,9 +1385,79 @@ function SeccionReportes() {
 
       {/* ── Log de auditoría (HU019) ──────────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-        <h2 className="mb-4 text-base font-semibold">Log de auditoría (últimos 50 eventos)</h2>
+        <h2 className="mb-1 text-base font-semibold">Log de auditoría (últimos 50 eventos)</h2>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Período:{" "}
+          {periodo.desde || periodo.hasta
+            ? `${fmtDia(periodo.desde) || "inicio"} al ${fmtDia(periodo.hasta) || "hoy"}`
+            : "todo el historial"}{" "}
+          (usa el filtro de fechas de arriba)
+        </p>
 
-        {auditoria.length === 0 && !cargando && <VacioLista>Sin eventos registrados.</VacioLista>}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void cargarAuditoria({ ...periodo, usuario: audUsuario, evento: audEvento });
+          }}
+          className="mb-4 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap"
+        >
+          <label className="min-w-0 space-y-1 text-sm sm:w-64">
+            <span className="block text-muted-foreground">Usuario</span>
+            <input
+              type="search"
+              value={audUsuario}
+              maxLength={100}
+              onChange={(e) => setAudUsuario(e.target.value)}
+              placeholder="Nombre o correo"
+              className={clsInput}
+            />
+          </label>
+          <label className="min-w-0 space-y-1 text-sm sm:w-56">
+            <span className="block text-muted-foreground">Tipo de acción</span>
+            <select
+              value={audEvento}
+              onChange={(e) => setAudEvento(e.target.value)}
+              className={clsInput}
+            >
+              <option value="">Todas</option>
+              {eventos.map((ev) => (
+                <option key={ev} value={ev}>
+                  {ev}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={cargandoAud}
+            className={`min-h-11 sm:min-h-10 ${clsBtnAccent}`}
+          >
+            {cargandoAud ? "Filtrando…" : "Filtrar"}
+          </button>
+          {(audUsuario || audEvento) && (
+            <button
+              type="button"
+              onClick={() => {
+                setAudUsuario("");
+                setAudEvento("");
+                void cargarAuditoria(periodo);
+              }}
+              className="min-h-11 rounded-md px-3 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
+            >
+              Limpiar
+            </button>
+          )}
+        </form>
+
+        {errAud && (
+          <p role="alert" className="mb-3 text-sm text-destructive">
+            {errAud}
+          </p>
+        )}
+
+        {auditoria.length === 0 && !cargando && !cargandoAud && !errAud && (
+          <VacioLista>Sin eventos para los filtros seleccionados.</VacioLista>
+        )}
 
         {/* Mobile / tablet: lista compacta (detalle completo, sin truncar) */}
         {auditoria.length > 0 && (
@@ -1461,6 +1663,214 @@ function GuiaACO({ activo }: { activo: keyof AcoConfig | null }) {
   );
 }
 
+/**
+ * Mi negocio (HU nueva — pymes): ubicación del local (origen de todas las rutas
+ * ACO), dirección, nombre y radio de cobertura. Solo el administrador; el
+ * backend valida y audita (PUT /api/config/negocio).
+ */
+function ConfigNegocio() {
+  const negocio = useNegocio();
+  const qc = useQueryClient();
+  const [editando, setEditando] = useState(false);
+  const [form, setForm] = useState({ nombre: "", direccion: "", radioKm: "", telefono: "" });
+  const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  function abrir() {
+    setForm({
+      nombre: negocio.nombre,
+      direccion: negocio.direccion,
+      radioKm: String(negocio.radioKm),
+      telefono: negocio.telefono ?? "",
+    });
+    setCoords(negocio.coords);
+    setError(null);
+    setOk(false);
+    setEditando(true);
+  }
+
+  async function guardar(e: FormEvent) {
+    e.preventDefault();
+    if (!coords) return setError("Fija la ubicación del local en el mapa.");
+    const radio = Number(form.radioKm.replace(",", "."));
+    if (!Number.isFinite(radio) || radio <= 0 || radio > 50)
+      return setError("El radio debe estar entre 0,1 y 50 km.");
+    setGuardando(true);
+    setError(null);
+    try {
+      const r = await api.guardarNegocio({
+        nombre: form.nombre.trim(),
+        direccion: form.direccion.trim(),
+        lat: coords[0],
+        lng: coords[1],
+        radioKm: radio,
+        telefono: form.telefono.trim() || null,
+      });
+      qc.setQueryData(CLAVE_NEGOCIO, r.negocio);
+      setOk(true);
+      setEditando(false);
+    } catch (err) {
+      setError(err instanceof ErrorApi ? err.codigo : "No se pudo guardar. Revisa tu conexión.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="titulo-negocio" className="space-y-3">
+      <div>
+        <h1 id="titulo-negocio" className="text-xl font-semibold sm:text-2xl">
+          Mi negocio
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ubicación del local desde donde salen los pedidos: es el origen de las rutas ACO y el
+          centro de la zona de cobertura.
+        </p>
+      </div>
+      {ok && (
+        <p role="status" className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+          Configuración guardada. Los nuevos pedidos y rutas usarán esta ubicación.
+        </p>
+      )}
+      {!editando ? (
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Nombre del local</dt>
+              <dd className="font-medium">{negocio.nombre}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Radio de cobertura</dt>
+              <dd className="font-medium">{negocio.radioKm} km</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Teléfono del local</dt>
+              <dd className="font-medium">
+                {negocio.telefono ?? (
+                  <span className="text-destructive">
+                    Sin teléfono: el botón «Llamar al restaurante» no se muestra
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Dirección</dt>
+              <dd className="font-medium">{negocio.direccion}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Coordenadas</dt>
+              <dd className="font-mono text-xs">
+                {negocio.lat.toFixed(6)}, {negocio.lng.toFixed(6)}
+              </dd>
+            </div>
+          </dl>
+          <button
+            type="button"
+            onClick={abrir}
+            className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Editar ubicación del local
+          </button>
+        </div>
+      ) : (
+        <form
+          onSubmit={guardar}
+          className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Campo label="Nombre del local">
+              <input
+                required
+                minLength={2}
+                maxLength={100}
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Radio de cobertura (km)">
+              <input
+                required
+                inputMode="decimal"
+                value={form.radioKm}
+                onChange={(e) => setForm({ ...form, radioKm: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Teléfono del local (para «Llamar al restaurante»)">
+              <input
+                type="tel"
+                inputMode="tel"
+                maxLength={20}
+                placeholder="987 654 321"
+                value={form.telefono}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Dirección del local (agrega la numeración si no aparece)" completo>
+              <input
+                placeholder="Jr. Requena 123, Breña"
+                required
+                minLength={5}
+                maxLength={300}
+                value={form.direccion}
+                onChange={(e) => setForm({ ...form, direccion: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Mueve el pin hasta la puerta del local</p>
+            <MapaSelectorUbicacion
+              sinCobertura
+              coordsIniciales={negocio.coords}
+              altura={300}
+              onSeleccion={(c, dir) => {
+                setCoords(c);
+                // Al mover el pin, la dirección se actualiza; luego se puede completar a mano
+                if (dir) setForm((f) => ({ ...f, direccion: dir.slice(0, 300) }));
+              }}
+            />
+            {coords && (
+              <p className="font-mono text-xs text-muted-foreground">
+                {coords[0].toFixed(6)}, {coords[1].toFixed(6)}
+              </p>
+            )}
+          </div>
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Los pedidos ya creados conservan su origen. Las rutas que los repartidores ya generaron
+            se actualizan cuando vuelvan a calcularlas.
+          </p>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="submit"
+              disabled={guardando}
+              className="inline-flex h-11 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground disabled:opacity-50"
+            >
+              {guardando ? "Guardando…" : "Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditando(false)}
+              className="inline-flex h-11 items-center justify-center rounded-md border border-border px-4 text-sm"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function SeccionConfiguracion() {
   const acoConfig = useStore((s) => s.acoConfig);
   const [local, setLocal] = useState<AcoConfig>({ ...acoConfig });
@@ -1539,6 +1949,7 @@ function SeccionConfiguracion() {
 
   return (
     <div className="space-y-8">
+      <ConfigNegocio />
       <div>
         <h1 className="text-xl font-semibold sm:text-2xl">Configuración ACO</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -2679,6 +3090,7 @@ function DialogRecorrido({
   repartidor: import("@/lib/api").RepartidorApi;
   onClose: () => void;
 }) {
+  const negocio = useNegocio();
   const [fecha, setFecha] = useState(hoyLima);
   const [datos, setDatos] = useState<import("@/lib/api").RecorridoApi | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -2776,7 +3188,7 @@ function DialogRecorrido({
             </p>
           )}
           <div className="mt-3">
-            <MapaRecorrido recorrido={datos} centro={RESTAURANTE_COORDS} />
+            <MapaRecorrido recorrido={datos} centro={negocio.coords} />
           </div>
           <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
@@ -2839,8 +3251,12 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
       setError("El DNI debe tener 8 dígitos.");
       return;
     }
-    if (!correo.includes("@")) {
-      setError("Ingresa un correo válido.");
+    if (!correoValido(correo)) {
+      setError(errorCorreo(correo));
+      return;
+    }
+    if (!TELEFONO_RE.test(telefono.trim())) {
+      setError(ERROR_TELEFONO);
       return;
     }
     setEnviando(true);
@@ -2910,7 +3326,9 @@ function DialogNuevoRepartidor({ onClose }: { onClose: () => void }) {
             </Campo>
             <Campo label="Teléfono">
               <input
+                required
                 type="tel"
+                inputMode="numeric"
                 maxLength={9}
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
@@ -3024,8 +3442,12 @@ function DialogEditarRepartidor({
   async function handleGuardar(e: FormEvent) {
     e.preventDefault();
     setErrorEdit("");
-    if (!correo.trim().includes("@")) {
-      setErrorEdit("Ingresa un correo válido.");
+    if (!correoValido(correo)) {
+      setErrorEdit(errorCorreo(correo));
+      return;
+    }
+    if (!TELEFONO_RE.test(telefono.trim())) {
+      setErrorEdit(ERROR_TELEFONO);
       return;
     }
     if (dni.trim() && !/^\d{8}$/.test(dni.trim())) {
@@ -3113,11 +3535,14 @@ function DialogEditarRepartidor({
             </Campo>
             <Campo label="Teléfono">
               <input
+                required
                 type="tel"
+                inputMode="numeric"
                 maxLength={9}
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
                 className={clsInput}
+                placeholder="987654321"
               />
             </Campo>
             <Campo label="Correo electrónico" completo>
@@ -3243,9 +3668,8 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [direccion, setDireccion] = useState("");
 
-  // Coordenadas del restaurante (origen fijo)
-  const LAT_REST = -12.0278455;
-  const LNG_REST = -77.0895871;
+  // Origen: el local configurado en Admin → Configuración → Mi negocio
+  const negocio = useNegocio();
 
   function handleSeleccionMapa(c: [number, number], dir: string) {
     setCoords(c);
@@ -3277,8 +3701,8 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
             notas: notas.trim() || undefined,
           },
         ],
-        latOrigen: LAT_REST,
-        lngOrigen: LNG_REST,
+        latOrigen: negocio.lat,
+        lngOrigen: negocio.lng,
       });
       onClose();
     } catch {

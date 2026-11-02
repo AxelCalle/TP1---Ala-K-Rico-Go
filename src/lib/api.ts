@@ -15,6 +15,8 @@ export class ErrorApi extends Error {
   constructor(
     public readonly status: number,
     public readonly codigo: string,
+    /** Cuerpo JSON de la respuesta de error (p. ej. intentosRestantes del login) */
+    public readonly datos: Record<string, unknown> = {},
   ) {
     super(codigo);
     this.name = "ErrorApi";
@@ -75,6 +77,8 @@ export type PedidoApi = {
   Telf_Cliente?: string | null;
   Nombre_Repartidor?: string;
   Apellido_Repartidor?: string;
+  /** Solo llega mientras el pedido está asignado o en camino */
+  Telf_Repartidor?: string | null;
 };
 
 /** Recorrido GPS real de un día (GET /api/repartidores/:id/recorrido). */
@@ -161,6 +165,18 @@ export type ReporteTiemposApi = {
   desviacion: number | null;
 };
 
+export type EntregaReporteApi = {
+  Id_Pedido: number;
+  Cliente: string | null;
+  Repartidor: string | null;
+  Direccion_Destino: string;
+  Total: number | null;
+  Creacion_Pedido: string;
+  Asignacion_Pedido: string;
+  Entrega_Pedido: string;
+  Minutos: number;
+};
+
 export type RankingRepartidorApi = {
   Id_Usuario: number;
   Nombre: string;
@@ -226,6 +242,7 @@ export type AuditoriaApi = {
   IP: string | null;
   Timestamp: string;
   Nombre_Usuario: string | null;
+  Apellido_Usuario: string | null;
   Email_Usuario: string | null;
 };
 
@@ -262,6 +279,17 @@ export type AlertaAdmin = {
   Creacion: string;
 };
 
+/** Configuración del negocio (GET/PUT /api/config/negocio). */
+export type NegocioApi = {
+  nombre: string;
+  direccion: string;
+  lat: number;
+  lng: number;
+  radioKm: number;
+  /** Teléfono del local; null si el admin no lo configuró */
+  telefono?: string | null;
+};
+
 export type CalificacionApi = {
   Id_Calificacion: number;
   Id_Pedido: number;
@@ -296,11 +324,15 @@ async function solicitar<T>(ruta: string, opciones: RequestInit = {}): Promise<T
     // En /api/auth (login) el 401 son credenciales incorrectas: no se recarga la página
     const esAuth = ruta.startsWith("/api/auth/");
     if (teníaToken && !esAuth && typeof window !== "undefined") window.location.href = "/login";
-    throw new ErrorApi(401, "sesion_expirada");
+    throw new ErrorApi(401, "sesion_expirada", datos as Record<string, unknown>);
   }
 
   if (!res.ok) {
-    throw new ErrorApi(res.status, (datos as { error?: string }).error ?? "error_desconocido");
+    throw new ErrorApi(
+      res.status,
+      (datos as { error?: string }).error ?? "error_desconocido",
+      datos as Record<string, unknown>,
+    );
   }
 
   return datos as T;
@@ -583,6 +615,7 @@ export const api = {
   // ── Auditoría ─────────────────────────────────────────────────────────────
   async listarAuditoria(params?: {
     evento?: string;
+    usuario?: string;
     desde?: string;
     hasta?: string;
     page?: number;
@@ -590,6 +623,7 @@ export const api = {
   }): Promise<PaginatedResponse<AuditoriaApi>> {
     const qs = new URLSearchParams();
     if (params?.evento) qs.set("evento", params.evento);
+    if (params?.usuario) qs.set("usuario", params.usuario);
     if (params?.desde) qs.set("desde", params.desde);
     if (params?.hasta) qs.set("hasta", params.hasta);
     if (params?.page) qs.set("page", String(params.page));
@@ -597,6 +631,10 @@ export const api = {
     return solicitar<PaginatedResponse<AuditoriaApi>>(`/api/auditoria?${qs.toString()}`, {
       headers: cabeceraAuth(),
     });
+  },
+
+  async eventosAuditoria(): Promise<string[]> {
+    return solicitar<string[]>("/api/auditoria/eventos", { headers: cabeceraAuth() });
   },
 
   // ── Reportes ──────────────────────────────────────────────────────────────
@@ -609,6 +647,15 @@ export const api = {
     if (params?.desde) qs.set("desde", params.desde);
     if (params?.hasta) qs.set("hasta", params.hasta);
     return solicitar<ReporteTiemposApi>(`/api/reportes/tiempos?${qs.toString()}`, {
+      headers: cabeceraAuth(),
+    });
+  },
+
+  async reporteEntregas(params?: { desde?: string; hasta?: string }): Promise<EntregaReporteApi[]> {
+    const qs = new URLSearchParams();
+    if (params?.desde) qs.set("desde", params.desde);
+    if (params?.hasta) qs.set("hasta", params.hasta);
+    return solicitar<EntregaReporteApi[]>(`/api/reportes/entregas?${qs.toString()}`, {
       headers: cabeceraAuth(),
     });
   },
@@ -639,6 +686,19 @@ export const api = {
       method: "PUT",
       headers: cabeceraAuth(),
       body: JSON.stringify(config),
+    });
+  },
+
+  // ── Configuración del negocio (ubicación del local, cobertura) ────────────
+  async obtenerNegocio(): Promise<NegocioApi> {
+    return solicitar<NegocioApi>("/api/config/negocio");
+  },
+
+  async guardarNegocio(datos: NegocioApi): Promise<{ ok: boolean; negocio: NegocioApi }> {
+    return solicitar<{ ok: boolean; negocio: NegocioApi }>("/api/config/negocio", {
+      method: "PUT",
+      headers: cabeceraAuth(),
+      body: JSON.stringify(datos),
     });
   },
 

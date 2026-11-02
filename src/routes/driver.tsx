@@ -9,12 +9,12 @@ import {
   MapPin,
   Navigation,
   Route as RouteIcon,
-  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore } from "@/lib/store";
-import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION, ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 import { ejecutarACO_TSP, type Stop, type TSPResult } from "@/lib/aco";
 import { MapaRutaMulti, type MultiStop } from "@/components/MapaRuta";
 import { api, type AcoConfigApi, type PedidoApi } from "@/lib/api";
@@ -26,7 +26,9 @@ export const Route = createFileRoute("/driver")({
   beforeLoad: () => {
     if (typeof window === "undefined") return;
     const session = store.get().session;
-    if (!session || (session.role !== "driver" && session.role !== "admin")) {
+    // Solo repartidores (HU021 / CP061): el administrador gestiona los pedidos desde su panel
+    if (session?.role === "admin") throw redirect({ to: "/admin" });
+    if (!session || session.role !== "driver") {
       throw redirect({ to: "/login" });
     }
   },
@@ -45,6 +47,7 @@ const STATUS_COLOR: Record<string, string> = {
 // ─── Página principal ──────────────────────────────────────────────────────────
 
 function PaginaRepartidor() {
+  const negocio = useNegocio();
   const navigate = useNavigate();
   const session = useStore((s) => s.session);
   const [montado, setMontado] = useState(false);
@@ -59,8 +62,8 @@ function PaginaRepartidor() {
   }, []);
 
   useEffect(() => {
-    if (montado && (!session || (session.role !== "driver" && session.role !== "admin"))) {
-      navigate({ to: "/login" });
+    if (montado && (!session || session.role !== "driver")) {
+      navigate({ to: session?.role === "admin" ? "/admin" : "/login" });
     }
   }, [session, navigate, montado]);
 
@@ -116,7 +119,7 @@ function PaginaRepartidor() {
               coords: [stop.lat, stop.lng] as [number, number],
               label: idx === 0 ? "🏪" : String(idx),
               sublabel: idx === 0 ? "Ala K' Rico GO" : nombre || stop.label,
-              direccion: idx === 0 ? RESTAURANTE_DIRECCION : pedido?.Direccion_Destino,
+              direccion: idx === 0 ? negocio.direccion : pedido?.Direccion_Destino,
               estadoPedido: pedido ? (STATUS_ES[pedido.Estado] ?? pedido.Estado) : undefined,
               eta: idx === 0 ? "Salida" : `+${tspResult.etaAcumulado[idx]} min`,
               href: idx === 0 ? undefined : `/driver/${stop.id}`,
@@ -198,16 +201,19 @@ function PaginaRepartidor() {
         const stops: Stop[] = [
           {
             id: "depot",
-            lat: RESTAURANTE_COORDS[0],
-            lng: RESTAURANTE_COORDS[1],
+            lat: negocio.lat,
+            lng: negocio.lng,
             label: "Ala K' Rico GO",
           },
-          ...pedidosActivos.map((p) => ({
-            id: String(p.Id_Pedido),
-            lat: p.Lat_Destino,
-            lng: p.Lng_Destino,
-            label: `AKA-${String(p.Id_Pedido).padStart(4, "0")}`,
-          })),
+          // Orden de llegada (FIFO): base de la garantía ACO ≤ FIFO
+          ...[...pedidosActivos]
+            .sort((a, b) => a.Id_Pedido - b.Id_Pedido)
+            .map((p) => ({
+              id: String(p.Id_Pedido),
+              lat: p.Lat_Destino,
+              lng: p.Lng_Destino,
+              label: `AKA-${String(p.Id_Pedido).padStart(4, "0")}`,
+            })),
         ];
         setTspResult(ejecutarACO_TSP(stops, config));
       } catch {
@@ -242,17 +248,6 @@ function PaginaRepartidor() {
             <span className="hidden max-w-[16rem] truncate text-sm text-muted-foreground md:inline">
               {nombreRepartidor}
             </span>
-            {/* Solo un administrador que revisa la ruta ve el acceso a su panel */}
-            {session.role === "admin" && (
-              <Link
-                to="/admin"
-                aria-label="Panel de administración"
-                className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Admin</span>
-              </Link>
-            )}
             <button
               onClick={cerrarSesion}
               aria-label="Cerrar sesión"
@@ -309,11 +304,19 @@ function PaginaRepartidor() {
                   Ruta óptima — {tspResult.orden.length - 1} entrega
                   {tspResult.orden.length - 1 !== 1 ? "s" : ""}
                 </h2>
-                <div className="grid w-full grid-cols-3 gap-2 sm:w-auto">
+                <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-4">
                   <StatBox label="Paradas" value={String(tspResult.orden.length - 1)} />
-                  <StatBox label="Distancia" value={`${tspResult.distanciaKm} km`} />
+                  <StatBox label="Distancia ACO" value={`${tspResult.distanciaKm} km`} />
+                  <StatBox label="Distancia FIFO" value={`${tspResult.distanciaFifoKm} km`} />
                   <StatBox label="ETA total" value={`${tspResult.etaMin} min`} />
                 </div>
+                <p className="w-full text-xs text-muted-foreground">
+                  {tspResult.usaOrdenFifo
+                    ? "El orden de llegada (FIFO) ya es el más corto: la ruta lo mantiene."
+                    : tspResult.distanciaFifoKm > tspResult.distanciaKm
+                      ? `El ACO ahorra ${(tspResult.distanciaFifoKm - tspResult.distanciaKm).toFixed(1)} km (${Math.round((1 - tspResult.distanciaKm / tspResult.distanciaFifoKm) * 100)} %) frente al orden de llegada (FIFO).`
+                      : "La distancia del ACO es igual a la del orden de llegada (FIFO)."}
+                </p>
               </div>
               <MapaRutaMulti
                 stops={mapaStops}

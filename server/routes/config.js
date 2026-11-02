@@ -3,9 +3,49 @@ import { Router } from 'express';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
+import { guardarNegocio, obtenerNegocio, validarNegocio } from '../lib/negocio.js';
 
 const router = Router();
+
+// GET /api/config/negocio — público: nombre, dirección, ubicación y radio de
+// cobertura del local (los muestran el registro, el mapa del cliente y la app)
+router.get('/negocio', async (_req, res) => {
+  try {
+    const pool = await getPool();
+    return res.json(await obtenerNegocio(pool));
+  } catch (err) {
+    console.error('GET /config/negocio:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
 router.use(verificarToken);
+
+// PUT /api/config/negocio — solo admin. Body: { nombre, direccion, lat, lng, radioKm }
+router.put('/negocio', async (req, res) => {
+  if (req.usuario.role !== 'admin') {
+    return res.status(403).json({ error: 'Solo admin.' });
+  }
+  const v = validarNegocio(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  try {
+    const pool = await getPool();
+    const antes = await obtenerNegocio(pool);
+    try {
+      await guardarNegocio(pool, v.datos);
+    } catch (err) {
+      console.error('PUT /config/negocio (¿migración 002 pendiente?):', err.message);
+      return res.status(503).json({ error: 'La configuración del negocio no está disponible. Ejecuta la migración 002.' });
+    }
+    const d = v.datos;
+    await registrarAuditoria(pool, req.usuario.id, null, 'config_negocio_actualizada',
+      `Local: ${d.nombre} | ${d.lat},${d.lng} (antes ${antes.lat},${antes.lng}) | radio ${d.radioKm} km (antes ${antes.radioKm}) | tel ${d.telefono ?? '—'}`, req);
+    return res.json({ ok: true, negocio: d });
+  } catch (err) {
+    console.error('PUT /config/negocio:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
 
 // GET /api/config/aco  — admin y repartidor (el repartidor la usa para calcular su ruta)
 router.get('/aco', async (req, res) => {

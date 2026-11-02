@@ -133,6 +133,49 @@ router.get('/tiempos', soloAdmin, async (req, res) => {
   }
 });
 
+// GET /api/reportes/entregas?desde=YYYY-MM-DD&hasta=YYYY-MM-DD — detalle de las entregas
+// completadas del período (mismo filtro que /tiempos); alimenta "Exportar a Excel" (CP078)
+router.get('/entregas', soloAdmin, async (req, res) => {
+  const { desde, hasta } = req.query;
+  const rDesde = desde ? rangoDiaLima(String(desde)) : null;
+  const rHasta = hasta ? rangoDiaLima(String(hasta)) : null;
+  if (desde && !rDesde) return res.status(400).json({ error: 'Fecha "desde" inválida.' });
+  if (hasta && !rHasta) return res.status(400).json({ error: 'Fecha "hasta" inválida.' });
+  if (rDesde && rHasta && rDesde.desde > rHasta.desde) {
+    return res.status(400).json({ error: 'La fecha "desde" no puede ser posterior a "hasta".' });
+  }
+
+  try {
+    const pool = await getPool();
+    const req2 = pool.request();
+    let where = 'p.Entrega_Pedido IS NOT NULL AND p.Asignacion_Pedido IS NOT NULL';
+    if (rDesde) { req2.input('desde', sql.DateTime2, rDesde.desde); where += ' AND p.Creacion_Pedido >= @desde'; }
+    if (rHasta) { req2.input('hasta', sql.DateTime2, rHasta.hasta); where += ' AND p.Creacion_Pedido < @hasta'; }
+
+    const result = await req2.query(`
+      SELECT TOP 5000
+        p.Id_Pedido,
+        LTRIM(CONCAT(c.Nombre_Usuario, ' ', c.Apellido_Usuario)) AS Cliente,
+        LTRIM(CONCAT(r.Nombre_Usuario, ' ', r.Apellido_Usuario)) AS Repartidor,
+        p.Direccion_Destino,
+        p.Total,
+        p.Creacion_Pedido,
+        p.Asignacion_Pedido,
+        p.Entrega_Pedido,
+        DATEDIFF(MINUTE, p.Asignacion_Pedido, p.Entrega_Pedido) AS Minutos
+      FROM AKR_Pedidos p
+      LEFT JOIN AKR_Usuarios c ON p.Id_Cliente    = c.Id_Usuario
+      LEFT JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
+      WHERE ${where}
+      ORDER BY p.Creacion_Pedido DESC
+    `);
+    return res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /reportes/entregas:', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+});
+
 // GET /api/reportes/repartidores  — ranking de repartidores (CP079-081)
 router.get('/repartidores', soloAdmin, async (req, res) => {
   try {
@@ -200,7 +243,7 @@ router.get('/zonas', soloAdmin, async (req, res) => {
 // TPE  = minutos desde el registro del pedido hasta la confirmación de entrega.
 const PILOTO_INICIO_FIFO = process.env.PILOTO_INICIO_FIFO || '2026-06-01';
 const PILOTO_INICIO_ACO  = process.env.PILOTO_INICIO_ACO  || '2026-06-26';
-const PILOTO_FIN         = process.env.PILOTO_FIN         || '2026-07-07';
+const PILOTO_FIN         = process.env.PILOTO_FIN         || '2026-07-11';
 
 async function metricasFase(pool, desde, hasta) {
   const r = await pool.request()

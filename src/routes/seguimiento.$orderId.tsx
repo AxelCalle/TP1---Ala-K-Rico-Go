@@ -18,7 +18,7 @@ import { LogoIcon } from "../components/Logo";
 import { store } from "@/lib/store";
 import { api } from "@/lib/api";
 import { MapaRuta } from "@/components/MapaRuta";
-import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 
 export const Route = createFileRoute("/seguimiento/$orderId")({
   head: ({ params }) => ({
@@ -90,6 +90,7 @@ const SUBTITLES: Record<StepKey, string> = {
 };
 
 function PaginaSeguimiento() {
+  const negocio = useNegocio();
   const { orderId } = Route.useParams();
 
   // Acepta formato "AKA-1042" (desde la landing) o numérico directo
@@ -169,7 +170,7 @@ function PaginaSeguimiento() {
 
   // Datos de presentación: distancia en línea recta y ETA aproximado (misma
   // heurística que la vista de cliente: ~20 min desde la asignación).
-  const distanciaKm = distanciaHaversineKm(RESTAURANTE_COORDS, coordsDestino);
+  const distanciaKm = distanciaHaversineKm(negocio.coords, coordsDestino);
   const etaMin =
     estado === "en_camino"
       ? Math.max(
@@ -296,8 +297,8 @@ function PaginaSeguimiento() {
             </span>
           </div>
           <MapaRuta
-            origen={RESTAURANTE_DIRECCION}
-            coordsOrigen={RESTAURANTE_COORDS}
+            origen={negocio.direccion}
+            coordsOrigen={negocio.coords}
             destino={pedido.Direccion_Destino}
             coordsDestino={coordsDestino}
             altura="var(--mapa-h)"
@@ -396,6 +397,21 @@ function PaginaSeguimiento() {
                         ? "Pedido entregado"
                         : "Listo para salir de cocina"}
                   </p>
+                  {pedido.Telf_Repartidor && (
+                    <a
+                      href={`tel:${pedido.Telf_Repartidor}`}
+                      aria-label={`Llamar al repartidor al ${pedido.Telf_Repartidor}`}
+                      className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-accent hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Phone className="h-4 w-4 flex-none" aria-hidden="true" />
+                      Llamar al repartidor
+                    </a>
+                  )}
+                  {!pedido.Telf_Repartidor && (estado === "asignado" || estado === "en_camino") && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Teléfono del repartidor no disponible.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
@@ -434,16 +450,21 @@ function PaginaSeguimiento() {
               <span className="min-w-0 truncate">{pedido.Telf_Cliente}</span>
             </a>
           )}
-          <a
-            href="tel:+51000000000"
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Phone className="h-4 w-4 flex-none" />
-            Llamar al restaurante
-          </a>
-          <p className="pb-safe-3 text-center text-xs text-muted-foreground">
-            ¿Algún problema con tu pedido? Llámanos y te ayudamos de inmediato.
-          </p>
+          {/* Teléfono configurado por el admin en Mi negocio; sin él no se muestra el botón */}
+          {negocio.telefono && (
+            <>
+              <a
+                href={`tel:${negocio.telefono}`}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Phone className="h-4 w-4 flex-none" />
+                Llamar a {negocio.nombre}
+              </a>
+              <p className="pb-safe-3 text-center text-xs text-muted-foreground">
+                ¿Algún problema con tu pedido? Llámanos y te ayudamos de inmediato.
+              </p>
+            </>
+          )}
         </section>
       </main>
     </div>

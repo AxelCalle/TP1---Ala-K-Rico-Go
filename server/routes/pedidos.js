@@ -7,10 +7,7 @@ import { validarTransicion } from '../lib/pedidos.js';
 
 const router = Router();
 
-// Coordenadas del restaurante y radio de cobertura
-const RESTAURANTE_LAT = -12.0278455;
-const RESTAURANTE_LNG = -77.0895871;
-const RADIO_COBERTURA_KM = 3;
+import { obtenerNegocio } from '../lib/negocio.js';
 
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -117,6 +114,8 @@ router.get('/', async (req, res) => {
       .input('idCli', sql.Int, req.usuario.id)
       .query(`
         SELECT p.*,
+          -- Teléfono del repartidor solo mientras el pedido está activo (HU018 / CP052)
+          CASE WHEN p.Estado IN ('asignado','en_camino') THEN r.Telf_Usuario END AS Telf_Repartidor,
           r.Nombre_Usuario   AS Nombre_Repartidor,
           r.Apellido_Usuario AS Apellido_Repartidor
         FROM AKR_Pedidos p
@@ -147,7 +146,9 @@ router.get('/:id', async (req, res) => {
           c.Apellido_Usuario AS Apellido_Cliente,
           c.Telf_Usuario    AS Telf_Cliente,
           r.Nombre_Usuario  AS Nombre_Repartidor,
-          r.Apellido_Usuario AS Apellido_Repartidor
+          r.Apellido_Usuario AS Apellido_Repartidor,
+          -- Teléfono del repartidor solo mientras el pedido está activo (HU018 / CP052)
+          CASE WHEN p.Estado IN ('asignado','en_camino') THEN r.Telf_Usuario END AS Telf_Repartidor
         FROM AKR_Pedidos p
         INNER JOIN AKR_Usuarios c ON p.Id_Cliente = c.Id_Usuario
         LEFT  JOIN AKR_Usuarios r ON p.Id_Repartidor = r.Id_Usuario
@@ -195,10 +196,18 @@ router.post('/', async (req, res) => {
   if (total !== undefined && total !== null && (!isFinite(total) || total < 0))
     return res.status(400).json({ error: 'Total inválido.' });
 
-  const distKm = haversineKm(RESTAURANTE_LAT, RESTAURANTE_LNG, latDestino, lngDestino);
-  if (distKm > RADIO_COBERTURA_KM) {
+  // Ubicación del local y radio de cobertura configurados por el admin (AKR_ConfigNegocio)
+  let negocio;
+  try {
+    negocio = await obtenerNegocio(await getPool());
+  } catch (err) {
+    console.error('POST /pedidos (config negocio):', err.message);
+    return res.status(500).json({ error: 'Error interno.' });
+  }
+  const distKm = haversineKm(negocio.lat, negocio.lng, latDestino, lngDestino);
+  if (distKm > negocio.radioKm) {
     return res.status(400).json({
-      error: `La dirección de entrega está fuera de nuestra zona de cobertura (máximo ${RADIO_COBERTURA_KM} km).`,
+      error: `La dirección de entrega está fuera de nuestra zona de cobertura (máximo ${negocio.radioKm} km).`,
       distanciaKm: Math.round(distKm * 10) / 10,
     });
   }
@@ -212,8 +221,9 @@ router.post('/', async (req, res) => {
       .input('direccion',   sql.NVarChar(300), direccionDestino)
       .input('productos',   sql.NVarChar(sql.MAX), productos ? JSON.stringify(productos) : null)
       .input('total',       sql.Decimal(10,2), total ?? null)
-      .input('latOrigen',   sql.Float,         latOrigen ?? null)
-      .input('lngOrigen',   sql.Float,         lngOrigen ?? null)
+      // El origen es siempre el local configurado: un cliente con datos viejos no lo altera
+      .input('latOrigen',   sql.Float,         negocio.lat)
+      .input('lngOrigen',   sql.Float,         negocio.lng)
       .query(`
         INSERT INTO AKR_Pedidos
           (Id_Cliente, Lat_Destino, Lng_Destino, Direccion_Destino,

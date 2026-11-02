@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 
-import { RESTAURANTE_COORDS, RADIO_COBERTURA_KM } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -23,16 +23,34 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 
 const NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse";
 
-const CENTRO_DEFAULT = RESTAURANTE_COORDS;
-
 interface Props {
   onSeleccion: (coords: [number, number], direccion: string) => void;
   /** Si el padre ya tiene coordenadas (edición), centra el mapa ahí */
   coordsIniciales?: [number, number];
   altura?: number;
+  /** Selección del propio local (Admin → Mi negocio): sin círculo ni aviso de cobertura */
+  sinCobertura?: boolean;
 }
 
-export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 320 }: Props) {
+export function MapaSelectorUbicacion({
+  onSeleccion,
+  coordsIniciales,
+  altura = 320,
+  sinCobertura = false,
+}: Props) {
+  const negocio = useNegocio();
+  // Los efectos de Leaflet se montan una vez: leen la configuración vigente desde la ref
+  const negocioRef = useRef(negocio);
+  const circuloRef = useRef<any>(null);
+  const localRef = useRef<any>(null);
+  useEffect(() => {
+    negocioRef.current = negocio;
+    circuloRef.current
+      ?.setLatLng(negocio.coords)
+      .setRadius(negocio.radioKm * 1000)
+      .setTooltipContent(`Zona de cobertura (${negocio.radioKm} km)`);
+    localRef.current?.setLatLng(negocio.coords);
+  }, [negocio]);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
   const marcadorRef = useRef<any>(null);
@@ -66,12 +84,16 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
         const calle = addr.road ?? addr.pedestrian ?? addr.footway;
         partes.push(calle + (addr.house_number ? " " + addr.house_number : ""));
       }
-      const barrio = addr.suburb ?? addr.neighbourhood ?? addr.quarter;
+      // Urbanización/barrio y distrito (en Lima el distrito llega como suburb o city);
+      // sin repetir nombres ("Breña, Breña") y con el código postal al final
+      const barrio = addr.neighbourhood ?? addr.quarter;
       if (barrio) partes.push(barrio);
-      const distrito = addr.city_district ?? addr.borough;
-      if (distrito) partes.push(distrito);
-      const ciudad = addr.city ?? addr.town;
-      if (ciudad && ciudad.toLowerCase() !== (distrito ?? "").toLowerCase()) partes.push(ciudad);
+      const distrito = addr.city_district ?? addr.borough ?? addr.suburb ?? addr.city ?? addr.town;
+      if (distrito) partes.push(addr.postcode ? `${distrito} ${addr.postcode}` : distrito);
+      for (let i = partes.length - 1; i > 0; i--) {
+        if (partes.slice(0, i).some((p) => p.toLowerCase() === partes[i].toLowerCase()))
+          partes.splice(i, 1);
+      }
 
       return partes.length
         ? partes.join(", ")
@@ -93,8 +115,8 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
       if (!activoRef.current || consulta !== consultaRef.current) return;
       setBuscandoDir(false);
       setDireccionSel(dir);
-      const distKm = haversineKm(RESTAURANTE_COORDS[0], RESTAURANTE_COORDS[1], lat, lng);
-      setFueraDeZona(distKm > RADIO_COBERTURA_KM);
+      const n = negocioRef.current;
+      setFueraDeZona(!sinCobertura && haversineKm(n.lat, n.lng, lat, lng) > n.radioKm);
       onSeleccion([lat, lng], dir);
       try {
         marker
@@ -127,7 +149,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
         mapaRef.current = null;
       }
 
-      const centro = coordsIniciales ?? CENTRO_DEFAULT;
+      const centro = coordsIniciales ?? negocioRef.current.coords;
       const zoom = coordsIniciales ? 17 : 15;
 
       const mapa = L.map(contenedorRef.current, {
@@ -146,24 +168,27 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
         },
       ).addTo(mapa);
 
-      // Zona de cobertura — círculo de 3 km
-      L.circle(RESTAURANTE_COORDS, {
-        radius: RADIO_COBERTURA_KM * 1000,
-        color: "#f59e0b",
-        fillColor: "#f59e0b",
-        fillOpacity: 0.07,
-        weight: 2,
-        dashArray: "6 4",
-      })
-        .addTo(mapa)
-        .bindTooltip(`Zona de cobertura (${RADIO_COBERTURA_KM} km)`, { sticky: true });
+      // Zona de cobertura configurada por el admin
+      const n = negocioRef.current;
+      if (!sinCobertura)
+        circuloRef.current = L.circle(n.coords, {
+          radius: n.radioKm * 1000,
+          color: "#f59e0b",
+          fillColor: "#f59e0b",
+          fillOpacity: 0.07,
+          weight: 2,
+          dashArray: "6 4",
+        })
+          .addTo(mapa)
+          .bindTooltip(`Zona de cobertura (${n.radioKm} km)`, { sticky: true });
 
       // Marcador fijo del restaurante
-      L.marker(RESTAURANTE_COORDS, { icon: crearIconoRestaurante(L) })
-        .addTo(mapa)
-        .bindPopup(
-          "<b style='color:#f59e0b'>🍗 Ala K&apos; Rico GO</b><br><small>Punto de origen</small>",
-        );
+      if (!sinCobertura)
+        localRef.current = L.marker(n.coords, { icon: crearIconoRestaurante(L) })
+          .addTo(mapa)
+          .bindPopup(
+            `<b style='color:#f59e0b'>🍗 ${n.nombre.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)}</b><br><small>Punto de origen</small>`,
+          );
 
       // Redibujado tras montar en el DOM
       setTimeout(() => {
@@ -243,7 +268,7 @@ export function MapaSelectorUbicacion({ onSeleccion, coordsIniciales, altura = 3
           style={{ backdropFilter: "blur(4px)" }}
         >
           <MapPin className="h-3.5 w-3.5 flex-none" />
-          Fuera de zona de cobertura ({RADIO_COBERTURA_KM} km). Mueve el pin dentro del círculo.
+          Fuera de zona de cobertura ({negocio.radioKm} km). Mueve el pin dentro del círculo.
         </div>
       )}
 

@@ -1,10 +1,13 @@
 // Rutas de autenticación: login, registro y perfil
 import { Router } from 'express';
+import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
+import { estadoBloqueo } from '../lib/bloqueo.js';
+import { correoValido } from '../lib/validacion.js';
 
 const router = Router();
 
@@ -12,14 +15,42 @@ const router = Router();
 // POST /api/auth/login
 // ---------------------------------------------------------------------------
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = String(req.body.email ?? '').trim().toLowerCase();
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email y contraseña son obligatorios.' });
   }
 
+  // Bloqueo por cuenta (HU002 / CP006): vale para cualquier navegador o dispositivo.
+  // Si la consulta falla, el ingreso no se interrumpe (queda el límite por IP).
+  const bloqueo = async (pool) => {
+    try {
+      return await estadoBloqueo(pool, email);
+    } catch (err) {
+      console.error('Bloqueo de cuenta:', err.message);
+      return null;
+    }
+  };
+  const bloqueada = (res, segundosRestantes) =>
+    res.status(423).json({ error: 'cuenta_bloqueada', segundosRestantes });
+  // Credenciales incorrectas: 401 con los intentos que quedan, o 423 si este fue el quinto
+  const fallo = async (pool, idUsuario, detalle) => {
+    await registrarAuditoria(pool, idUsuario, email, 'login_fallido', detalle, req);
+    const estado = await bloqueo(pool);
+    if (estado?.segundosRestantes > 0) return bloqueada(res, estado.segundosRestantes);
+    return res.status(401).json({ error: 'invalid', intentosRestantes: estado?.intentosRestantes });
+  };
+
   try {
     const pool = await getPool();
+
+    const previo = await bloqueo(pool);
+    if (previo?.segundosRestantes > 0) {
+      // No cuenta como fallo: el bloqueo dura 15 min desde el quinto intento
+      await registrarAuditoria(pool, null, email, 'login_bloqueado', 'Cuenta bloqueada por intentos fallidos', req);
+      return bloqueada(res, previo.segundosRestantes);
+    }
 
     // Buscar usuario activo por email (JOIN con roles para obtener el nombre del rol)
     const result = await pool.request()
@@ -42,23 +73,14 @@ router.post('/login', async (req, res) => {
     const usuario = result.recordset[0];
 
     // Usuario no encontrado
-    if (!usuario) {
-      await registrarAuditoria(pool, null, email, 'login_fallido', 'Usuario no encontrado', req);
-      return res.status(401).json({ error: 'invalid' });
-    }
+    if (!usuario) return fallo(pool, null, 'Usuario no encontrado');
 
     // Usuario inactivo
-    if (!usuario.Activo_Usuario) {
-      await registrarAuditoria(pool, usuario.Id_Usuario, email, 'login_fallido', 'Cuenta inactiva', req);
-      return res.status(401).json({ error: 'invalid' });
-    }
+    if (!usuario.Activo_Usuario) return fallo(pool, usuario.Id_Usuario, 'Cuenta inactiva');
 
     // Verificar contraseña
     const passwordValida = await bcrypt.compare(password, usuario.Contraseña_Usuario);
-    if (!passwordValida) {
-      await registrarAuditoria(pool, usuario.Id_Usuario, email, 'login_fallido', 'Contraseña incorrecta', req);
-      return res.status(401).json({ error: 'invalid' });
-    }
+    if (!passwordValida) return fallo(pool, usuario.Id_Usuario, 'Contraseña incorrecta');
 
     // Mapear rol a clave interna
     const nombreRol = (usuario.Nombre_Role || '').toLowerCase();
@@ -118,7 +140,7 @@ router.post('/register', async (req, res) => {
   if (nombreTrim.length < 2 || nombreTrim.length > 100) {
     return res.status(400).json({ error: 'El nombre debe tener entre 2 y 100 caracteres.' });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim) || emailTrim.length > 150) {
+  if (!correoValido(emailTrim) || emailTrim.length > 150) {
     return res.status(400).json({ error: 'Email inválido.' });
   }
   if (password.length < 8 || password.length > 100) {
@@ -221,7 +243,7 @@ router.post('/reset-password', async (req, res) => {
     return res.status(400).json({ error: 'Campos incompletos.' });
   }
   const emailTrim = String(email).trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+  if (!correoValido(emailTrim)) {
     return res.status(400).json({ error: 'Email inválido.' });
   }
   if (passwordNuevo.length < 8 || passwordNuevo.length > 100) {
@@ -330,6 +352,72 @@ router.put('/perfil', verificarToken, async (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Error en PUT /perfil:', err.message);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/cuenta  — el cliente elimina su propia cuenta (App Store / Google Play)
+// Body: { password }. No borra la fila: los pedidos históricos alimentan los
+// reportes del piloto y las calificaciones. Se anonimiza en una transacción:
+// datos personales, contraseña, notificaciones y direcciones escritas de sus
+// pedidos; la cuenta queda inactiva y el email libre para un registro nuevo.
+// ---------------------------------------------------------------------------
+router.delete('/cuenta', verificarToken, async (req, res) => {
+  if (req.usuario.role !== 'customer') {
+    return res.status(403).json({ error: 'Solo los clientes pueden eliminar su cuenta desde la app. Contacta al administrador.' });
+  }
+  const { password } = req.body ?? {};
+  if (!password) return res.status(400).json({ error: 'Ingresa tu contraseña para confirmar.' });
+
+  try {
+    const pool = await getPool();
+    const actual = await pool.request()
+      .input('id', sql.Int, req.usuario.id)
+      .query('SELECT Contraseña_Usuario, Activo_Usuario FROM AKR_Usuarios WHERE Id_Usuario = @id');
+    const usuario = actual.recordset[0];
+    if (!usuario || !usuario.Activo_Usuario) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    if (!(await bcrypt.compare(password, usuario.Contraseña_Usuario))) {
+      return res.status(401).json({ error: 'password_incorrecto' });
+    }
+
+    // Un pedido en reparto no se puede abandonar: primero debe entregarse
+    const enCurso = await pool.request()
+      .input('id', sql.Int, req.usuario.id)
+      .query(`SELECT COUNT(*) AS total FROM AKR_Pedidos
+              WHERE Id_Cliente = @id AND Estado IN ('asignado','en_camino')`);
+    if (enCurso.recordset[0].total > 0) {
+      return res.status(409).json({ error: 'Tienes un pedido en reparto. Podrás eliminar tu cuenta cuando se entregue.' });
+    }
+
+    const hashInutil = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+    await pool.request()
+      .input('id',    sql.Int,           req.usuario.id)
+      .input('email', sql.NVarChar(150), `eliminado-${req.usuario.id}@cuenta-eliminada.invalid`)
+      .input('hash',  sql.NVarChar(250), hashInutil)
+      .query(`
+        SET XACT_ABORT ON;
+        BEGIN TRANSACTION;
+          UPDATE AKR_Pedidos
+             SET Estado = 'cancelado', Cancelacion_Pedido = GETDATE()
+           WHERE Id_Cliente = @id AND Estado = 'sin_asignar';
+          UPDATE AKR_Pedidos
+             SET Direccion_Destino = 'Dirección eliminada por el titular'
+           WHERE Id_Cliente = @id;
+          DELETE FROM AKR_Notificaciones WHERE Id_Cliente = @id;
+          UPDATE AKR_Usuarios
+             SET Nombre_Usuario = 'Cuenta eliminada', Apellido_Usuario = '',
+                 Email_Usuario = @email, Contraseña_Usuario = @hash,
+                 DNI_Usuario = NULL, Telf_Usuario = NULL,
+                 Activo_Usuario = 0, Modificacion_Usuario = GETDATE()
+           WHERE Id_Usuario = @id;
+        COMMIT TRANSACTION;
+      `);
+    // Sin email en la auditoría: solo el Id (ya anonimizado)
+    await registrarAuditoria(pool, req.usuario.id, null, 'cuenta_eliminada', 'Eliminada por el titular', req);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error en DELETE /cuenta:', err.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
