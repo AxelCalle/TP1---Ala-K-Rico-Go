@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { store } from "@/lib/store";
-import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 import { calcularETA, construirGrafo, ejecutarACO, type AcoGraph, type AcoResult } from "@/lib/aco";
 import { MapaRuta } from "@/components/MapaRuta";
 import { api } from "@/lib/api";
@@ -43,12 +43,6 @@ export const Route = createFileRoute("/driver_/$orderId")({
     </div>
   ),
 });
-
-const PICKUP = {
-  label: "Cocina Ala K' Rico GO",
-  address: RESTAURANTE_DIRECCION,
-  coords: RESTAURANTE_COORDS,
-};
 
 function dibujarGrafo(
   ctx: CanvasRenderingContext2D,
@@ -126,6 +120,12 @@ function dibujarGrafo(
 }
 
 function PaginaRuta() {
+  const negocio = useNegocio();
+  const PICKUP = {
+    label: `Cocina ${negocio.nombre}`,
+    address: negocio.direccion,
+    coords: negocio.coords,
+  };
   const { orderId } = Route.useParams();
   const qc = useQueryClient();
 
@@ -280,7 +280,7 @@ function PaginaRuta() {
   )}&destination=${encodeURIComponent(pedido.Direccion_Destino)}&travelmode=driving`;
 
   // Antes de calcular la ruta: distancia en línea recta desde el local y su ETA (HU014)
-  const kmDirecto = distanciaKm(RESTAURANTE_COORDS, coordsDestino);
+  const kmDirecto = distanciaKm(negocio.coords, coordsDestino);
   const distanceKm = resultadoACO ? resultadoACO.distanceKm.toFixed(1) : kmDirecto.toFixed(1);
 
   const etaMin = resultadoACO ? resultadoACO.etaMin : calcularETA(kmDirecto);

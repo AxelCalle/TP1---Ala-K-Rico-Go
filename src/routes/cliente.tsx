@@ -33,7 +33,7 @@ import {
 } from "@/lib/store";
 import { MapaRuta } from "@/components/MapaRuta";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
-import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 import { geocodificarDireccion } from "@/lib/geo";
 import { api, ErrorApi } from "@/lib/api";
 
@@ -83,12 +83,10 @@ const STEPS = [
   { key: "entregado", label: "Entregado", sub: "¡Disfruta tus alitas!", icon: PackageCheck },
 ] as const;
 
-const COORDS_RESTAURANTE = RESTAURANTE_COORDS;
-const DIR_RESTAURANTE = RESTAURANTE_DIRECCION;
-
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 function ClientePage() {
+  const negocio = useNegocio();
   const navigate = useNavigate();
   const session = useStore((s) => s.session);
   const customer = useStore((s) => s.customers.find((c) => c.id === s.session?.customerId));
@@ -337,10 +335,10 @@ function ClientePage() {
         <div className="pb-safe-3 mx-auto flex max-w-4xl flex-col gap-1 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-center gap-2">
             <LogoIcon size={16} />
-            <span className="text-xs text-muted-foreground">Ala K' Rico GO</span>
+            <span className="text-xs text-muted-foreground">{negocio.nombre}</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Delivery · Jr. Áncash 3855, SMP · {new Date().getFullYear()}
+            Delivery · {negocio.direccion} · {new Date().getFullYear()}
           </p>
         </div>
       </footer>
@@ -361,6 +359,7 @@ function ModalNuevoPedido({
   onClose: () => void;
   onCreado: () => void;
 }) {
+  const negocio = useNegocio();
   const [direccion, setDireccion] = useState(customer?.address ?? "");
   const [telefono, setTelefono] = useState(customer?.phone ?? "");
   const [alitas, setAlitas] = useState(12);
@@ -429,8 +428,8 @@ function ModalNuevoPedido({
             notas: notas.trim().slice(0, 200) || undefined,
           },
         ],
-        latOrigen: RESTAURANTE_COORDS[0],
-        lngOrigen: RESTAURANTE_COORDS[1],
+        latOrigen: negocio.lat,
+        lngOrigen: negocio.lng,
       });
     } catch (err) {
       // Validaciones del servidor (p. ej. fuera de la zona de cobertura): se muestra el motivo
@@ -1054,6 +1053,7 @@ function TabSeguimiento({ customerId: _customerId }: { customerId: string }) {
 // ─── Tarjeta de seguimiento individual ───────────────────────────────────────
 
 function TarjetaSeguimiento({ order }: { order: any }) {
+  const negocio = useNegocio();
   const productos = (() => {
     try {
       return JSON.parse(order.Productos ?? "[]");
@@ -1247,6 +1247,16 @@ function TarjetaSeguimiento({ order }: { order: any }) {
               </span>
               <div className="min-w-0">
                 <p className="break-words font-medium">{driverNombre}</p>
+                {order.Telf_Repartidor && (
+                  <a
+                    href={`tel:${order.Telf_Repartidor}`}
+                    aria-label={`Llamar al repartidor al ${order.Telf_Repartidor}`}
+                    className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-accent hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Phone className="h-4 w-4 flex-none" aria-hidden="true" />
+                    Llamar al repartidor
+                  </a>
+                )}
               </div>
             </div>
           ) : (
@@ -1270,8 +1280,8 @@ function TarjetaSeguimiento({ order }: { order: any }) {
             </span>
           </div>
           <MapaRuta
-            origen={DIR_RESTAURANTE}
-            coordsOrigen={COORDS_RESTAURANTE}
+            origen={negocio.direccion}
+            coordsOrigen={negocio.coords}
             destino={address}
             coordsDestino={coords}
             altura="clamp(240px, 45svh, 380px)"

@@ -75,6 +75,8 @@ export type PedidoApi = {
   Telf_Cliente?: string | null;
   Nombre_Repartidor?: string;
   Apellido_Repartidor?: string;
+  /** Solo llega mientras el pedido está asignado o en camino */
+  Telf_Repartidor?: string | null;
 };
 
 /** Recorrido GPS real de un día (GET /api/repartidores/:id/recorrido). */
@@ -260,6 +262,17 @@ export type AlertaAdmin = {
   Datos: string | null;
   Leida: boolean;
   Creacion: string;
+};
+
+/** Configuración del negocio (GET/PUT /api/config/negocio). */
+export type NegocioApi = {
+  nombre: string;
+  direccion: string;
+  lat: number;
+  lng: number;
+  radioKm: number;
+  /** Teléfono del local; null si el admin no lo configuró */
+  telefono?: string | null;
 };
 
 export type CalificacionApi = {
@@ -639,6 +652,19 @@ export const api = {
       method: "PUT",
       headers: cabeceraAuth(),
       body: JSON.stringify(config),
+    });
+  },
+
+  // ── Configuración del negocio (ubicación del local, cobertura) ────────────
+  async obtenerNegocio(): Promise<NegocioApi> {
+    return solicitar<NegocioApi>("/api/config/negocio");
+  },
+
+  async guardarNegocio(datos: NegocioApi): Promise<{ ok: boolean; negocio: NegocioApi }> {
+    return solicitar<{ ok: boolean; negocio: NegocioApi }>("/api/config/negocio", {
+      method: "PUT",
+      headers: cabeceraAuth(),
+      body: JSON.stringify(datos),
     });
   },
 

@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore } from "@/lib/store";
-import { RESTAURANTE_COORDS, RESTAURANTE_DIRECCION, ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { useNegocio } from "@/lib/negocio";
 import { ejecutarACO_TSP, type Stop, type TSPResult } from "@/lib/aco";
 import { MapaRutaMulti, type MultiStop } from "@/components/MapaRuta";
 import { api, type AcoConfigApi, type PedidoApi } from "@/lib/api";
@@ -45,6 +46,7 @@ const STATUS_COLOR: Record<string, string> = {
 // ─── Página principal ──────────────────────────────────────────────────────────
 
 function PaginaRepartidor() {
+  const negocio = useNegocio();
   const navigate = useNavigate();
   const session = useStore((s) => s.session);
   const [montado, setMontado] = useState(false);
@@ -116,7 +118,7 @@ function PaginaRepartidor() {
               coords: [stop.lat, stop.lng] as [number, number],
               label: idx === 0 ? "🏪" : String(idx),
               sublabel: idx === 0 ? "Ala K' Rico GO" : nombre || stop.label,
-              direccion: idx === 0 ? RESTAURANTE_DIRECCION : pedido?.Direccion_Destino,
+              direccion: idx === 0 ? negocio.direccion : pedido?.Direccion_Destino,
               estadoPedido: pedido ? (STATUS_ES[pedido.Estado] ?? pedido.Estado) : undefined,
               eta: idx === 0 ? "Salida" : `+${tspResult.etaAcumulado[idx]} min`,
               href: idx === 0 ? undefined : `/driver/${stop.id}`,
@@ -198,8 +200,8 @@ function PaginaRepartidor() {
         const stops: Stop[] = [
           {
             id: "depot",
-            lat: RESTAURANTE_COORDS[0],
-            lng: RESTAURANTE_COORDS[1],
+            lat: negocio.lat,
+            lng: negocio.lng,
             label: "Ala K' Rico GO",
           },
           ...pedidosActivos.map((p) => ({

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -35,7 +36,8 @@ import {
 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store, useStore, SAUCES, type Sauce, type OrderStatus, type AcoConfig } from "@/lib/store";
-import { ESTADO_PEDIDO_ES, RESTAURANTE_COORDS } from "@/lib/constants";
+import { ESTADO_PEDIDO_ES } from "@/lib/constants";
+import { CLAVE_NEGOCIO, useNegocio } from "@/lib/negocio";
 import { api, ErrorApi } from "@/lib/api";
 import { MapaSelectorUbicacion } from "@/components/MapaSelectorUbicacion";
 import { MapaRecorrido } from "@/components/MapaRecorrido";
@@ -1461,6 +1463,214 @@ function GuiaACO({ activo }: { activo: keyof AcoConfig | null }) {
   );
 }
 
+/**
+ * Mi negocio (HU nueva — pymes): ubicación del local (origen de todas las rutas
+ * ACO), dirección, nombre y radio de cobertura. Solo el administrador; el
+ * backend valida y audita (PUT /api/config/negocio).
+ */
+function ConfigNegocio() {
+  const negocio = useNegocio();
+  const qc = useQueryClient();
+  const [editando, setEditando] = useState(false);
+  const [form, setForm] = useState({ nombre: "", direccion: "", radioKm: "", telefono: "" });
+  const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  function abrir() {
+    setForm({
+      nombre: negocio.nombre,
+      direccion: negocio.direccion,
+      radioKm: String(negocio.radioKm),
+      telefono: negocio.telefono ?? "",
+    });
+    setCoords(negocio.coords);
+    setError(null);
+    setOk(false);
+    setEditando(true);
+  }
+
+  async function guardar(e: FormEvent) {
+    e.preventDefault();
+    if (!coords) return setError("Fija la ubicación del local en el mapa.");
+    const radio = Number(form.radioKm.replace(",", "."));
+    if (!Number.isFinite(radio) || radio <= 0 || radio > 50)
+      return setError("El radio debe estar entre 0,1 y 50 km.");
+    setGuardando(true);
+    setError(null);
+    try {
+      const r = await api.guardarNegocio({
+        nombre: form.nombre.trim(),
+        direccion: form.direccion.trim(),
+        lat: coords[0],
+        lng: coords[1],
+        radioKm: radio,
+        telefono: form.telefono.trim() || null,
+      });
+      qc.setQueryData(CLAVE_NEGOCIO, r.negocio);
+      setOk(true);
+      setEditando(false);
+    } catch (err) {
+      setError(err instanceof ErrorApi ? err.codigo : "No se pudo guardar. Revisa tu conexión.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="titulo-negocio" className="space-y-3">
+      <div>
+        <h1 id="titulo-negocio" className="text-xl font-semibold sm:text-2xl">
+          Mi negocio
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ubicación del local desde donde salen los pedidos: es el origen de las rutas ACO y el
+          centro de la zona de cobertura.
+        </p>
+      </div>
+      {ok && (
+        <p role="status" className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+          Configuración guardada. Los nuevos pedidos y rutas usarán esta ubicación.
+        </p>
+      )}
+      {!editando ? (
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Nombre del local</dt>
+              <dd className="font-medium">{negocio.nombre}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Radio de cobertura</dt>
+              <dd className="font-medium">{negocio.radioKm} km</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Teléfono del local</dt>
+              <dd className="font-medium">
+                {negocio.telefono ?? (
+                  <span className="text-destructive">
+                    Sin teléfono: el botón «Llamar al restaurante» no se muestra
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Dirección</dt>
+              <dd className="font-medium">{negocio.direccion}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Coordenadas</dt>
+              <dd className="font-mono text-xs">
+                {negocio.lat.toFixed(6)}, {negocio.lng.toFixed(6)}
+              </dd>
+            </div>
+          </dl>
+          <button
+            type="button"
+            onClick={abrir}
+            className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Editar ubicación del local
+          </button>
+        </div>
+      ) : (
+        <form
+          onSubmit={guardar}
+          className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Campo label="Nombre del local">
+              <input
+                required
+                minLength={2}
+                maxLength={100}
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Radio de cobertura (km)">
+              <input
+                required
+                inputMode="decimal"
+                value={form.radioKm}
+                onChange={(e) => setForm({ ...form, radioKm: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Teléfono del local (para «Llamar al restaurante»)">
+              <input
+                type="tel"
+                inputMode="tel"
+                maxLength={20}
+                placeholder="987 654 321"
+                value={form.telefono}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+            <Campo label="Dirección del local (agrega la numeración si no aparece)" completo>
+              <input
+                placeholder="Jr. Requena 123, Breña"
+                required
+                minLength={5}
+                maxLength={300}
+                value={form.direccion}
+                onChange={(e) => setForm({ ...form, direccion: e.target.value })}
+                className={clsInput}
+              />
+            </Campo>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Mueve el pin hasta la puerta del local</p>
+            <MapaSelectorUbicacion
+              sinCobertura
+              coordsIniciales={negocio.coords}
+              altura={300}
+              onSeleccion={(c, dir) => {
+                setCoords(c);
+                // Al mover el pin, la dirección se actualiza; luego se puede completar a mano
+                if (dir) setForm((f) => ({ ...f, direccion: dir.slice(0, 300) }));
+              }}
+            />
+            {coords && (
+              <p className="font-mono text-xs text-muted-foreground">
+                {coords[0].toFixed(6)}, {coords[1].toFixed(6)}
+              </p>
+            )}
+          </div>
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Los pedidos ya creados conservan su origen. Las rutas que los repartidores ya generaron
+            se actualizan cuando vuelvan a calcularlas.
+          </p>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="submit"
+              disabled={guardando}
+              className="inline-flex h-11 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground disabled:opacity-50"
+            >
+              {guardando ? "Guardando…" : "Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditando(false)}
+              className="inline-flex h-11 items-center justify-center rounded-md border border-border px-4 text-sm"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function SeccionConfiguracion() {
   const acoConfig = useStore((s) => s.acoConfig);
   const [local, setLocal] = useState<AcoConfig>({ ...acoConfig });
@@ -1539,6 +1749,7 @@ function SeccionConfiguracion() {
 
   return (
     <div className="space-y-8">
+      <ConfigNegocio />
       <div>
         <h1 className="text-xl font-semibold sm:text-2xl">Configuración ACO</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -2679,6 +2890,7 @@ function DialogRecorrido({
   repartidor: import("@/lib/api").RepartidorApi;
   onClose: () => void;
 }) {
+  const negocio = useNegocio();
   const [fecha, setFecha] = useState(hoyLima);
   const [datos, setDatos] = useState<import("@/lib/api").RecorridoApi | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -2776,7 +2988,7 @@ function DialogRecorrido({
             </p>
           )}
           <div className="mt-3">
-            <MapaRecorrido recorrido={datos} centro={RESTAURANTE_COORDS} />
+            <MapaRecorrido recorrido={datos} centro={negocio.coords} />
           </div>
           <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
@@ -3243,9 +3455,8 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [direccion, setDireccion] = useState("");
 
-  // Coordenadas del restaurante (origen fijo)
-  const LAT_REST = -12.0278455;
-  const LNG_REST = -77.0895871;
+  // Origen: el local configurado en Admin → Configuración → Mi negocio
+  const negocio = useNegocio();
 
   function handleSeleccionMapa(c: [number, number], dir: string) {
     setCoords(c);
@@ -3277,8 +3488,8 @@ function DialogNuevoPedido({ onClose }: { onClose: () => void }) {
             notas: notas.trim() || undefined,
           },
         ],
-        latOrigen: LAT_REST,
-        lngOrigen: LNG_REST,
+        latOrigen: negocio.lat,
+        lngOrigen: negocio.lng,
       });
       onClose();
     } catch {

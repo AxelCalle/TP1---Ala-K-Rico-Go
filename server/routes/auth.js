@@ -1,5 +1,6 @@
 // Rutas de autenticación: login, registro y perfil
 import { Router } from 'express';
+import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db.js';
@@ -330,6 +331,72 @@ router.put('/perfil', verificarToken, async (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Error en PUT /perfil:', err.message);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/cuenta  — el cliente elimina su propia cuenta (App Store / Google Play)
+// Body: { password }. No borra la fila: los pedidos históricos alimentan los
+// reportes del piloto y las calificaciones. Se anonimiza en una transacción:
+// datos personales, contraseña, notificaciones y direcciones escritas de sus
+// pedidos; la cuenta queda inactiva y el email libre para un registro nuevo.
+// ---------------------------------------------------------------------------
+router.delete('/cuenta', verificarToken, async (req, res) => {
+  if (req.usuario.role !== 'customer') {
+    return res.status(403).json({ error: 'Solo los clientes pueden eliminar su cuenta desde la app. Contacta al administrador.' });
+  }
+  const { password } = req.body ?? {};
+  if (!password) return res.status(400).json({ error: 'Ingresa tu contraseña para confirmar.' });
+
+  try {
+    const pool = await getPool();
+    const actual = await pool.request()
+      .input('id', sql.Int, req.usuario.id)
+      .query('SELECT Contraseña_Usuario, Activo_Usuario FROM AKR_Usuarios WHERE Id_Usuario = @id');
+    const usuario = actual.recordset[0];
+    if (!usuario || !usuario.Activo_Usuario) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    if (!(await bcrypt.compare(password, usuario.Contraseña_Usuario))) {
+      return res.status(401).json({ error: 'password_incorrecto' });
+    }
+
+    // Un pedido en reparto no se puede abandonar: primero debe entregarse
+    const enCurso = await pool.request()
+      .input('id', sql.Int, req.usuario.id)
+      .query(`SELECT COUNT(*) AS total FROM AKR_Pedidos
+              WHERE Id_Cliente = @id AND Estado IN ('asignado','en_camino')`);
+    if (enCurso.recordset[0].total > 0) {
+      return res.status(409).json({ error: 'Tienes un pedido en reparto. Podrás eliminar tu cuenta cuando se entregue.' });
+    }
+
+    const hashInutil = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+    await pool.request()
+      .input('id',    sql.Int,           req.usuario.id)
+      .input('email', sql.NVarChar(150), `eliminado-${req.usuario.id}@cuenta-eliminada.invalid`)
+      .input('hash',  sql.NVarChar(250), hashInutil)
+      .query(`
+        SET XACT_ABORT ON;
+        BEGIN TRANSACTION;
+          UPDATE AKR_Pedidos
+             SET Estado = 'cancelado', Cancelacion_Pedido = GETDATE()
+           WHERE Id_Cliente = @id AND Estado = 'sin_asignar';
+          UPDATE AKR_Pedidos
+             SET Direccion_Destino = 'Dirección eliminada por el titular'
+           WHERE Id_Cliente = @id;
+          DELETE FROM AKR_Notificaciones WHERE Id_Cliente = @id;
+          UPDATE AKR_Usuarios
+             SET Nombre_Usuario = 'Cuenta eliminada', Apellido_Usuario = '',
+                 Email_Usuario = @email, Contraseña_Usuario = @hash,
+                 DNI_Usuario = NULL, Telf_Usuario = NULL,
+                 Activo_Usuario = 0, Modificacion_Usuario = GETDATE()
+           WHERE Id_Usuario = @id;
+        COMMIT TRANSACTION;
+      `);
+    // Sin email en la auditoría: solo el Id (ya anonimizado)
+    await registrarAuditoria(pool, req.usuario.id, null, 'cuenta_eliminada', 'Eliminada por el titular', req);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error en DELETE /cuenta:', err.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
