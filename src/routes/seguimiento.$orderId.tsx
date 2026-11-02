@@ -407,6 +407,11 @@ function PaginaSeguimiento() {
                       Llamar al repartidor
                     </a>
                   )}
+                  {!pedido.Telf_Repartidor && (estado === "asignado" || estado === "en_camino") && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Teléfono del repartidor no disponible.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (

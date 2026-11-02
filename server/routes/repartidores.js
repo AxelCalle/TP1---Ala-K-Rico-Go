@@ -3,6 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
 import { getPool, sql } from '../db.js';
+import { correoValido } from '../lib/validacion.js';
 import { verificarToken } from '../middleware/verificarToken.js';
 import { registrarAuditoria } from '../middleware/auditoria.js';
 import { RETENCION_DIAS, hoyLima, rangoDiaLima, resumirRecorrido, validarPunto } from '../lib/recorrido.js';
@@ -55,8 +56,13 @@ router.post('/', async (req, res) => {
   }
 
   const { nombre, apellido, email, dni, telefono } = req.body;
-  if (!nombre || !email || !dni) {
-    return res.status(400).json({ error: 'nombre, email y DNI son obligatorios.' });
+  if (!nombre || !email || !dni || !telefono) {
+    return res.status(400).json({ error: 'nombre, email, DNI y teléfono son obligatorios.' });
+  }
+  if (!correoValido(email)) return res.status(400).json({ error: 'Email inválido.' });
+  // El cliente lo llama desde el seguimiento mientras su pedido está en reparto (HU018 / CP052)
+  if (!/^9\d{8}$/.test(String(telefono).trim())) {
+    return res.status(400).json({ error: 'El teléfono debe ser un celular de 9 dígitos que empiece en 9.' });
   }
 
   if (!/^\d{8}$/.test(String(dni).trim())) {
@@ -85,7 +91,7 @@ router.post('/', async (req, res) => {
       .input('email',    sql.NVarChar(150), email)
       .input('hash',     sql.NVarChar(250), hash)
       .input('dni',      sql.NVarChar(9),   String(dni).trim())
-      .input('tel',      sql.NVarChar(9),   telefono || '')
+      .input('tel',      sql.NVarChar(9),   String(telefono).trim())
       .query(`
         INSERT INTO AKR_Usuarios
           (Id_Roles, Nombre_Usuario, Apellido_Usuario, Email_Usuario,
@@ -111,7 +117,13 @@ router.put('/:id', async (req, res) => {
   const idRep = parseInt(req.params.id, 10);
   if (!idRep || isNaN(idRep)) return res.status(400).json({ error: 'ID inválido.' });
   const { nombre, apellido, email, dni, telefono } = req.body;
-  if (!nombre || !email) return res.status(400).json({ error: 'nombre y email son obligatorios.' });
+  if (!nombre || !email || !telefono) {
+    return res.status(400).json({ error: 'nombre, email y teléfono son obligatorios.' });
+  }
+  if (!correoValido(email)) return res.status(400).json({ error: 'Email inválido.' });
+  if (!/^9\d{8}$/.test(String(telefono).trim())) {
+    return res.status(400).json({ error: 'El teléfono debe ser un celular de 9 dígitos que empiece en 9.' });
+  }
   if (dni && !/^\d{8}$/.test(String(dni).trim())) {
     return res.status(400).json({ error: 'El DNI debe tener 8 dígitos.' });
   }
@@ -123,7 +135,7 @@ router.put('/:id', async (req, res) => {
       .input('apellido', sql.NVarChar(100), apellido || '')
       .input('email',    sql.NVarChar(150), email)
       .input('dni',      sql.NVarChar(9),   dni || '')
-      .input('tel',      sql.NVarChar(9),   telefono || '')
+      .input('tel',      sql.NVarChar(9),   String(telefono).trim())
       .query(`UPDATE AKR_Usuarios SET
         Nombre_Usuario=@nombre, Apellido_Usuario=@apellido,
         Email_Usuario=@email, DNI_Usuario=@dni, Telf_Usuario=@tel,

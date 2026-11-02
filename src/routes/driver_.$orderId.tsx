@@ -24,7 +24,9 @@ import { api } from "@/lib/api";
 export const Route = createFileRoute("/driver_/$orderId")({
   beforeLoad: () => {
     const session = store.get().session;
-    if (!session || !["driver", "admin"].includes(session.role)) {
+    // Solo repartidores (HU021 / CP061): el administrador gestiona los pedidos desde su panel
+    if (session?.role === "admin") throw redirect({ to: "/admin" });
+    if (!session || session.role !== "driver") {
       throw redirect({ to: "/login" });
     }
   },
@@ -593,12 +595,6 @@ function PaginaRuta() {
                 </div>
               )}
             </div>
-          )}
-
-          {store.get().session?.role === "admin" && (
-            <p className="text-center text-xs text-muted-foreground">
-              Vista de administrador — cambios de estado se aplican al backend
-            </p>
           )}
         </aside>
       </main>

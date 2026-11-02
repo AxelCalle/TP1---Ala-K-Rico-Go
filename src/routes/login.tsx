@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { LogoIcon } from "../components/Logo";
 import { store } from "@/lib/store";
 import { api, ErrorApi, ErrorRed } from "@/lib/api";
+import { correoValido, errorCorreo } from "@/lib/validacion";
 import { inputCls, ErrorMsg, TogglePass } from "@/components/FormBits";
 
 export const Route = createFileRoute("/login")({
@@ -194,7 +195,7 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
     setError("");
     setBloqueado(false);
 
-    if (!email.includes("@") || password.length < 4) {
+    if (!correoValido(email) || password.length < 4) {
       setError("Ingresa un correo válido y una contraseña de 4 o más caracteres.");
       return;
     }
@@ -226,10 +227,21 @@ function FormLogin({ onCambiarModo }: { onCambiarModo: () => void }) {
               : "/admin",
       });
     } catch (err) {
-      if (err instanceof ErrorApi && err.status === 401) {
+      if (err instanceof ErrorApi && err.status === 423) {
+        // ── Cuenta bloqueada en el servidor (vale en cualquier navegador) ─
+        const segundos = Number(err.datos.segundosRestantes) || 15 * 60;
+        const hasta = Date.now() + segundos * 1000;
+        store.bloquearHasta(email.trim(), hasta);
+        mostrarBloqueo(hasta);
+      } else if (err instanceof ErrorApi && err.status === 401) {
         // ── Credenciales incorrectas — registrar intento fallido frontal ─
         store.registrarFallo(email.trim());
-        const restantes = store.remainingAttempts(email.trim());
+        // El servidor cuenta los fallos del correo en todos los navegadores
+        const delServidor = err.datos.intentosRestantes;
+        const restantes =
+          typeof delServidor === "number"
+            ? Math.min(delServidor, store.remainingAttempts(email.trim()))
+            : store.remainingAttempts(email.trim());
         const nuevoBloqueo = store.getBloqueo(email.trim());
         if (nuevoBloqueo) {
           mostrarBloqueo(nuevoBloqueo);
@@ -405,8 +417,8 @@ function FormRegistro({ onCambiarModo }: { onCambiarModo: () => void }) {
       setError("Ingresa tu nombre.");
       return;
     }
-    if (!email.includes("@")) {
-      setError("Ingresa un correo electrónico válido.");
+    if (!correoValido(email)) {
+      setError(errorCorreo(email));
       return;
     }
     if (password.length < 8) {
